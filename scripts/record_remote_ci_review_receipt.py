@@ -104,7 +104,8 @@ def _validate_args(args: argparse.Namespace) -> None:
 
 
 def build_receipt(args: argparse.Namespace) -> dict[str, Any]:
-    head = args.head or args.head_full[:8]
+    # Canonicalize legacy seven-character display input to the formal eight-character receipt SHA.
+    head = args.head_full[:8]
     reviewed_at = args.reviewed_at_utc or _now_iso()
     no_matching_run_found = bool(args.no_matching_run_found)
     if no_matching_run_found:

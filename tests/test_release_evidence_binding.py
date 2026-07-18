@@ -20,7 +20,7 @@ ARTIFACT_DIGEST = "sha256:" + "b" * 64
 
 def _current_head() -> dict[str, object]:
     return {
-        "head": HEAD_FULL[:8],
+        "head": HEAD_FULL[:7],
         "head_full": HEAD_FULL,
         "branch": "main",
     }
@@ -111,6 +111,21 @@ class ReleaseEvidenceBindingTests(unittest.TestCase):
                     result = audit_service._read_remote_ci_review_receipt()
                 self.assertFalse(result["remote_ci_review_ready"])
                 self.assertFalse(result["latest_remote_run_verified_green"])
+
+    def test_remote_reader_accepts_formal_eight_char_head_with_seven_char_display_head(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = self._write(directory, "remote.json", _remote_receipt())
+            with (
+                patch.object(audit_service, "REMOTE_CI_REVIEW_RECEIPT_PATH", path),
+                patch.object(audit_service, "_current_git_head_summary", return_value=_current_head()),
+            ):
+                result = audit_service._read_remote_ci_review_receipt()
+
+        self.assertEqual(result["current_head"], HEAD_FULL[:7])
+        self.assertEqual(result["head"], HEAD_FULL[:8])
+        self.assertTrue(result["head_matches_current"])
+        self.assertTrue(result["remote_ci_review_ready"])
+        self.assertTrue(result["latest_remote_run_verified_green"])
 
     def test_allowlist_and_release_review_reject_short_head_collision(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

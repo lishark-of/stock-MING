@@ -554,6 +554,17 @@ def _current_git_head_summary() -> dict[str, Any]:
     }
 
 
+def _formal_receipt_short_head_matches(receipt_head: str, current_head_full: str) -> bool:
+    """Validate the recorder's exact eight-character SHA independently of display SHA."""
+    return bool(
+        len(receipt_head) == 8
+        and receipt_head == receipt_head.lower()
+        and all(char in "0123456789abcdef" for char in receipt_head)
+        and len(current_head_full) >= 8
+        and receipt_head == current_head_full[:8]
+    )
+
+
 def _current_origin_ahead_summary() -> dict[str, Any]:
     try:
         completed = subprocess.run(
@@ -1141,7 +1152,7 @@ def _read_remote_ci_review_receipt() -> dict[str, Any]:
     head_matches_current = bool(
         current_head_full
         and receipt_head_full == current_head_full
-        and receipt_head == current_head_short
+        and _formal_receipt_short_head_matches(receipt_head, current_head_full)
     )
     schema_ok = raw_receipt.get("schema_version") == REMOTE_CI_REVIEW_RECEIPT_SCHEMA_VERSION
     raw_status = str(raw_receipt.get("status") or "")
@@ -1476,7 +1487,7 @@ def _read_secret_artifact_allowlist_review_receipt() -> dict[str, Any]:
     head_matches_current = bool(
         current_head_full
         and receipt_head_full == current_head_full
-        and receipt_head == current_head_short
+        and _formal_receipt_short_head_matches(receipt_head, current_head_full)
     )
     schema_ok = raw_receipt.get("schema_version") == SECRET_ARTIFACT_ALLOWLIST_REVIEW_RECEIPT_SCHEMA_VERSION
     formal_recorder_ok = bool(
@@ -1678,7 +1689,7 @@ def _read_release_gate_review_receipt(
     head_matches_current = bool(
         current_head_full
         and receipt_head_full == current_head_full
-        and receipt_head == current_head_short
+        and _formal_receipt_short_head_matches(receipt_head, current_head_full)
     )
     schema_ok = raw_receipt.get("schema_version") == RELEASE_GATE_REVIEW_RECEIPT_SCHEMA_VERSION
     formal_recorder_ok = bool(
