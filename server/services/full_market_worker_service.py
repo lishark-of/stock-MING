@@ -18,6 +18,9 @@ from typing import Any
 from urllib.parse import urlsplit
 
 from server.services.sqlite_evidence_reader import immutable_evidence_connection
+from server.services.full_market_industry_service import (
+    validate_full_market_industry_membership,
+)
 from storage import parquet_store
 from storage.sqlite_meta import SQLiteMetaStore
 
@@ -433,6 +436,7 @@ def _authoritative_provider_universe(
     *,
     minimum_universe_size: int,
     include_frames: bool = False,
+    require_industry_membership: bool = False,
 ) -> dict[str, Any]:
     try:
         from server.services.tushare_production_store import (
@@ -490,6 +494,21 @@ def _authoritative_provider_universe(
         or any(getattr(frames.get(name), "empty", True) for name in required_frames)
     ):
         blockers.append("shared_provider_verified_frames_missing")
+    industry = validate_full_market_industry_membership(
+        evidence_root,
+        expected_symbols=symbols,
+        expected_universe_digest=universe_digest,
+        expected_validated_trade_date=source.get("validated_trade_date"),
+    ) if require_industry_membership else {
+        "ready": False,
+        "status": "full_market_industry_membership_not_requested",
+        "blockers": [],
+        "production_industry_verified": False,
+        "external_calls_triggered": False,
+        "writes_storage": False,
+    }
+    if require_industry_membership and industry.get("ready") is not True:
+        blockers.append("authoritative_full_market_industry_membership_missing_or_invalid")
     result = {
         **source,
         "ready": not blockers,
@@ -505,6 +524,17 @@ def _authoritative_provider_universe(
         "minimum_universe_size": minimum_universe_size,
         "universe_digest": universe_digest,
         "feature_contract_digest": FEATURE_CONTRACT_DIGEST,
+        "industry_membership": industry,
+        "industry_membership_required": require_industry_membership,
+        "industry_membership_verified": bool(
+            require_industry_membership and industry.get("ready") is True
+        ),
+        "industry_scope_digest": str(industry.get("scope_digest") or ""),
+        "industry_source_version_digest": str(
+            industry.get("source_version_digest") or ""
+        ),
+        "industry_artifact_sha256": str(industry.get("artifact_sha256") or ""),
+        "industry_manifest_digest": str(industry.get("manifest_digest") or ""),
         "blockers": list(dict.fromkeys(blockers)),
         "provider_execution_triggered": False,
         "external_calls_triggered": False,
@@ -539,6 +569,12 @@ def _batch_input_hash(universe: Mapping[str, Any], symbols: list[str]) -> str:
         "provider_scope_hash": universe.get("scope_hash"),
         "provider_version_digest": universe.get("version_digest"),
         "universe_digest": universe.get("universe_digest"),
+        "industry_scope_digest": universe.get("industry_scope_digest"),
+        "industry_source_version_digest": universe.get(
+            "industry_source_version_digest"
+        ),
+        "industry_artifact_sha256": universe.get("industry_artifact_sha256"),
+        "industry_manifest_digest": universe.get("industry_manifest_digest"),
         "symbols": list(symbols),
         "frames": {
             name: _frame_records_for_digest(frames.get(name), symbols)
@@ -847,6 +883,7 @@ def _execute_candidate_radar_batch_after_challenge(
         EVIDENCE_ROOT,
         minimum_universe_size=minimum,
         include_frames=True,
+        require_industry_membership=True,
     )
     if not (
         universe.get("ready") is True
@@ -2955,6 +2992,7 @@ def validate_factor_full_market_research_fact(evidence_root: Path) -> dict[str, 
         evidence_root,
         minimum_universe_size=minimum,
         include_frames=False,
+        require_industry_membership=True,
     )
     packet_binding = (
         _canonical_digest(
@@ -3131,6 +3169,7 @@ def validate_full_market_worker_production_fact(
         evidence_root,
         minimum_universe_size=minimum,
         include_frames=True,
+        require_industry_membership=True,
     )
     run_id = str(packet.get("acceptance_run_id") or "")
     production_binding = _canonical_digest(
@@ -3507,6 +3546,7 @@ def _run_full_market_worker_production_acceptance_impl(
         EVIDENCE_ROOT,
         minimum_universe_size=minimum,
         include_frames=True,
+        require_industry_membership=True,
     )
     if universe.get("ready") is not True:
         return _blocked_attempt(

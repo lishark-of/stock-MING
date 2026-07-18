@@ -6,7 +6,11 @@ from fastapi import APIRouter
 
 from server.api.task_response import task_envelope
 from server.schemas.packets import cache_envelope, cache_read_call_ledger, cache_read_packet
-from server.services import deepseek_benchmark_service, factor_service
+from server.services import (
+    deepseek_benchmark_service,
+    factor_service,
+    full_market_industry_service,
+)
 
 
 router = APIRouter(prefix="/api/factor-quant")
@@ -89,6 +93,34 @@ def request_factor_test_provider_industry_membership(payload: dict[str, Any] | N
     task = factor_service.create_factor_task(
         factor_service.FACTOR_TEST_INDUSTRY_PROVIDER_TASK_TYPE,
         payload,
+    )
+    return task_envelope(task)
+
+
+@router.get("/full-market-industry-membership")
+def get_full_market_industry_membership() -> dict:
+    packet = full_market_industry_service.read_full_market_industry_membership_status()
+    ledger = cache_read_call_ledger(
+        api="local_full_market_industry_membership_evidence",
+        route="GET /api/factor-quant/full-market-industry-membership",
+        packet=packet,
+    )
+    return cache_envelope(
+        cache_read_packet(packet, cache_call_ledger=ledger),
+        route="GET /api/factor-quant/full-market-industry-membership",
+        missing_message="当前没有可验证的全市场 PIT 行业分类生产指针。",
+        call_ledger=ledger,
+    )
+
+
+@router.post("/full-market-industry-membership-execution-request")
+def request_full_market_industry_membership_execution(
+    payload: dict[str, Any] | None = None,
+) -> dict:
+    task = (
+        full_market_industry_service.create_full_market_industry_membership_execution_request(
+            payload
+        )
     )
     return task_envelope(task)
 
