@@ -677,19 +677,19 @@ class CandidateRadarQuantProjectionCacheLedgerTests(unittest.TestCase):
         self.assertIn("002008.SZ", factor_packet["universe"]["items"])
         self.assertEqual(next_packet["chart_payload"]["symbol"], "002008.SZ")
 
-        packet_provider_ledger = [
-            row for row in packet["call_ledger"] if row.get("api") in expected_apis
-        ]
-        envelope_provider_ledger = [
-            row for row in cache["call_ledger"] if row.get("api") in expected_apis
-        ]
-        self.assertEqual([row["api"] for row in packet_provider_ledger], expected_apis)
-        self.assertEqual(envelope_provider_ledger, packet_provider_ledger)
-        self.assertTrue(all(row["tushare_called"] is True for row in packet_provider_ledger))
-        self.assertFalse(any(row["deepseek_called"] is True for row in packet_provider_ledger))
-        self.assertFalse(any(row["github_called"] is True for row in packet_provider_ledger))
+        receipt_provider_ledger = receipt["provider_call_ledger"]
+        self.assertEqual([row["api"] for row in receipt_provider_ledger], expected_apis)
+        self.assertEqual(receipt_provider_ledger, task_provider_ledger)
+        self.assertTrue(all(row["tushare_called"] is True for row in receipt_provider_ledger))
+        self.assertFalse(any(row["deepseek_called"] is True for row in receipt_provider_ledger))
+        self.assertFalse(any(row["github_called"] is True for row in receipt_provider_ledger))
+        self.assertFalse(any(row.get("api") in expected_apis for row in packet["call_ledger"]))
+        self.assertFalse(any(row.get("api") in expected_apis for row in cache["call_ledger"]))
         self.assertTrue(
-            any(row["api"] == "local_candidate_radar_quant_projection_provider_model_acceptance" for row in packet["call_ledger"])
+            any(
+                row["api"] == "local_candidate_radar_quant_projection_provider_model_acceptance"
+                for row in task["call_ledger"]
+            )
         )
         self.assertEqual(
             small_data["schema_version"],
@@ -2114,7 +2114,7 @@ class CandidateRadarQuantProjectionCacheLedgerTests(unittest.TestCase):
         self.assertTrue(model_ledger["does_not_override_numeric_values"])
         self.assertTrue(model_ledger["does_not_modify_strategy_action"])
         deepseek_rows = [
-            row for row in packet["call_ledger"] if row.get("api") == "deepseek_quant_projection_explanation"
+            row for row in task["call_ledger"] if row.get("api") == "deepseek_quant_projection_explanation"
         ]
         self.assertEqual(len(deepseek_rows), 1)
         self.assertTrue(deepseek_rows[0]["deepseek_called"])
@@ -2237,7 +2237,7 @@ class CandidateRadarQuantProjectionCacheLedgerTests(unittest.TestCase):
         model_ledger = packet["search_quant_deepseek_model_ledger"]
         explanation = packet["search_quant_deepseek_explanation"]
         deepseek_rows = [
-            row for row in packet["call_ledger"] if row.get("api") == "deepseek_quant_projection_explanation"
+            row for row in task["call_ledger"] if row.get("api") == "deepseek_quant_projection_explanation"
         ]
 
         self.assertEqual(

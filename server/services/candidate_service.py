@@ -16051,15 +16051,19 @@ def _move_qmt_source_fixed_warnings_to_notices(packet: Mapping[str, Any]) -> dic
     normalized = dict(packet)
     warnings: list[str] = []
     notices = [str(item) for item in _as_list(packet.get("notices"))]
+    moved_notice = False
     for item in _as_list(packet.get("warnings")):
         text = str(item)
         if text in _QMT_SOURCE_FIXED_NOTICES:
             if text not in notices:
                 notices.append(text)
+            moved_notice = True
         else:
             warnings.append(text)
-    normalized["warnings"] = warnings
-    normalized["notices"] = notices
+    if "warnings" in packet:
+        normalized["warnings"] = warnings
+    if "notices" in packet or moved_notice:
+        normalized["notices"] = notices
     return normalized
 
 

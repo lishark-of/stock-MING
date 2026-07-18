@@ -12485,7 +12485,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertEqual(cache_view["call_ledger"][0]["api"], "local_candidate_radar_cache")
         self.assertNotIn("local_candidate_radar_quick_scan", {row["api"] for row in cache_view["call_ledger"]})
         self.assertEqual(cache_view["task_id"], task["task_id"])
-        self.assertIn("GET /api/candidate-radar/cache", cache_view["warnings"][0])
+        self.assertIn("GET /api/candidate-radar/cache", cache_view["notices"][0])
         self.assertFalse(cache_view["external_calls_triggered"])
 
     def test_candidate_radar_quick_scan_computes_previous_cache_diff_when_available(self):
@@ -40661,7 +40661,7 @@ class CommandCenter3FastAPITests(unittest.TestCase):
             self.assertEqual(next_session["error"]["code"], "cache_missing")
         self.assertEqual(next_session["call_ledger"][0]["api"], "local_next_session_cache")
         self.assertFalse(next_session["call_ledger"][0]["external"])
-        self.assertIn("GET /api/next-session/cache", next_session["warnings"][0])
+        self.assertIn("GET /api/next-session/cache", next_session["data"]["notices"][0])
 
         storage = self.client.get("/api/storage/factor-values").json()
         self.assertTrue(storage["ok"])
@@ -43630,7 +43630,7 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertTrue(candidate["data"]["does_not_execute_trades"])
         self.assertEqual(candidate["call_ledger"][0]["api"], "local_candidate_radar_cache")
         self.assertFalse(candidate["call_ledger"][0]["external"])
-        self.assertIn("GET /api/candidate-radar/cache", candidate["warnings"][0])
+        self.assertIn("GET /api/candidate-radar/cache", candidate["data"]["notices"][0])
 
         risk = self.client.get("/api/risk/cache").json()
         self.assertTrue(risk["ok"])
@@ -46124,7 +46124,7 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertTrue(packet["does_not_modify_strategy_action"])
         self.assertEqual(response["call_ledger"][0]["api"], "local_candidate_radar_cache")
         self.assertFalse(response["call_ledger"][0]["external"])
-        self.assertIn("GET /api/candidate-radar/cache", response["warnings"][0])
+        self.assertIn("GET /api/candidate-radar/cache", packet["notices"][0])
 
     def test_candidate_radar_reads_local_browser_qa_evidence_without_promoting_production(self):
         artifact_root = self._with_candidate_motion_qa_root()
@@ -47766,7 +47766,7 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertFalse(packet["tushare_called"])
         self.assertFalse(packet["deepseek_called"])
         self.assertFalse(packet["github_called"])
-        self.assertIn("GET /api/candidate-radar/cache", cache["warnings"][0])
+        self.assertIn("GET /api/candidate-radar/cache", packet["notices"][0])
 
     def test_candidate_radar_custom_pool_coarse_fine_groups_are_local_fallback(self):
         self._with_meta_store()
@@ -48076,7 +48076,11 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertGreater(packet["counts"]["search_quant_projection_production_blocker_count"], 0)
         self.assertEqual(packet["counts"]["search_quant_projection_activation_row_count"], activation["row_count"])
         self.assertGreater(packet["counts"]["search_quant_projection_activation_blocker_count"], 0)
-        self.assertEqual(packet["call_ledger"][1]["api"], "local_candidate_radar_quant_projection")
+        self.assertEqual(receipt["call_ledger"][0]["api"], "local_candidate_radar_quant_projection")
+        self.assertNotIn(
+            "local_candidate_radar_quant_projection",
+            {row["api"] for row in packet["call_ledger"]},
+        )
         self.assertFalse(packet["external_calls_triggered"])
         self.assertFalse(packet["tushare_called"])
         self.assertFalse(packet["deepseek_called"])
@@ -48085,7 +48089,7 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertTrue(packet["does_not_modify_strategy_action"])
         self.assertTrue(packet["does_not_modify_holdings"])
         self.assertNotIn("SHOULD_DROP", json.dumps(cache, ensure_ascii=False))
-        self.assertIn("GET /api/candidate-radar/cache", cache["warnings"][0])
+        self.assertIn("GET /api/candidate-radar/cache", packet["notices"][0])
 
     def test_candidate_radar_cache_status_stays_ready_when_quant_projection_replay_exists_without_candidates(self):
         self._with_meta_store()
@@ -51747,7 +51751,7 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertFalse(packet["github_called"])
         self.assertTrue(packet["does_not_execute_trades"])
         self.assertTrue(packet["does_not_modify_strategy_action"])
-        self.assertIn("GET /api/candidate-radar/cache", cache["warnings"][0])
+        self.assertIn("GET /api/candidate-radar/cache", packet["notices"][0])
 
     def test_candidate_radar_quant_projection_p2_recovery_rows_explain_missing_credentials(self):
         small_data = candidate_service._search_quant_projection_small_data_writeback_summary(
@@ -51882,7 +51886,7 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertFalse(packet["github_called"])
         self.assertTrue(packet["does_not_execute_trades"])
         self.assertTrue(packet["does_not_modify_strategy_action"])
-        self.assertIn("GET /api/candidate-radar/cache", cache["warnings"][0])
+        self.assertIn("GET /api/candidate-radar/cache", packet["notices"][0])
 
     def test_candidate_radar_deep_scan_plan_endpoint_is_button_gated_plan_only(self):
         self._with_meta_store()
@@ -51943,7 +51947,7 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertFalse(packet["github_called"])
         self.assertTrue(packet["does_not_execute_trades"])
         self.assertTrue(packet["does_not_modify_strategy_action"])
-        self.assertIn("GET /api/candidate-radar/cache", cache["warnings"][0])
+        self.assertIn("GET /api/candidate-radar/cache", packet["notices"][0])
 
     def test_candidate_radar_deep_scan_local_review_endpoint_is_button_gated_local_only(self):
         self._with_meta_store()
@@ -52038,7 +52042,7 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertFalse(packet["github_called"])
         self.assertTrue(packet["does_not_execute_trades"])
         self.assertTrue(packet["does_not_modify_strategy_action"])
-        self.assertIn("GET /api/candidate-radar/cache", cache["warnings"][0])
+        self.assertIn("GET /api/candidate-radar/cache", packet["notices"][0])
 
     def test_risk_guardrails_cache_endpoint_returns_local_risk_boundaries(self):
         self._with_snapshot_cache(
