@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import sys
 from pathlib import Path
 from typing import Any
@@ -21,7 +22,7 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 import command_center_factor_research as factor_research  # noqa: E402
-from server.services import factor_service, task_service  # noqa: E402
+from server.services import factor_service, source_contract_service, task_service  # noqa: E402
 
 
 REQUIRED_UNIVERSE_MODES = {"current_target", "watchlist", "custom_pool", "full_pool"}
@@ -81,6 +82,7 @@ PRODUCTION_FACTOR_UNIVERSE_DURABLE_BLOCKER_KEYS = {
     "full_pool_validation_required",
     "promotion_review_required",
 }
+MAX_LOCAL_API_FETCH_TIMEOUT_MS = 15_000
 
 
 def _row(criterion: str, passed: bool, evidence: str) -> dict[str, Any]:
@@ -114,18 +116,96 @@ def _read_script(path: str) -> str:
 def _frontend_uses_bounded_local_api_client(api_client: str) -> bool:
     """Accept the bounded local transport without accepting direct page fetches."""
 
+    code = source_contract_service.strip_js_ts_comments(api_client)
+    timeout_values = re.findall(
+        r"\bconst\s+LOCAL_API_FETCH_TIMEOUT_MS\s*=\s*(\d+)\s*;",
+        code,
+    )
+    function_body = source_contract_service.extract_named_function_body(code, "fetchLocalApi")
+    controller_match = re.search(
+        r"\bconst\s+(?P<controller>[A-Za-z_$][\w$]*)\s*=\s*new\s+AbortController\s*\(\s*\)\s*;",
+        function_body,
+    )
+    timer_match = re.search(
+        r"\bconst\s+(?P<timer>[A-Za-z_$][\w$]*)\s*=\s*window\.setTimeout\s*\(",
+        function_body,
+    )
+    try_match = re.search(r"\btry\s*\{", function_body)
+    if (
+        len(timeout_values) != 1
+        or not function_body
+        or not controller_match
+        or not timer_match
+        or not try_match
+    ):
+        return False
+    timeout_ms = int(timeout_values[0])
+    controller_name = controller_match.group("controller")
+    timer_name = timer_match.group("timer")
+    timer_open = function_body.find("(", timer_match.start())
+    timer_arguments = source_contract_service.extract_balanced(
+        function_body,
+        timer_open,
+        opening="(",
+        closing=")",
+    )
+    try_open = function_body.find("{", try_match.start())
+    try_block = source_contract_service.extract_balanced(
+        function_body,
+        try_open,
+        opening="{",
+        closing="}",
+    )
+    if not timer_arguments or not try_block or timer_match.start() >= try_match.start():
+        return False
+    finally_match = re.match(r"\s*finally\s*\{", function_body[try_block[1] :])
+    if not finally_match:
+        return False
+    finally_open = function_body.find("{", try_block[1] + finally_match.start())
+    finally_block = source_contract_service.extract_balanced(
+        function_body,
+        finally_open,
+        opening="{",
+        closing="}",
+    )
+    if not finally_block:
+        return False
+    timer_contract = re.fullmatch(
+        rf"\s*\(\s*\)\s*=>\s*{re.escape(controller_name)}\.abort\s*\(.*\)\s*,\s*timeoutMs\s*",
+        timer_arguments[0],
+        flags=re.DOTALL,
+    )
+    fetch_contract = re.search(
+        rf"return\s+await\s+fetch\s*\(\s*url\s*,\s*\{{\s*\.\.\.init\s*,\s*"
+        rf"signal\s*:\s*{re.escape(controller_name)}\.signal\s*\}}\s*\)\s*;",
+        try_block[0],
+    )
+    clear_contract = re.search(
+        rf"window\.clearTimeout\s*\(\s*{re.escape(timer_name)}\s*\)\s*;",
+        finally_block[0],
+    )
+
     return (
-        "export function postTask" in api_client
-        and "const API_BASE_CANDIDATES = localApiBaseCandidates();" in api_client
-        and "async function fetchLocalApi(" in api_client
-        and "const controller = new AbortController();" in api_client
-        and "window.setTimeout(() => controller.abort" in api_client
-        and "return await fetch(url, { ...init, signal: controller.signal });" in api_client
-        and api_client.count("fetch(") == 1
-        and "if (isLocalApiBase(API_BASE))" in api_client
-        and "await fetchLocalApi(`${apiBase}${path}`" in api_client
-        and "return request<TaskCreationData>(path" in api_client
-        and "fetch(`${apiBase}${path}`" not in api_client
+        0 < timeout_ms <= MAX_LOCAL_API_FETCH_TIMEOUT_MS
+        and bool(timer_contract)
+        and bool(fetch_contract)
+        and bool(clear_contract)
+        and function_body.count("window.setTimeout(") == 1
+        and function_body.count("window.clearTimeout(") == 1
+        and function_body.count("fetch(") == 1
+        and not re.search(r"\bif\s*\(\s*(?:false|0)\s*\)|\bfalse\s*&&", function_body)
+        and re.search(
+            r"async\s+function\s+fetchLocalApi\s*\([^)]*timeoutMs\s*=\s*LOCAL_API_FETCH_TIMEOUT_MS[^)]*\)",
+            code,
+        )
+        is not None
+        and "export function postTask" in code
+        and "const API_BASE_CANDIDATES = localApiBaseCandidates();" in code
+        and code.count("fetch(") == 1
+        and "if (isLocalApiBase(API_BASE))" in code
+        and "await fetchLocalApi(`${apiBase}${path}`" in code
+        and "return request<TaskCreationData>(path" in code
+        and "fetch(`${apiBase}${path}`" not in code
     )
 
 

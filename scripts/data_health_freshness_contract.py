@@ -133,7 +133,14 @@ def _as_list(value: Any) -> list[Any]:
 def _has_exact_producer_refresh_packet_keys(value: Any) -> bool:
     """Keep local freshness writes pinned to the three audited packet identities."""
 
-    return set(_as_list(value)) == PRODUCER_REFRESH_PACKET_KEYS
+    packet_keys = _as_list(value)
+    return bool(
+        isinstance(value, list)
+        and len(packet_keys) == len(PRODUCER_REFRESH_PACKET_KEYS)
+        and all(isinstance(packet_key, str) for packet_key in packet_keys)
+        and len(set(packet_keys)) == len(packet_keys)
+        and set(packet_keys) == PRODUCER_REFRESH_PACKET_KEYS
+    )
 
 
 def _serialized(value: Any) -> str:

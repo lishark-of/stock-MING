@@ -4,6 +4,7 @@ import datetime as _dt
 import fnmatch
 import hashlib
 import json
+import re
 import subprocess
 from collections.abc import Callable, Mapping
 from pathlib import Path
@@ -32,6 +33,7 @@ from server.services import (
     quant_service,
     recovery_service,
     risk_service,
+    source_contract_service,
     storage_service,
     strategy_service,
     task_service,
@@ -3573,6 +3575,60 @@ def _motion_source(path: str) -> str:
     return _read_local_text(DESKTOP_SRC_DIR / path)
 
 
+def _task_status_panel_polling_contract(source: str) -> bool:
+    code = source_contract_service.strip_js_ts_comments(source)
+    body = source_contract_service.extract_named_function_body(code, "TaskStatusPanel")
+    interval_match = re.search(
+        r"const\s+(?P<timer>[A-Za-z_$][\w$]*)\s*=\s*window\.setInterval\s*\(\s*\(\s*\)\s*=>\s*\{",
+        body,
+    )
+    if not body or not interval_match:
+        return False
+    callback_open = body.find("{", interval_match.start())
+    callback = source_contract_service.extract_balanced(
+        body,
+        callback_open,
+        opening="{",
+        closing="}",
+    )
+    if not callback:
+        return False
+    guard = re.search(
+        r"if\s*\(\s*!task\s*\|\|\s*task\.status\s*===\s*['\"]pending['\"]"
+        r"\s*\|\|\s*task\.status\s*===\s*['\"]running['\"]\s*\)\s*load\s*\(\s*\)\s*;",
+        callback[0],
+    )
+    timer_name = interval_match.group("timer")
+    return bool(
+        guard
+        and body.count("window.setInterval(") == 1
+        and body.count("window.clearInterval(") == 1
+        and re.search(rf"window\.clearInterval\s*\(\s*{re.escape(timer_name)}\s*\)", body)
+        and ("getTask(taskId)" in body or ("getTasks()" in body and "taskFromIndex" in body))
+    )
+
+
+def _packet_card_status_structure_contract(source: str) -> bool:
+    code = source_contract_service.strip_js_ts_comments(source)
+    body = source_contract_service.extract_named_function_body(code, "PacketCard")
+    if not body:
+        return False
+    for match in re.finditer(r"<span\b(?P<attributes>[^>]*)>", body, flags=re.DOTALL):
+        attributes = match.group("attributes")
+        if not re.search(r'className\s*=\s*["\']packet-card__state["\']', attributes):
+            continue
+        return bool(
+            re.search(r'role\s*=\s*["\']status["\']', attributes)
+            and re.search(
+                r"aria-label\s*=\s*\{\s*`状态：\$\{status\}`\s*\}",
+                attributes,
+            )
+            and 'className="packet-card__state-dot"' in body
+            and "toneLabel(tone)" in attributes
+        )
+    return False
+
+
 def _motion_row(
     criterion: str,
     passed: bool,
@@ -3591,18 +3647,33 @@ def _motion_row(
 
 
 def _motion_clarity_readiness_audit() -> tuple[dict[str, Any], list[dict[str, Any]]]:
-    styles = _motion_source("styles.css")
-    app = _motion_source("App.tsx")
-    layout = _motion_source("components/Layout.tsx")
-    packet_card = _motion_source("components/PacketCard.tsx")
-    metric_grid = _motion_source("components/MetricGrid.tsx")
-    status_badge = _motion_source("components/StatusBadge.tsx")
-    state_rail = _motion_source("components/StateClarityRail.tsx")
-    page_state = _motion_source("components/PageStateBanner.tsx")
-    task_panel = _motion_source("components/TaskStatusPanel.tsx")
-    task_receipt = _motion_source("components/TaskLaunchReceipt.tsx")
-    next_chart = _motion_source("components/NextSessionChart.tsx")
-    candidate_radar = _motion_source("routes/CandidateRadar.tsx")
+    source = {
+        "styles": _motion_source("styles.css"),
+        "app": _motion_source("App.tsx"),
+        "layout": _motion_source("components/Layout.tsx"),
+        "packet_card": _motion_source("components/PacketCard.tsx"),
+        "metric_grid": _motion_source("components/MetricGrid.tsx"),
+        "status_badge": _motion_source("components/StatusBadge.tsx"),
+        "state_rail": _motion_source("components/StateClarityRail.tsx"),
+        "page_state": _motion_source("components/PageStateBanner.tsx"),
+        "task_panel": _motion_source("components/TaskStatusPanel.tsx"),
+        "task_receipt": _motion_source("components/TaskLaunchReceipt.tsx"),
+        "next_chart": _motion_source("components/NextSessionChart.tsx"),
+        "candidate_radar": _motion_source("routes/CandidateRadar.tsx"),
+    }
+    code = {key: source_contract_service.strip_js_ts_comments(value) for key, value in source.items()}
+    styles = code["styles"]
+    app = code["app"]
+    layout = code["layout"]
+    packet_card = code["packet_card"]
+    metric_grid = code["metric_grid"]
+    status_badge = code["status_badge"]
+    state_rail = code["state_rail"]
+    page_state = code["page_state"]
+    task_panel = code["task_panel"]
+    task_receipt = code["task_receipt"]
+    next_chart = code["next_chart"]
+    candidate_radar = code["candidate_radar"]
     motion_viewport_qa_contract = _read_local_text(MOTION_VIEWPORT_QA_CONTRACT_PATH)
     motion_browser_qa_runbook = _read_local_text(MOTION_BROWSER_QA_RUNBOOK_PATH)
     audited_text = "\n".join(
@@ -3660,14 +3731,7 @@ def _motion_clarity_readiness_audit() -> tuple[dict[str, Any], list[dict[str, An
         "@keyframes cc-status-settle",
         "@keyframes cc-phase-confirm",
     )
-    task_polling_interval_is_bounded = (
-        task_panel.count("window.setInterval(") == 1
-        and task_panel.count("window.clearInterval(") == 1
-        and (
-            "getTask(taskId)" in task_panel
-            or ("getTasks()" in task_panel and "taskFromIndex" in task_panel)
-        )
-    )
+    task_polling_interval_is_bounded = _task_status_panel_polling_contract(source["task_panel"])
     layout_health_polling_is_bounded = (
         layout.count("window.setInterval(") == 1
         and layout.count("window.clearInterval(") == 1
@@ -3688,11 +3752,8 @@ def _motion_clarity_readiness_audit() -> tuple[dict[str, Any], list[dict[str, An
         and "revealFrameTwo" in candidate_radar
         and "cancelled = true" in candidate_radar
     )
-    packet_status_uses_accessible_internal_badge = (
-        'className="packet-card__state"' in packet_card
-        and 'role="status"' in packet_card
-        and 'className="packet-card__state-dot"' in packet_card
-        and "toneLabel(tone)" in packet_card
+    packet_status_uses_accessible_internal_badge = _packet_card_status_structure_contract(
+        source["packet_card"]
     )
     checks = {
         "motion_tokens_present": all(marker in styles for marker in token_markers),

@@ -4297,7 +4297,7 @@ def _latest_factor_universe_direct_research_evidence_summary() -> dict[str, Any]
         and worker_receipt.get("local_worker_research_receipt_ready") is True
         and worker_receipt.get("local_worker_task_record_created") is True
     )
-    worker_batch_execution_done = bool(
+    cache_worker_execution_claim_complete = bool(
         worker_research_receipt_ready
         and worker_receipt.get("local_worker_execution_evidence_done") is True
         and worker_receipt.get("worker_task_created") is True
@@ -4320,6 +4320,7 @@ def _latest_factor_universe_direct_research_evidence_summary() -> dict[str, Any]
         and worker_receipt.get("does_not_modify_strategy_action") is True
         and worker_receipt.get("contains_secret") is False
     )
+    worker_batch_execution_done = False
     worker_receipt_waiting_for_runtime = bool(
         worker_research_receipt_ready
         and worker_receipt.get("ready_for_worker_runtime_evidence_collection") is True
@@ -4348,15 +4349,17 @@ def _latest_factor_universe_direct_research_evidence_summary() -> dict[str, Any]
         "local_rank_zscore_usable_row_count": int(rank_zscore.get("usable_row_count") or 0),
         "worker_batch_research_receipt_ready": worker_research_receipt_ready,
         "worker_batch_research_receipt_is_not_worker_execution": worker_receipt_waiting_for_runtime,
+        "cache_worker_execution_claim_complete": cache_worker_execution_claim_complete,
+        "worker_execution_trust_status": "missing_factor_universe_trusted_worker_lineage_validator",
         "local_worker_batch_execution_evidence_verified": worker_batch_execution_done,
         "worker_execution_implemented": worker_batch_execution_done,
         "worker_batch_executed": worker_batch_execution_done,
         "large_universe_pipeline_done": False,
         "cross_sectional_rank_zscore_done": worker_batch_execution_done,
-        "neutralization_done": worker_receipt.get("neutralization_done") is True,
+        "neutralization_done": False,
         "factor_combination_research_done": worker_batch_execution_done,
         "result_summary_persisted": worker_batch_execution_done,
-        "full_pool_validation_done": worker_receipt.get("full_pool_validation_done") is True,
+        "full_pool_validation_done": False,
         "production_factor_universe_complete": False,
         "page_render_starts_full_pool": False,
         "frontend_computes_rank_zscore": False,

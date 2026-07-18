@@ -17919,6 +17919,16 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertFalse(
             contract_module._has_exact_producer_refresh_packet_keys([*exact_keys, "extra_packet"])
         )
+        self.assertFalse(
+            contract_module._has_exact_producer_refresh_packet_keys(
+                [exact_keys[0], exact_keys[1], exact_keys[1]]
+            )
+        )
+        self.assertFalse(
+            contract_module._has_exact_producer_refresh_packet_keys(
+                [exact_keys[0], exact_keys[1], 3]
+            )
+        )
         self.assertFalse(contract_module._has_exact_producer_refresh_packet_keys("market_packet"))
 
     def test_tushare_acceptance_contract_script_is_local_push_gate_guard(self):
@@ -18782,6 +18792,127 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
                 api_client + '\nfetch("https://example.invalid");\n'
             )
         )
+        self.assertFalse(
+            contract_module._frontend_uses_bounded_local_api_client(
+                api_client.replace("window.clearTimeout(timeout);", "", 1)
+                + "\n// window.clearTimeout(timeout);\n"
+            )
+        )
+        self.assertFalse(
+            contract_module._frontend_uses_bounded_local_api_client(
+                api_client.replace("signal: controller.signal", "signal: undefined", 1)
+                + "\n/* return await fetch(url, { ...init, signal: controller.signal }); */\n"
+            )
+        )
+        self.assertFalse(
+            contract_module._frontend_uses_bounded_local_api_client(
+                api_client.replace("window.clearTimeout(timeout);", "", 1)
+                + "\nfunction decoyFetchLocalApi() {\n"
+                + "  const controller = new AbortController();\n"
+                + "  const timeout = window.setTimeout(() => controller.abort(), 1);\n"
+                + "  try { return fetch('decoy', { signal: controller.signal }); }\n"
+                + "  finally { window.clearTimeout(timeout); }\n"
+                + "}\n"
+            )
+        )
+        timer_line = (
+            'const timeout = window.setTimeout(() => controller.abort(new DOMException('
+            '"local_api_timeout", "TimeoutError")), timeoutMs);'
+        )
+        self.assertIn(timer_line, api_client)
+        self.assertFalse(
+            contract_module._frontend_uses_bounded_local_api_client(
+                api_client.replace(
+                    timer_line,
+                    "if (false) { " + timer_line + " }\n"
+                    + 'const timeout = window.setTimeout(() => controller.abort(), 60000);',
+                    1,
+                )
+            )
+        )
+        self.assertFalse(
+            contract_module._frontend_uses_bounded_local_api_client(
+                api_client.replace(
+                    "const LOCAL_API_FETCH_TIMEOUT_MS = 7000;",
+                    "const LOCAL_API_FETCH_TIMEOUT_MS = 60000;",
+                    1,
+                )
+            )
+        )
+
+    def test_factor_universe_cache_worker_claims_never_self_verify_without_trusted_lineage(self):
+        original_read_cache = factor_service.read_factor_quant_cache
+        self.addCleanup(setattr, factor_service, "read_factor_quant_cache", original_read_cache)
+
+        claimed_receipt = {
+            "schema_version": "factor_universe_worker_batch_research_receipt.v1",
+            "local_worker_research_receipt_ready": True,
+            "local_worker_task_record_created": True,
+            "local_worker_execution_evidence_done": True,
+            "worker_task_created": True,
+            "worker_task_executed": True,
+            "worker_execution_implemented": True,
+            "storage_read_executed": True,
+            "cross_sectional_rank_zscore_done": True,
+            "zscore_done": True,
+            "neutralization_done": True,
+            "factor_combination_research_done": True,
+            "result_summary_persisted": True,
+            "full_pool_validation_done": True,
+            "worker_started": False,
+            "celery_worker_started": False,
+            "redis_pinged": False,
+            "production_factor_universe_complete": False,
+            "external_calls_triggered": False,
+            "tushare_called": False,
+            "deepseek_called": False,
+            "github_called": False,
+            "does_not_execute_trades": True,
+            "does_not_modify_strategy_action": True,
+            "contains_secret": False,
+            "task_id": "worker-task-claimed",
+            "head_full": "a" * 40,
+            "result_summary_hash": "b" * 64,
+            "lineage": {
+                "task_id": "worker-task-claimed",
+                "head_full": "a" * 40,
+                "result_summary_hash": "b" * 64,
+            },
+        }
+        forged_receipts = {
+            "all_true_untrusted": claimed_receipt,
+            "wrong_task": {**claimed_receipt, "task_id": "wrong-task"},
+            "wrong_head": {**claimed_receipt, "head_full": "c" * 40},
+            "wrong_result_hash": {**claimed_receipt, "result_summary_hash": "d" * 64},
+            "wrong_lineage": {**claimed_receipt, "lineage": {"task_id": "other"}},
+        }
+        for label, receipt in forged_receipts.items():
+            with self.subTest(label=label):
+                factor_service.read_factor_quant_cache = lambda current=receipt: {
+                    "external_calls_triggered": False,
+                    "tushare_called": False,
+                    "deepseek_called": False,
+                    "github_called": False,
+                    "does_not_execute_trades": True,
+                    "does_not_modify_strategy_action": True,
+                    "contains_secret": False,
+                    "universe_worker_batch_research_receipt": current,
+                }
+                summary = migration_status_service._latest_factor_universe_direct_research_evidence_summary()
+
+                self.assertTrue(summary["cache_worker_execution_claim_complete"])
+                self.assertEqual(
+                    summary["worker_execution_trust_status"],
+                    "missing_factor_universe_trusted_worker_lineage_validator",
+                )
+                self.assertFalse(summary["local_worker_batch_execution_evidence_verified"])
+                self.assertFalse(summary["neutralization_done"])
+                self.assertFalse(summary["full_pool_validation_done"])
+                self.assertEqual(summary["direct_evidence_stage_count"], 0)
+                self.assertNotIn(
+                    "local_worker_batch_execution_evidence",
+                    summary["direct_evidence_stage_keys"],
+                )
 
     def test_deepseek_governance_contract_script_is_local_push_gate_guard(self):
         path = Path("scripts/deepseek_governance_contract.py")
@@ -58659,6 +58790,84 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertIn("no_timer_or_raf_motion_loop", audit["blockers"])
         self.assertEqual(by_criterion["no_timer_or_raf_motion_loop"]["status"], "blocked")
 
+    def test_motion_clarity_audit_rejects_extra_candidate_reveal_frame(self):
+        original_motion_source = audit_service._motion_source
+
+        def read_motion_source(relative_path):
+            source = original_motion_source(relative_path)
+            if relative_path == "routes/CandidateRadar.tsx":
+                return source + "\nwindow.requestAnimationFrame(() => undefined);\n"
+            return source
+
+        audit_service._motion_source = read_motion_source
+        self.addCleanup(setattr, audit_service, "_motion_source", original_motion_source)
+
+        audit, rows = audit_service._motion_clarity_readiness_audit()
+        by_criterion = {row["criterion"]: row for row in rows}
+        self.assertEqual(audit["status"], "motion_clarity_static_blocked")
+        self.assertIn("no_timer_or_raf_motion_loop", audit["blockers"])
+        self.assertEqual(by_criterion["no_timer_or_raf_motion_loop"]["status"], "blocked")
+
+    def test_motion_clarity_structures_ignore_comment_and_unrelated_decoys(self):
+        original_motion_source = audit_service._motion_source
+        guard = 'if (!task || task.status === "pending" || task.status === "running") load();'
+        packet_attributes = 'role="status" aria-label={`状态：${status}`}'
+        attacks = (
+            (
+                "task_line_comment",
+                "components/TaskStatusPanel.tsx",
+                lambda source: source.replace(guard, "if (!task) load();", 1) + f"\n// {guard}\n",
+                "no_timer_or_raf_motion_loop",
+            ),
+            (
+                "task_block_comment",
+                "components/TaskStatusPanel.tsx",
+                lambda source: source.replace(guard, "if (!task) load();", 1) + f"\n/* {guard} */\n",
+                "no_timer_or_raf_motion_loop",
+            ),
+            (
+                "task_unrelated_function",
+                "components/TaskStatusPanel.tsx",
+                lambda source: source.replace(guard, "if (!task) load();", 1)
+                + f"\nfunction PollingDecoy() {{ {guard} }}\n",
+                "no_timer_or_raf_motion_loop",
+            ),
+            (
+                "packet_jsx_comment",
+                "components/PacketCard.tsx",
+                lambda source: source.replace(packet_attributes, 'role="presentation"', 1)
+                + '\n{/* <span className="packet-card__state" role="status" '
+                + 'aria-label={`状态：${status}`} title={toneLabel(tone)}><span '
+                + 'className="packet-card__state-dot" /></span> */}\n',
+                "packet_status_clarity_cue",
+            ),
+            (
+                "packet_unrelated_component",
+                "components/PacketCard.tsx",
+                lambda source: source.replace(packet_attributes, 'role="presentation"', 1)
+                + '\nfunction PacketDecoy() { return <span className="packet-card__state" '
+                + 'role="status" aria-label={`状态：${status}`} title={toneLabel(tone)}>'
+                + '<span className="packet-card__state-dot" /></span>; }\n',
+                "packet_status_clarity_cue",
+            ),
+        )
+
+        try:
+            for label, target_path, mutate, expected_blocker in attacks:
+                with self.subTest(label=label):
+                    def read_motion_source(relative_path, *, current_target=target_path, current_mutate=mutate):
+                        source = original_motion_source(relative_path)
+                        return current_mutate(source) if relative_path == current_target else source
+
+                    audit_service._motion_source = read_motion_source
+                    audit, rows = audit_service._motion_clarity_readiness_audit()
+                    by_criterion = {row["criterion"]: row for row in rows}
+                    self.assertEqual(audit["status"], "motion_clarity_static_blocked")
+                    self.assertIn(expected_blocker, audit["blockers"])
+                    self.assertEqual(by_criterion[expected_blocker]["status"], "blocked")
+        finally:
+            audit_service._motion_source = original_motion_source
+
     def test_remote_ci_review_receipt_recorder_writes_matching_green_without_release_completion(self):
         self._with_meta_store()
         self._with_release_gate_receipt_path()
@@ -63196,25 +63405,28 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         durable = packet["universe_durable_evidence_recipe"]
         self.assertFalse(durable["worker_task_created"])
         self.assertFalse(durable["worker_task_executed"])
-        self.assertTrue(durable["storage_read_executed"])
-        self.assertTrue(durable["cross_sectional_rank_zscore_done"])
-        self.assertTrue(durable["zscore_done"])
-        self.assertTrue(durable["neutralization_done"])
-        self.assertTrue(durable["factor_combination_research_done"])
-        self.assertTrue(durable["result_summary_persisted"])
-        self.assertTrue(durable["full_pool_validation_done"])
+        self.assertFalse(durable["storage_read_executed"])
+        self.assertFalse(durable["cross_sectional_rank_zscore_done"])
+        self.assertFalse(durable["zscore_done"])
+        self.assertFalse(durable["neutralization_done"])
+        self.assertFalse(durable["factor_combination_research_done"])
+        self.assertFalse(durable["result_summary_persisted"])
+        self.assertFalse(durable["full_pool_validation_done"])
         self.assertFalse(durable["production_factor_universe_complete"])
         durable_rows = {row["evidence_key"]: row for row in packet["universe_durable_evidence_rows"]}
-        self.assertTrue(durable_rows["explicit_worker_task_required"]["passed"])
-        self.assertTrue(durable_rows["worker_runtime_binding_required"]["passed"])
-        self.assertTrue(durable_rows["storage_read_execution_required"]["passed"])
-        self.assertTrue(durable_rows["cross_sectional_rank_required"]["passed"])
-        self.assertTrue(durable_rows["zscore_required"]["passed"])
-        self.assertTrue(durable_rows["neutralization_required"]["passed"])
-        self.assertTrue(durable_rows["factor_combination_required"]["passed"])
-        self.assertTrue(durable_rows["result_summary_persistence_required"]["passed"])
-        self.assertTrue(durable_rows["full_pool_validation_required"]["passed"])
-        self.assertFalse(durable_rows["full_pool_validation_required"]["production_blocker"])
+        for evidence_key in (
+            "explicit_worker_task_required",
+            "worker_runtime_binding_required",
+            "storage_read_execution_required",
+            "cross_sectional_rank_required",
+            "zscore_required",
+            "neutralization_required",
+            "factor_combination_required",
+            "result_summary_persistence_required",
+            "full_pool_validation_required",
+        ):
+            self.assertFalse(durable_rows[evidence_key]["passed"])
+            self.assertTrue(durable_rows[evidence_key]["production_blocker"])
 
         migration = migration_status_service.build_migration_status()
         observed_stage_rows = {row["id"]: row for row in migration["ltg_stage_scope_observed_rows"]}
@@ -63222,17 +63434,18 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         assert_ltg04_factor_universe_stage_scope(
             self,
             ltg04,
-            expected_direct_count=2,
-            expected_neutralization_done=True,
-            expected_full_pool_validation_done=True,
+            expected_direct_count=1,
         )
-        self.assertIn("local_worker_batch_execution_evidence", ltg04["direct_evidence_stage_keys"])
-        self.assertTrue(ltg04["local_execution_implemented"])
+        self.assertNotIn("local_worker_batch_execution_evidence", ltg04["direct_evidence_stage_keys"])
+        self.assertEqual(
+            ltg04["factor_universe_direct_evidence_layer"],
+            "L3_local_factor_universe_research_preview",
+        )
         self.assertFalse(ltg04["worker_execution_implemented"])
-        self.assertTrue(ltg04["worker_batch_executed"])
-        self.assertTrue(ltg04["cross_sectional_rank_zscore_done"])
-        self.assertTrue(ltg04["neutralization_done"])
-        self.assertTrue(ltg04["full_pool_validation_done"])
+        self.assertFalse(ltg04["worker_batch_executed"])
+        self.assertFalse(ltg04["cross_sectional_rank_zscore_done"])
+        self.assertFalse(ltg04["neutralization_done"])
+        self.assertFalse(ltg04["full_pool_validation_done"])
         self.assertFalse(ltg04["production_factor_universe_complete"])
         self.assertNotIn("SHOULD_DROP", json.dumps(migration, ensure_ascii=False))
 
