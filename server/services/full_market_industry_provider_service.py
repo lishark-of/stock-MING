@@ -12,6 +12,7 @@ from . import task_service
 from .full_market_industry_evidence_writer import (
     _promote_provider_evidence,
     _provider_execution_task,
+    _resume_attested_provider_evidence,
 )
 from .full_market_industry_provider_collector import (
     _collect_provider_pages,
@@ -352,6 +353,42 @@ def run_full_market_industry_membership_provider_execution(
             call_ledger=[],
             meta_path=meta_path,
             error="provider_replay_success_history_missing",
+        )
+
+    try:
+        resumed = _resume_attested_provider_evidence(
+            evidence_root=evidence_root,
+            request=request,
+            provider=provider,
+            semantic=semantic,
+        )
+    except Exception as exc:
+        resumed = {
+            "ready": False,
+            "status": f"staged_generation_resume_failed_{type(exc).__name__}",
+        }
+    if resumed.get("status") != "no_staged_generation":
+        resumed_ready = resumed.get("ready") is True
+        resumed_ledger = (
+            [dict(row) for row in resumed.get("call_ledger") or []]
+            if type(resumed.get("call_ledger")) is list
+            else []
+        )
+        return _provider_execution_task(
+            request_digest=request_digest,
+            payload={
+                **base_payload,
+                **resumed,
+                "provider_execution_triggered": False,
+                "production_pointer_written": resumed_ready,
+                "external_calls_triggered": False,
+                "tushare_called": False,
+            },
+            status="success" if resumed_ready else "failed",
+            step=str(resumed.get("status") or "staged_generation_resume_blocked"),
+            call_ledger=resumed_ledger,
+            meta_path=meta_path,
+            error="" if resumed_ready else str(resumed.get("status") or "resume_blocked"),
         )
 
     root = evidence_root / INDUSTRY_ROOT_RELATIVE

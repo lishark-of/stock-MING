@@ -12,6 +12,7 @@ from typing import Any
 from storage.sqlite_meta import SQLiteMetaStore
 
 from . import task_service
+from . import full_market_industry_generation_attestation as generation_trust
 from .full_market_industry_service import (
     ARTIFACT_SCHEMA_VERSION,
     CALL_LEDGER_SCHEMA_VERSION,
@@ -110,6 +111,172 @@ def _provider_execution_task(
     )
     SQLiteMetaStore(meta_path).write_task_status(task)
     return task
+
+
+def _resume_attested_provider_evidence(
+    *,
+    evidence_root: Path,
+    request: Mapping[str, Any],
+    provider: Mapping[str, Any],
+    semantic: Mapping[str, Any],
+) -> dict[str, Any]:
+    root = evidence_root / INDUSTRY_ROOT_RELATIVE
+    request_digest = str(request.get("request_digest") or "")
+    prefix = f"industry-{provider.get('validated_trade_date')}-{request_digest[:12]}-"
+    versions_root = root / "versions"
+    candidates = (
+        sorted(
+            path
+            for path in versions_root.iterdir()
+            if path.is_dir() and not path.is_symlink() and path.name.startswith(prefix)
+        )
+        if versions_root.is_dir() and not versions_root.is_symlink()
+        else []
+    )
+    if not candidates:
+        return {"ready": False, "status": "no_staged_generation"}
+    if len(candidates) != 1:
+        return {"ready": False, "status": "staged_generation_set_ambiguous"}
+    manifest = _read_json(candidates[0] / "manifest.json")
+    manifest = dict(manifest) if isinstance(manifest, Mapping) else {}
+    producer_binding = (
+        manifest.get("producer_binding")
+        if type(manifest.get("producer_binding")) is dict
+        else {}
+    )
+    if (
+        manifest.get("version_id") != candidates[0].name
+        or producer_binding.get("execution_request_digest") != request_digest
+        or producer_binding.get("execution_request_scope_digest")
+        != request.get("scope_digest")
+        or producer_binding.get("provider_scope_digest") != provider.get("scope_hash")
+        or producer_binding.get("provider_version_digest")
+        != provider.get("version_digest")
+        or manifest.get("universe_digest") != provider.get("universe_digest")
+        or manifest.get("validated_trade_date") != provider.get("validated_trade_date")
+        or manifest.get("semantic_evidence_sha256") != semantic.get("sha256")
+        or producer_binding.get("semantic_authority_signature_sha256")
+        != semantic.get("signature_sha256")
+    ):
+        return {"ready": False, "status": "staged_generation_binding_invalid"}
+    previous = validate_full_market_industry_membership(
+        evidence_root,
+        expected_symbols=provider.get("symbols"),
+        expected_universe_digest=provider.get("universe_digest"),
+        expected_validated_trade_date=provider.get("validated_trade_date"),
+        _generation_attestation_must_be_latest=False,
+    )
+    previous_pointer_value = _read_json(root / POINTER_FILE)
+    previous_pointer = (
+        dict(previous_pointer_value)
+        if previous.get("ready") is True
+        and isinstance(previous_pointer_value, Mapping)
+        and previous_pointer_value.get("schema_version")
+        == PRODUCED_POINTER_SCHEMA_VERSION
+        else {}
+    )
+    pointer_previous_attestation = (
+        str(previous_pointer.get("generation_attestation_digest") or "")
+        if previous_pointer
+        else generation_trust.ZERO_DIGEST
+    )
+    attestation_probe = generation_trust.validate_generation_attestation(
+        manifest,
+        expected_previous_attestation_digest=pointer_previous_attestation,
+        require_latest=True,
+    )
+    previous_attestation = str(
+        attestation_probe.get("previous_attestation_digest")
+        if attestation_probe.get("attestation_digest")
+        else attestation_probe.get("history_head_digest")
+        or generation_trust.ZERO_DIGEST
+    )
+    attestation = generation_trust.validate_generation_attestation(
+        manifest,
+        expected_previous_attestation_digest=previous_attestation,
+        require_latest=True,
+    )
+    if attestation.get("ready") is not True:
+        return {
+            "ready": False,
+            "status": "awaiting_external_generation_attestation",
+            "version_id": manifest.get("version_id"),
+            "manifest_digest": manifest.get("manifest_digest"),
+            "generation_attestation_claims": attestation.get("claims"),
+            "generation_attestation_blockers": attestation.get("blockers"),
+        }
+    pointer = {
+        "schema_version": PRODUCED_POINTER_SCHEMA_VERSION,
+        "current_generation": manifest.get("version_id"),
+        "version_id": manifest.get("version_id"),
+        "manifest_file": f"versions/{manifest.get('version_id')}/manifest.json",
+        "manifest_digest": manifest.get("manifest_digest"),
+        "artifact_sha256": manifest.get("artifact_sha256"),
+        "raw_artifact_sha256": manifest.get("raw_artifact_sha256"),
+        "call_ledger_sha256": manifest.get("call_ledger_sha256"),
+        "producer_binding_digest": manifest.get("producer_binding_digest"),
+        "execution_request_digest": producer_binding.get("execution_request_digest"),
+        "generation_attestation_digest": attestation.get("attestation_digest"),
+        "generation_attestation_previous_digest": previous_attestation,
+        "producer_head_full": producer_binding.get("producer_head_full"),
+        "provider_scope_digest": producer_binding.get("provider_scope_digest"),
+        "provider_version_digest": producer_binding.get("provider_version_digest"),
+        "scope_digest": manifest.get("scope_digest"),
+        "source_version_digest": manifest.get("source_version_digest"),
+        "semantic_evidence_sha256": manifest.get("semantic_evidence_sha256"),
+        "universe_digest": manifest.get("universe_digest"),
+        "validated_trade_date": manifest.get("validated_trade_date"),
+        "as_of_date": manifest.get("as_of_date"),
+        "last_good_generation": manifest.get("version_id"),
+        "last_good_manifest_file": f"versions/{manifest.get('version_id')}/manifest.json",
+        "last_good_manifest_digest": manifest.get("manifest_digest"),
+        "last_good_generation_attestation_digest": attestation.get(
+            "attestation_digest"
+        ),
+    }
+    pointer["last_good_binding"] = _generation_binding(pointer)
+    if previous_pointer:
+        pointer.update(
+            {
+                "last_good_generation": previous_pointer["current_generation"],
+                "last_good_manifest_file": previous_pointer["manifest_file"],
+                "last_good_manifest_digest": previous_pointer["manifest_digest"],
+                "last_good_generation_attestation_digest": previous_pointer[
+                    "generation_attestation_digest"
+                ],
+                "last_good_binding": _generation_binding(previous_pointer),
+            }
+        )
+    pointer["pointer_digest"] = _digest(pointer)
+    _atomic_write_bytes(root / POINTER_FILE, _canonical_bytes(pointer))
+    verified = validate_full_market_industry_membership(
+        evidence_root,
+        expected_symbols=provider.get("symbols"),
+        expected_universe_digest=provider.get("universe_digest"),
+        expected_validated_trade_date=provider.get("validated_trade_date"),
+    )
+    ledger = _read_json(candidates[0] / "call-ledger.json")
+    ledger_rows = ledger.get("rows") if type(ledger) is dict else []
+    if verified.get("ready") is not True or type(ledger_rows) is not list:
+        return {
+            "ready": False,
+            "status": "industry_generation_pointer_readback_failed_closed",
+        }
+    return {
+        "ready": True,
+        "status": "full_market_industry_membership_provider_execution_complete",
+        "version_id": manifest.get("version_id"),
+        "pointer_digest": pointer["pointer_digest"],
+        "manifest_digest": manifest.get("manifest_digest"),
+        "artifact_sha256": manifest.get("artifact_sha256"),
+        "raw_artifact_sha256": manifest.get("raw_artifact_sha256"),
+        "call_ledger_sha256": manifest.get("call_ledger_sha256"),
+        "producer_binding_digest": manifest.get("producer_binding_digest"),
+        "generation_attestation_digest": attestation.get("attestation_digest"),
+        "validated": verified,
+        "call_ledger": [dict(row) for row in ledger_rows if type(row) is dict],
+        "resumed_staged_generation_without_provider_call": True,
+    }
 
 
 def _promote_provider_evidence(
@@ -241,32 +408,6 @@ def _promote_provider_evidence(
         "semantic_evidence_sha256": semantic.get("sha256"),
     }
     manifest["manifest_digest"] = _digest(manifest)
-    pointer = {
-        "schema_version": PRODUCED_POINTER_SCHEMA_VERSION,
-        "current_generation": version_id,
-        "version_id": version_id,
-        "manifest_file": manifest_relative.as_posix(),
-        "manifest_digest": manifest["manifest_digest"],
-        "artifact_sha256": artifact_sha256,
-        "raw_artifact_sha256": raw_sha256,
-        "call_ledger_sha256": ledger_sha256,
-        "producer_binding_digest": producer_binding_digest,
-        "execution_request_digest": request_digest,
-        "producer_head_full": producer_binding["producer_head_full"],
-        "provider_scope_digest": producer_binding["provider_scope_digest"],
-        "provider_version_digest": producer_binding["provider_version_digest"],
-        "scope_digest": scope_digest,
-        "source_version_digest": manifest["source_version_digest"],
-        "semantic_evidence_sha256": semantic.get("sha256"),
-        "universe_digest": provider.get("universe_digest"),
-        "validated_trade_date": provider.get("validated_trade_date"),
-        "as_of_date": provider.get("validated_trade_date"),
-        "last_good_generation": version_id,
-        "last_good_manifest_file": manifest_relative.as_posix(),
-        "last_good_manifest_digest": manifest["manifest_digest"],
-    }
-    pointer["last_good_binding"] = _generation_binding(pointer)
-    pointer["pointer_digest"] = _digest(pointer)
     previous_validation = validate_full_market_industry_membership(
         evidence_root,
         expected_symbols=provider.get("symbols"),
@@ -281,6 +422,60 @@ def _promote_provider_evidence(
         and previous_pointer.get("schema_version") == PRODUCED_POINTER_SCHEMA_VERSION
         else {}
     )
+    pointer_previous_attestation = (
+        str(previous_pointer.get("generation_attestation_digest") or "")
+        if previous_pointer
+        else generation_trust.ZERO_DIGEST
+    )
+    attestation_probe = generation_trust.validate_generation_attestation(
+        manifest,
+        expected_previous_attestation_digest=pointer_previous_attestation,
+        require_latest=True,
+    )
+    expected_previous_attestation = str(
+        attestation_probe.get("previous_attestation_digest")
+        if attestation_probe.get("attestation_digest")
+        else attestation_probe.get("history_head_digest")
+        or generation_trust.ZERO_DIGEST
+    )
+    generation_attestation = generation_trust.validate_generation_attestation(
+        manifest,
+        expected_previous_attestation_digest=expected_previous_attestation,
+        require_latest=True,
+    )
+    pointer = {
+        "schema_version": PRODUCED_POINTER_SCHEMA_VERSION,
+        "current_generation": version_id,
+        "version_id": version_id,
+        "manifest_file": manifest_relative.as_posix(),
+        "manifest_digest": manifest["manifest_digest"],
+        "artifact_sha256": artifact_sha256,
+        "raw_artifact_sha256": raw_sha256,
+        "call_ledger_sha256": ledger_sha256,
+        "producer_binding_digest": producer_binding_digest,
+        "execution_request_digest": request_digest,
+        "generation_attestation_digest": generation_attestation.get(
+            "attestation_digest"
+        ),
+        "generation_attestation_previous_digest": expected_previous_attestation,
+        "producer_head_full": producer_binding["producer_head_full"],
+        "provider_scope_digest": producer_binding["provider_scope_digest"],
+        "provider_version_digest": producer_binding["provider_version_digest"],
+        "scope_digest": scope_digest,
+        "source_version_digest": manifest["source_version_digest"],
+        "semantic_evidence_sha256": semantic.get("sha256"),
+        "universe_digest": provider.get("universe_digest"),
+        "validated_trade_date": provider.get("validated_trade_date"),
+        "as_of_date": provider.get("validated_trade_date"),
+        "last_good_generation": version_id,
+        "last_good_generation_attestation_digest": generation_attestation.get(
+            "attestation_digest"
+        ),
+        "last_good_manifest_file": manifest_relative.as_posix(),
+        "last_good_manifest_digest": manifest["manifest_digest"],
+    }
+    pointer["last_good_binding"] = _generation_binding(pointer)
+    pointer["pointer_digest"] = _digest(pointer)
     stage_evidence = evidence_root / f".industry-stage-{uuid.uuid4().hex}"
     stage_root = stage_evidence / INDUSTRY_ROOT_RELATIVE
     stage_version = stage_root / version_relative
@@ -305,6 +500,7 @@ def _promote_provider_evidence(
             expected_symbols=provider.get("symbols"),
             expected_universe_digest=provider.get("universe_digest"),
             expected_validated_trade_date=provider.get("validated_trade_date"),
+            _require_generation_attestation=False,
         )
         if staged.get("ready") is not True:
             return {
@@ -317,6 +513,20 @@ def _promote_provider_evidence(
             return {"ready": False, "status": "industry_immutable_version_collision"}
         os.replace(stage_version, final_version)
         _fsync_dir(final_version.parent)
+        if generation_attestation.get("ready") is not True:
+            return {
+                "ready": False,
+                "status": "awaiting_external_generation_attestation",
+                "version_id": version_id,
+                "manifest_digest": manifest["manifest_digest"],
+                "generation_attestation_claims": generation_attestation.get(
+                    "claims"
+                ),
+                "generation_attestation_blockers": generation_attestation.get(
+                    "blockers"
+                ),
+                "production_pointer_written": False,
+            }
         current_path = root / POINTER_FILE
         final_pointer = dict(pointer)
         if previous_pointer:
@@ -325,6 +535,9 @@ def _promote_provider_evidence(
                     "last_good_generation": previous_pointer["current_generation"],
                     "last_good_manifest_file": previous_pointer["manifest_file"],
                     "last_good_manifest_digest": previous_pointer["manifest_digest"],
+                    "last_good_generation_attestation_digest": previous_pointer[
+                        "generation_attestation_digest"
+                    ],
                     "last_good_binding": _generation_binding(previous_pointer),
                 }
             )

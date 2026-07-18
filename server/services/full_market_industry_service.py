@@ -30,6 +30,8 @@ from cryptography.hazmat.primitives.constant_time import bytes_eq
 from server.services import external_production_attestation_service as external_trust
 from server.services.task_service import create_task_record, update_task_status
 
+from . import full_market_industry_generation_attestation as generation_trust
+
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 EVIDENCE_ROOT = PROJECT_ROOT / ".stock_ming_3"
@@ -39,7 +41,7 @@ POINTER_FILE = "pointer.json"
 POINTER_SCHEMA_VERSION = "full_market_industry_membership_pointer.v2"
 MANIFEST_SCHEMA_VERSION = "full_market_industry_membership_manifest.v2"
 ARTIFACT_SCHEMA_VERSION = "full_market_industry_membership_artifact.v1"
-PRODUCED_POINTER_SCHEMA_VERSION = "full_market_industry_membership_generation_pointer.v5"
+PRODUCED_POINTER_SCHEMA_VERSION = "full_market_industry_membership_generation_pointer.v6"
 PRODUCED_MANIFEST_SCHEMA_VERSION = "full_market_industry_membership_manifest.v3"
 RAW_ARTIFACT_SCHEMA_VERSION = "full_market_industry_membership_raw_artifact.v1"
 CALL_LEDGER_SCHEMA_VERSION = "full_market_industry_membership_call_ledger.v1"
@@ -99,6 +101,8 @@ GENERATION_BINDING_FIELDS = {
     "call_ledger_sha256",
     "current_generation",
     "execution_request_digest",
+    "generation_attestation_digest",
+    "generation_attestation_previous_digest",
     "manifest_digest",
     "manifest_file",
     "producer_binding_digest",
@@ -630,6 +634,8 @@ def validate_full_market_industry_membership(
     expected_validated_trade_date: Any,
     _pointer_override: Mapping[str, Any] | None = None,
     _validate_last_good: bool = True,
+    _require_generation_attestation: bool = True,
+    _generation_attestation_must_be_latest: bool = True,
 ) -> dict[str, Any]:
     """Read and verify the current full-market industry pointer without writes."""
 
@@ -676,8 +682,11 @@ def validate_full_market_industry_membership(
         "call_ledger_sha256",
         "current_generation",
         "execution_request_digest",
+        "generation_attestation_digest",
+        "generation_attestation_previous_digest",
         "last_good_binding",
         "last_good_generation",
+        "last_good_generation_attestation_digest",
         "last_good_manifest_digest",
         "last_good_manifest_file",
         "producer_binding_digest",
@@ -798,6 +807,7 @@ def validate_full_market_industry_membership(
     raw_artifact_sha256 = ""
     call_ledger_sha256 = ""
     producer_binding: dict[str, Any] = {}
+    generation_attestation: dict[str, Any] = {}
     raw_provider_rows: list[dict[str, Any]] = []
     ledger_rows: list[dict[str, Any]] = []
     if produced_manifest:
@@ -943,6 +953,24 @@ def validate_full_market_industry_membership(
                 observed_at=observed_at,
             )
         )
+        if _require_generation_attestation:
+            generation_attestation = generation_trust.validate_generation_attestation(
+                manifest,
+                expected_previous_attestation_digest=str(
+                    pointer.get("generation_attestation_previous_digest") or ""
+                ),
+                require_latest=_generation_attestation_must_be_latest,
+            )
+            blockers.extend(generation_attestation.get("blockers") or [])
+            if (
+                pointer.get("generation_attestation_digest")
+                != generation_attestation.get("attestation_digest")
+                or pointer.get("generation_attestation_previous_digest")
+                != generation_attestation.get("previous_attestation_digest")
+            ):
+                blockers.append(
+                    "industry_generation_attestation_pointer_binding_invalid"
+                )
 
     as_of_date = _date(manifest.get("as_of_date"))
     exact_bindings = {
@@ -1023,6 +1051,8 @@ def validate_full_market_industry_membership(
             or last_good_binding.get("manifest_file") != last_good_file
             or last_good_binding.get("manifest_digest")
             != pointer.get("last_good_manifest_digest")
+            or last_good_binding.get("generation_attestation_digest")
+            != pointer.get("last_good_generation_attestation_digest")
         ):
             blockers.append("industry_generation_pointer_recovery_binding_invalid")
         if last_good_id == version_id and (
@@ -1043,6 +1073,9 @@ def validate_full_market_industry_membership(
                 "last_good_generation": last_good_id,
                 "last_good_manifest_file": last_good_file,
                 "last_good_manifest_digest": last_good.get("manifest_digest"),
+                "last_good_generation_attestation_digest": last_good_binding.get(
+                    "generation_attestation_digest"
+                ),
                 "last_good_binding": dict(last_good_binding),
             }
             recovery_pointer["pointer_digest"] = _digest(recovery_pointer)
@@ -1053,10 +1086,19 @@ def validate_full_market_industry_membership(
                 expected_validated_trade_date=validated_trade_date,
                 _pointer_override=recovery_pointer,
                 _validate_last_good=False,
+                _require_generation_attestation=True,
+                _generation_attestation_must_be_latest=False,
             )
             if recovery.get("ready") is not True:
                 blockers.append("industry_generation_pointer_recovery_invalid")
                 blockers.extend(recovery.get("blockers") or [])
+        if (
+            _validate_last_good
+            and last_good_id == version_id
+            and pointer.get("last_good_generation_attestation_digest")
+            != pointer.get("generation_attestation_digest")
+        ):
+            blockers.append("industry_generation_attestation_chain_invalid")
     scope = manifest.get("scope") if type(manifest.get("scope")) is dict else {}
     expected_scope = {
         "schema_version": SCOPE_SCHEMA_VERSION,

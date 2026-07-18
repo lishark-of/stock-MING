@@ -9199,6 +9199,8 @@ def _factor_test_provider_industry_membership_execute(
                 adapter_module,
                 result,
                 FACTOR_TEST_INDUSTRY_PROVIDER_API,
+                expected_params=params,
+                expected_call_count=1,
             )
             if live_adapter
             else {

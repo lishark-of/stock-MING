@@ -22,6 +22,7 @@ from server.main import app
 from server.services import full_market_industry_provider_service as provider_service
 from server.services import full_market_industry_provider_collector as provider_collector
 from server.services import full_market_industry_evidence_writer as evidence_writer
+from server.services import full_market_industry_generation_attestation as generation_trust
 from server.services import full_market_industry_service as service
 from server.services import external_production_attestation_service as external_trust
 from server.services import task_service
@@ -125,6 +126,98 @@ def _install_semantic_authority(stack: ExitStack) -> tuple[Path, Path]:
         )
     )
     return trust_root, authority_path
+
+
+class _IndependentGenerationSigner:
+    def __init__(self, root: Path, private_key: Ed25519PrivateKey, fingerprint: str):
+        self.root = root
+        self.private_key = private_key
+        self.fingerprint = fingerprint
+        self.history_path = root / "attestation-history.json"
+
+    def reset(self) -> None:
+        history = {
+            "schema_version": generation_trust.HISTORY_SCHEMA_VERSION,
+            "events": [],
+            "history_digest": generation_trust._digest([]),
+        }
+        self.root.chmod(0o755)
+        self.history_path.chmod(0o644)
+        self.history_path.write_bytes(generation_trust._canonical_bytes(history))
+        self.history_path.chmod(0o444)
+        self.root.chmod(0o555)
+
+    def append(self, claims: dict, **overrides) -> dict:
+        statement = {
+            **claims,
+            "issued_at_utc": (
+                datetime.now(timezone.utc) - timedelta(seconds=1)
+            ).isoformat().replace("+00:00", "Z"),
+            "expires_at_utc": (
+                datetime.now(timezone.utc) + timedelta(days=30)
+            ).isoformat().replace("+00:00", "Z"),
+            **overrides,
+        }
+        envelope = {
+            "schema_version": generation_trust.ENVELOPE_SCHEMA_VERSION,
+            "algorithm": "Ed25519",
+            "key_fingerprint_sha256": self.fingerprint,
+            "statement": statement,
+            "signature_base64": base64.b64encode(
+                self.private_key.sign(generation_trust._canonical_bytes(statement))
+            ).decode("ascii"),
+        }
+        history = json.loads(self.history_path.read_text())
+        history["events"].append(envelope)
+        history["history_digest"] = generation_trust._digest(history["events"])
+        self.root.chmod(0o755)
+        self.history_path.chmod(0o644)
+        self.history_path.write_bytes(generation_trust._canonical_bytes(history))
+        self.history_path.chmod(0o444)
+        self.root.chmod(0o555)
+        return envelope
+
+
+def _install_generation_authority(stack: ExitStack) -> _IndependentGenerationSigner:
+    trust_parent = Path(stack.enter_context(tempfile.TemporaryDirectory()))
+    trust_root = trust_parent / "generation-trust"
+    trust_root.mkdir()
+    private_key = Ed25519PrivateKey.generate()
+    public_key = private_key.public_key()
+    pem = public_key.public_bytes(
+        serialization.Encoding.PEM,
+        serialization.PublicFormat.SubjectPublicKeyInfo,
+    )
+    der = public_key.public_bytes(
+        serialization.Encoding.DER,
+        serialization.PublicFormat.SubjectPublicKeyInfo,
+    )
+    fingerprint = hashlib.sha256(der).hexdigest()
+    key_path = trust_root / "ed25519-public.pem"
+    fingerprint_path = trust_root / "ed25519-public.sha256"
+    history_path = trust_root / "attestation-history.json"
+    key_path.write_bytes(pem)
+    fingerprint_path.write_text(fingerprint + "\n", encoding="ascii")
+    history = {
+        "schema_version": generation_trust.HISTORY_SCHEMA_VERSION,
+        "events": [],
+        "history_digest": generation_trust._digest([]),
+    }
+    history_path.write_bytes(generation_trust._canonical_bytes(history))
+    for path in (key_path, fingerprint_path, history_path):
+        path.chmod(0o444)
+    trust_root.chmod(0o555)
+    stack.enter_context(
+        patch.multiple(
+            generation_trust,
+            TRUST_ROOT=trust_root,
+            PUBLIC_KEY_PATH=key_path,
+            FINGERPRINT_PATH=fingerprint_path,
+            HISTORY_PATH=history_path,
+            TRUSTED_OWNER_UIDS=frozenset({os.getuid()}),
+        )
+    )
+    return _IndependentGenerationSigner(trust_root, private_key, fingerprint)
 
 
 def _write_evidence(
@@ -708,6 +801,7 @@ class FullMarketIndustryProviderRunnerTests(unittest.TestCase):
     def setUp(self) -> None:
         self.stack = ExitStack()
         self.trust_root, self.authority_path = _install_semantic_authority(self.stack)
+        self.generation_signer = _install_generation_authority(self.stack)
 
     def tearDown(self) -> None:
         self.stack.close()
@@ -729,8 +823,16 @@ class FullMarketIndustryProviderRunnerTests(unittest.TestCase):
             )
         return task, upstream, meta_path
 
-    @staticmethod
-    def _run(root: Path, meta_path: Path, task: dict, upstream: dict, client):
+    def _run(
+        self,
+        root: Path,
+        meta_path: Path,
+        task: dict,
+        upstream: dict,
+        client,
+        *,
+        auto_attest: bool = True,
+    ):
         payload = {
             "request_task_id": task["task_id"],
             "execute_provider_request": True,
@@ -745,11 +847,25 @@ class FullMarketIndustryProviderRunnerTests(unittest.TestCase):
             "_load_official_index_member_client",
             return_value=client,
         ):
-            return provider_service.run_full_market_industry_membership_provider_execution(
+            result = provider_service.run_full_market_industry_membership_provider_execution(
                 payload,
                 evidence_root=root,
                 meta_path=meta_path,
             )
+            if (
+                auto_attest
+                and result.get("payload_safe", {}).get("status")
+                == "awaiting_external_generation_attestation"
+            ):
+                self.generation_signer.append(
+                    result["payload_safe"]["generation_attestation_claims"]
+                )
+                result = provider_service.run_full_market_industry_membership_provider_execution(
+                    payload,
+                    evidence_root=root,
+                    meta_path=meta_path,
+                )
+            return result
 
     def test_paginated_success_writes_verified_atomic_generation_pointer(self):
         symbols = _symbols()
@@ -777,6 +893,108 @@ class FullMarketIndustryProviderRunnerTests(unittest.TestCase):
         self.assertEqual(pointer["schema_version"], service.PRODUCED_POINTER_SCHEMA_VERSION)
         self.assertEqual([row["row_count"] for row in result["call_ledger"]], [2000, 1000, 0])
         self.assertEqual({row["api"] for row in result["call_ledger"]}, {service.SOURCE_API})
+
+    def test_generation_requires_external_signed_chain_before_pointer_promotion(self):
+        symbols = _symbols()
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            task, upstream, meta_path = self._request(root, symbols)
+            client = _PagedIndustryClient({"Y": _provider_rows(symbols), "N": []})
+            staged = self._run(
+                root,
+                meta_path,
+                task,
+                upstream,
+                client,
+                auto_attest=False,
+            )
+            self.assertEqual(staged["status"], "failed")
+            self.assertEqual(
+                staged["payload_safe"]["status"],
+                "awaiting_external_generation_attestation",
+            )
+            pointer_path = root / service.INDUSTRY_ROOT_RELATIVE / service.POINTER_FILE
+            self.assertFalse(pointer_path.exists())
+            self.assertEqual(
+                json.loads(self.generation_signer.history_path.read_text())["events"],
+                [],
+            )
+            self.assertTrue(
+                (
+                    root
+                    / service.INDUSTRY_ROOT_RELATIVE
+                    / "versions"
+                    / staged["payload_safe"]["version_id"]
+                    / "manifest.json"
+                ).is_file()
+            )
+            calls_before = list(client.calls)
+            self.generation_signer.append(
+                staged["payload_safe"]["generation_attestation_claims"]
+            )
+            promoted = self._run(
+                root,
+                meta_path,
+                task,
+                upstream,
+                client,
+                auto_attest=False,
+            )
+            self.assertEqual(promoted["status"], "success", promoted)
+            self.assertTrue(pointer_path.is_file())
+            self.assertEqual(client.calls, calls_before)
+            self.assertTrue(
+                promoted["payload_safe"][
+                    "resumed_staged_generation_without_provider_call"
+                ]
+            )
+
+    def test_generation_chain_replay_old_head_and_wrong_previous_fail_closed(self):
+        symbols = _symbols()
+        for attack in ("replay", "old_head", "wrong_previous"):
+            with self.subTest(attack=attack), tempfile.TemporaryDirectory() as directory:
+                self.generation_signer.reset()
+                root = Path(directory)
+                task, upstream, meta_path = self._request(root, symbols)
+                client = _PagedIndustryClient({"Y": _provider_rows(symbols), "N": []})
+                staged = self._run(
+                    root,
+                    meta_path,
+                    task,
+                    upstream,
+                    client,
+                    auto_attest=False,
+                )
+                claims = staged["payload_safe"]["generation_attestation_claims"]
+                if attack == "old_head":
+                    self.generation_signer.append(
+                        claims,
+                        producer_head_full="0" * 40,
+                    )
+                elif attack == "wrong_previous":
+                    self.generation_signer.append(
+                        claims,
+                        previous_attestation_digest="f" * 64,
+                    )
+                else:
+                    self.generation_signer.append(claims)
+                    self.generation_signer.append(claims)
+                blocked = self._run(
+                    root,
+                    meta_path,
+                    task,
+                    upstream,
+                    client,
+                    auto_attest=False,
+                )
+                self.assertEqual(blocked["status"], "failed")
+                self.assertEqual(
+                    blocked["payload_safe"]["status"],
+                    "awaiting_external_generation_attestation",
+                )
+                self.assertFalse(
+                    (root / service.INDUSTRY_ROOT_RELATIVE / service.POINTER_FILE).exists()
+                )
 
     def test_duplicate_overlap_permission_empty_and_partial_failure_preserve_last_good(self):
         symbols = _symbols()
@@ -1077,7 +1295,11 @@ class FullMarketIndustryProviderRunnerTests(unittest.TestCase):
                 expected_universe_digest=upstream["universe_digest"],
                 expected_validated_trade_date=upstream["validated_trade_date"],
             )
-            self.assertTrue(recovered["ready"], recovered["blockers"])
+            self.assertFalse(recovered["ready"])
+            self.assertIn(
+                "industry_generation_attestation_not_latest",
+                recovered["blockers"],
+            )
 
             third_task, upstream, meta_path = self._request(root, symbols)
             promoted = self._run(
@@ -1099,6 +1321,20 @@ class FullMarketIndustryProviderRunnerTests(unittest.TestCase):
                 / promoted_pointer["last_good_manifest_file"]
             )
             prior_manifest = json.loads(prior_manifest_path.read_text())
+            promoted_pointer_bytes = pointer_path.read_bytes()
+            pointer_path.write_bytes(pointer_before)
+            replayed_pointer = service.validate_full_market_industry_membership(
+                root,
+                expected_symbols=symbols,
+                expected_universe_digest=upstream["universe_digest"],
+                expected_validated_trade_date=upstream["validated_trade_date"],
+            )
+            self.assertFalse(replayed_pointer["ready"])
+            self.assertIn(
+                "industry_generation_attestation_not_latest",
+                replayed_pointer["blockers"],
+            )
+            pointer_path.write_bytes(promoted_pointer_bytes)
             prior_raw_path = (
                 root
                 / service.INDUSTRY_ROOT_RELATIVE
@@ -1120,7 +1356,6 @@ class FullMarketIndustryProviderRunnerTests(unittest.TestCase):
             prior_raw_path.write_bytes(prior_raw_bytes)
 
             prior_manifest_bytes = prior_manifest_path.read_bytes()
-            promoted_pointer_bytes = pointer_path.read_bytes()
             for field, replacement in (
                 ("provider_scope_digest", "e" * 64),
                 ("producer_head_full", "b" * 40),

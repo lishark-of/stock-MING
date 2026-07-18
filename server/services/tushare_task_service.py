@@ -5990,7 +5990,14 @@ def _write_parquet_dataset(
     return result
 
 
-def _consume_runtime_transport_evidence(adapter_module: Any, result: Mapping[str, Any], api: str) -> dict[str, Any]:
+def _consume_runtime_transport_evidence(
+    adapter_module: Any,
+    result: Mapping[str, Any],
+    api: str,
+    *,
+    expected_params: Mapping[str, Any] | list[Mapping[str, Any]] | None = None,
+    expected_call_count: int | None = None,
+) -> dict[str, Any]:
     module_file = Path(str(getattr(adapter_module, "__file__", "") or ""))
     expected_file = Path(__file__).resolve().parents[2] / "tushare_adapter.py"
     module_identity_verified = bool(
@@ -5998,9 +6005,17 @@ def _consume_runtime_transport_evidence(adapter_module: Any, result: Mapping[str
         and module_file.exists()
         and module_file.resolve() == expected_file.resolve()
     )
-    call_ids = [str(item) for item in result.get("transport_call_ids") or [] if str(item or "")]
-    if not call_ids and result.get("transport_call_id"):
-        call_ids = [str(result.get("transport_call_id"))]
+    raw_call_ids = result.get("transport_call_ids")
+    call_ids_contract_valid = bool(
+        type(raw_call_ids) is list
+        and raw_call_ids
+        and all(type(item) is str and item for item in raw_call_ids)
+    )
+    call_ids = list(raw_call_ids) if call_ids_contract_valid else []
+    if len(call_ids) == 1:
+        call_ids_contract_valid = result.get("transport_call_id") == call_ids[0]
+    elif len(call_ids) > 1:
+        call_ids_contract_valid = result.get("transport_call_id") in (None, "")
     consume = getattr(adapter_module, "consume_transport_receipt", None)
     receipts: list[dict[str, Any]] = []
     if module_identity_verified and callable(consume):
@@ -6044,9 +6059,38 @@ def _consume_runtime_transport_evidence(adapter_module: Any, result: Mapping[str
             and (now - completed).total_seconds() <= 300
         )
 
+    def canonical_params(value: Any) -> str | None:
+        if type(value) is not dict:
+            return None
+        try:
+            return json.dumps(
+                value,
+                ensure_ascii=False,
+                sort_keys=True,
+                separators=(",", ":"),
+                allow_nan=False,
+            )
+        except (TypeError, ValueError):
+            return None
+
+    expected_param_rows = (
+        [dict(expected_params)]
+        if type(expected_params) is dict
+        else [dict(row) for row in expected_params]
+        if type(expected_params) is list
+        and all(type(row) is dict for row in expected_params)
+        else []
+    )
     verified = bool(
         module_identity_verified
+        and call_ids_contract_valid
+        and expected_call_count is not None
+        and type(expected_call_count) is int
+        and not isinstance(expected_call_count, bool)
+        and expected_call_count > 0
+        and len(expected_param_rows) == expected_call_count
         and call_ids
+        and len(call_ids) == expected_call_count
         and len(set(call_ids)) == len(call_ids)
         and len(receipts) == len(call_ids)
         and result.get("transport_receipt_version")
@@ -6058,11 +6102,14 @@ def _consume_runtime_transport_evidence(adapter_module: Any, result: Mapping[str
             and receipt.get("provider") == "Tushare"
             and receipt.get("api") == api
             and type(receipt.get("request_params_safe")) is dict
+            and canonical_params(receipt.get("request_params_safe"))
+            == canonical_params(expected_param_rows[index])
+            and canonical_params(expected_param_rows[index]) is not None
             and receipt.get("sdk_method_invoked") is True
             and receipt.get("provider_response_received") is True
             and receipt.get("official_client_identity_verified") is True
             and receipt_times_valid(receipt)
-            for call_id, receipt in zip(call_ids, receipts)
+            for index, (call_id, receipt) in enumerate(zip(call_ids, receipts))
         )
     )
     official_client_identity_verified = bool(
@@ -6203,7 +6250,7 @@ def _call_tushare_api(
     fn: Any,
     api: str,
     params: dict[str, Any],
-) -> tuple[dict[str, Any], dict[str, Any]]:
+) -> tuple[dict[str, Any], dict[str, Any], list[dict[str, Any]]]:
     if api != "trade_cal":
         try:
             result = fn(**params)
@@ -6211,7 +6258,9 @@ def _call_tushare_api(
                 result = {"ok": False, "data": None, "error": f"invalid result type: {type(result).__name__}"}
         except Exception as exc:
             result = {"ok": False, "data": None, "error": _safe_text(exc)}
-        return dict(result), params
+        return dict(result), params, [
+            {key: value for key, value in params.items() if value is not None}
+        ]
 
     exchanges = _trade_cal_exchange_values(params.get("exchange"))
     if len(exchanges) <= 1:
@@ -6224,16 +6273,23 @@ def _call_tushare_api(
                 result = {"ok": False, "data": None, "error": f"invalid result type: {type(result).__name__}"}
         except Exception as exc:
             result = {"ok": False, "data": None, "error": _safe_text(exc)}
-        return dict(result), call_params
+        return dict(result), call_params, [
+            {key: value for key, value in call_params.items() if value is not None}
+        ]
 
     combined_rows: list[dict[str, Any]] = []
     transport_call_ids: list[str] = []
+    transport_receipt_versions: list[str] = []
     errors: list[str] = []
     empty_exchanges: list[str] = []
     ok_count = 0
     empty_count = 0
+    transport_expected_params: list[dict[str, Any]] = []
     for exchange in exchanges:
         call_params = {**params, "exchange": exchange}
+        transport_expected_params.append(
+            {key: value for key, value in call_params.items() if value is not None}
+        )
         try:
             result = fn(**call_params)
             if not isinstance(result, Mapping):
@@ -6245,6 +6301,10 @@ def _call_tushare_api(
             value = str(call_id or "")
             if value:
                 transport_call_ids.append(value)
+        if isinstance(result, Mapping) and result.get("transport_receipt_version"):
+            transport_receipt_versions.append(
+                str(result.get("transport_receipt_version"))
+            )
         if result.get("ok"):
             ok_count += 1
             if not rows:
@@ -6279,8 +6339,16 @@ def _call_tushare_api(
             "exchange_empty_count": empty_count,
             "exchange_failed_count": len(exchanges) - ok_count,
             "transport_call_ids": transport_call_ids,
+            "transport_receipt_version": (
+                "tushare_runtime_transport_receipt.v2"
+                if len(transport_receipt_versions) == len(exchanges)
+                and set(transport_receipt_versions)
+                == {"tushare_runtime_transport_receipt.v2"}
+                else ""
+            ),
         },
         safe_params,
+        transport_expected_params,
     )
 
 
@@ -7120,7 +7188,13 @@ def _paginated_provider_rows(
                         result = {"ok": False, "data": None, "error": "invalid_provider_result"}
                 except Exception as exc:
                     result = {"ok": False, "data": None, "error": _safe_text(exc)}
-                transport = _consume_runtime_transport_evidence(adapter_module, result, api)
+                transport = _consume_runtime_transport_evidence(
+                    adapter_module,
+                    result,
+                    api,
+                    expected_params={**params_safe, "limit": limit, "offset": offset},
+                    expected_call_count=1,
+                )
                 page_rows = _all_provider_rows(result.get("data")) if result.get("ok") else []
                 if result.get("ok") is True and transport.get("provider_transport_verified") is True:
                     if len(page_rows) > limit:
@@ -8218,18 +8292,28 @@ def run_tushare_refresh_task(
                 call_ledger=call_ledger,
             )
             import tushare_adapter as adapter_module
+        transport_expected_params: list[dict[str, Any]] = []
         try:
             fn = getattr(adapter_module, str(REFRESH_API_SPECS[api]["method"]))
         except Exception as exc:
             result = {"ok": False, "data": None, "error": _safe_text(exc)}
             safe_params = params
+            transport_expected_params = [
+                {key: value for key, value in safe_params.items() if value is not None}
+            ]
         else:
-            result, safe_params = _call_tushare_api(fn=fn, api=api, params=params)
+            result, safe_params, transport_expected_params = _call_tushare_api(
+                fn=fn,
+                api=api,
+                params=params,
+            )
         if isinstance(result, dict):
             result["runtime_transport_evidence"] = _consume_runtime_transport_evidence(
                 adapter_module,
                 result,
                 api,
+                expected_params=transport_expected_params,
+                expected_call_count=len(transport_expected_params),
             )
         runtime_transport = (
             result.get("runtime_transport_evidence") if isinstance(result, Mapping) else {}

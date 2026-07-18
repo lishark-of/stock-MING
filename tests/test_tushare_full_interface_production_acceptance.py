@@ -104,6 +104,8 @@ class TushareFullInterfaceProductionAcceptanceTests(unittest.TestCase):
             tushare_adapter,
             result,
             "daily",
+            expected_params={"trade_date": "20260717"},
+            expected_call_count=1,
         )
         self.assertTrue(transport["runtime_adapter_module_identity_verified"])
         self.assertTrue(transport["provider_transport_verified"])
@@ -122,9 +124,126 @@ class TushareFullInterfaceProductionAcceptanceTests(unittest.TestCase):
             tushare_adapter,
             tampered_result,
             "daily",
+            expected_params={"trade_date": "20260717"},
+            expected_call_count=1,
         )
         self.assertFalse(tampered["provider_transport_verified"])
         self.assertFalse(tampered["official_client_identity_verified"])
+
+    def test_formal_transport_consumer_rejects_each_contract_field_and_missing_expectation(self):
+        import tushare_adapter
+        from tushare.pro.client import DataApi
+
+        pro = DataApi("test-only-no-network", timeout=1)
+        pro.daily = lambda **_params: tushare_adapter.pd.DataFrame(
+            [{"ts_code": "000001.SZ", "trade_date": "20260717", "close": 10.0}]
+        )
+
+        def adapter_result():
+            with patch.object(
+                tushare_adapter,
+                "_get_pro_client",
+                return_value=(pro, None),
+            ):
+                return tushare_adapter._call_pro("daily", trade_date="20260717")
+
+        for attack in (
+            "provider",
+            "api",
+            "call_id",
+            "result_call_id",
+            "params",
+            "time",
+            "client_identity",
+            "expected_params",
+            "missing_expectation",
+        ):
+            with self.subTest(attack=attack):
+                tushare_adapter._TRANSPORT_RECEIPTS.clear()
+                result = adapter_result()
+                call_id = result["transport_call_id"]
+                receipt = tushare_adapter._TRANSPORT_RECEIPTS[call_id]
+                expected_params = {"trade_date": "20260717"}
+                expected_count = 1
+                if attack == "provider":
+                    receipt["provider"] = "not-tushare"
+                elif attack == "api":
+                    receipt["api"] = "moneyflow"
+                elif attack == "call_id":
+                    receipt["call_id"] = "different-call-id"
+                elif attack == "result_call_id":
+                    result["transport_call_id"] = "different-call-id"
+                elif attack == "params":
+                    receipt["request_params_safe"] = {"trade_date": "19990101"}
+                elif attack == "time":
+                    receipt["issued_at_utc"] = "1999-01-01T00:00:00Z"
+                    receipt["completed_at_utc"] = "1999-01-01T00:00:01Z"
+                elif attack == "client_identity":
+                    receipt["official_client_identity_verified"] = False
+                elif attack == "expected_params":
+                    expected_params = {"trade_date": "19990101"}
+                else:
+                    expected_params = None
+                    expected_count = None
+                if attack == "missing_expectation":
+                    transport = (
+                        tushare_task_service._consume_runtime_transport_evidence(
+                            tushare_adapter,
+                            result,
+                            "daily",
+                        )
+                    )
+                else:
+                    transport = (
+                        tushare_task_service._consume_runtime_transport_evidence(
+                            tushare_adapter,
+                            result,
+                            "daily",
+                            expected_params=expected_params,
+                            expected_call_count=expected_count,
+                        )
+                    )
+                self.assertFalse(transport["provider_transport_verified"])
+                self.assertFalse(transport["official_client_identity_verified"])
+
+    def test_multi_exchange_trade_cal_binds_each_formal_transport_call(self):
+        import tushare_adapter
+        from tushare.pro.client import DataApi
+
+        pro = DataApi("test-only-no-network", timeout=1)
+        pro.trade_cal = lambda **params: tushare_adapter.pd.DataFrame(
+            [
+                {
+                    "exchange": params["exchange"],
+                    "cal_date": "20260717",
+                    "is_open": 1,
+                }
+            ]
+        )
+        params = {
+            "exchange": ["SSE", "SZSE"],
+            "start_date": "20260717",
+            "end_date": "20260717",
+        }
+        tushare_adapter._TRANSPORT_RECEIPTS.clear()
+        with patch.object(tushare_adapter, "_get_pro_client", return_value=(pro, None)):
+            result, _safe_params, expected_params = (
+                tushare_task_service._call_tushare_api(
+                    fn=tushare_adapter.get_trade_cal,
+                    api="trade_cal",
+                    params=params,
+                )
+            )
+        transport = tushare_task_service._consume_runtime_transport_evidence(
+            tushare_adapter,
+            result,
+            "trade_cal",
+            expected_params=expected_params,
+            expected_call_count=2,
+        )
+        self.assertTrue(transport["provider_transport_verified"], transport)
+        self.assertTrue(transport["official_client_identity_verified"])
+        self.assertEqual(transport["transport_call_count"], 2)
 
     def test_stock_basic_missing_status_uses_explicit_request_filter_provenance(self):
         normalized = tushare_task_service._normalize_stock_basic_row(
