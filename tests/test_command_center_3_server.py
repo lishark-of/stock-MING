@@ -25465,6 +25465,10 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
             dispatch_by_task["run_factor_test_provider_industry_membership"]["future_queue"],
             "provider_refresh",
         )
+        self.assertEqual(
+            dispatch_by_task["run_full_market_industry_membership_provider_execution"]["future_queue"],
+            "provider_refresh",
+        )
         self.assertEqual(dispatch_by_task["run_deepseek_factor_explanation"]["future_queue"], "model_explain")
         self.assertEqual(dispatch_by_task["run_storage_artifact_cleanup_dry_run"]["future_queue"], "local_maintenance")
         self.assertEqual(dispatch_by_task["run_storage_schema_validation_dry_run"]["future_queue"], "local_maintenance")
