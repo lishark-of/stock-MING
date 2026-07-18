@@ -2284,6 +2284,73 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         audit_service._read_git_status_short_lines = lambda: ("local_git_status_short_read", 0, [" M app.py"])
         self.addCleanup(setattr, audit_service, "_read_git_status_short_lines", original_reader)
 
+    def _run_release_receipt_recorder(self, script_name, output_path, *args):
+        script_path = Path(__file__).resolve().parents[1] / "scripts" / script_name
+        result = subprocess.run(
+            [sys.executable, str(script_path), "--output", str(output_path), *map(str, args)],
+            cwd=Path(__file__).resolve().parents[1],
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        return json.loads(output_path.read_text(encoding="utf-8"))
+
+    def _record_current_head_remote_ci_green(self, current_head, *, run_id, artifact_digest):
+        return self._run_release_receipt_recorder(
+            "record_remote_ci_review_receipt.py",
+            audit_service.REMOTE_CI_REVIEW_RECEIPT_PATH,
+            "--branch",
+            current_head["branch"],
+            "--head-full",
+            current_head["head_full"],
+            "--run-id",
+            run_id,
+            "--run-url",
+            f"https://github.com/lishark-of/stock-MING/actions/runs/{run_id}",
+            "--artifact-name",
+            f"command-center-3-push-gate-evidence-{run_id}",
+            "--artifact-digest",
+            artifact_digest,
+            "--reviewed-at-utc",
+            "2026-06-29T00:00:00Z",
+            "--review-authorized",
+        )
+
+    def _record_current_head_allowlist_review(self, current_head):
+        return self._run_release_receipt_recorder(
+            "record_secret_artifact_allowlist_review_receipt.py",
+            audit_service.SECRET_ARTIFACT_ALLOWLIST_REVIEW_RECEIPT_PATH,
+            "--branch",
+            current_head["branch"],
+            "--head-full",
+            current_head["head_full"],
+            "--reviewer",
+            "unit_test",
+            "--reviewed-at-utc",
+            "2026-06-29T00:15:00Z",
+            "--review-authorized",
+        )
+
+    def _record_current_head_release_review(self, current_head, *, run_id, artifact_digest):
+        return self._run_release_receipt_recorder(
+            "record_release_gate_review_receipt.py",
+            audit_service.RELEASE_GATE_REVIEW_RECEIPT_PATH,
+            "--branch",
+            current_head["branch"],
+            "--head-full",
+            current_head["head_full"],
+            "--remote-run-id",
+            run_id,
+            "--remote-artifact-digest",
+            artifact_digest,
+            "--reviewer",
+            "unit_test",
+            "--reviewed-at-utc",
+            "2026-06-29T00:30:00Z",
+            "--review-authorized",
+        )
+
     def _with_parquet_root(self):
         original_root = storage_service.PARQUET_ROOT
         temp_dir = tempfile.TemporaryDirectory()
@@ -26589,49 +26656,10 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
             + "\n",
             encoding="utf-8",
         )
-        audit_service.REMOTE_CI_REVIEW_RECEIPT_PATH.parent.mkdir(parents=True, exist_ok=True)
-        audit_service.REMOTE_CI_REVIEW_RECEIPT_PATH.write_text(
-            json.dumps(
-                {
-                    "schema_version": audit_service.REMOTE_CI_REVIEW_RECEIPT_SCHEMA_VERSION,
-                    "status": "remote_ci_review_verified_green",
-                    "scope": "ignored_manual_remote_ci_review_receipt_no_cache_github_api",
-                    "branch": current_head["branch"],
-                    "head": current_head["head"],
-                    "head_full": current_head["head_full"],
-                    "workflow_name": "Command Center 3 Push Gate",
-                    "event": "push",
-                    "run_id": 123456789,
-                    "run_url": "https://github.com/lishark-of/stock-MING/actions/runs/123456789",
-                    "actions_status": "completed",
-                    "actions_conclusion": "success",
-                    "job_name": "push-gate",
-                    "job_conclusion": "success",
-                    "artifact_name": "command-center-3-push-gate-evidence-123456789",
-                    "artifact_digest": "sha256:" + ("a" * 64),
-                    "artifact_digest_verified": True,
-                    "explicit_user_actions_review_authorized": True,
-                    "remote_actions_status_known": True,
-                    "latest_remote_run_verified_green": True,
-                    "remote_ci_job_page_green_observed": True,
-                    "remote_ci_artifact_digest_pending": False,
-                    "release_review_complete": False,
-                    "release_gate_complete": False,
-                    "production_release_complete": False,
-                    "cache_get_external_calls": False,
-                    "cache_get_calls_github_api": False,
-                    "external_calls_triggered": False,
-                    "tushare_called": False,
-                    "deepseek_called": False,
-                    "github_called": False,
-                    "github_api_called": False,
-                    "does_not_execute_trades": True,
-                    "does_not_modify_strategy_action": True,
-                    "contains_secret": False,
-                },
-                ensure_ascii=False,
-            ),
-            encoding="utf-8",
+        self._record_current_head_remote_ci_green(
+            current_head,
+            run_id=123456789,
+            artifact_digest="sha256:" + ("a" * 64),
         )
 
         packet = audit_service.read_call_ledger_audit_cache()
@@ -26728,85 +26756,12 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
             ),
             encoding="utf-8",
         )
-        audit_service.REMOTE_CI_REVIEW_RECEIPT_PATH.parent.mkdir(parents=True, exist_ok=True)
-        audit_service.REMOTE_CI_REVIEW_RECEIPT_PATH.write_text(
-            json.dumps(
-                {
-                    "schema_version": audit_service.REMOTE_CI_REVIEW_RECEIPT_SCHEMA_VERSION,
-                    "status": "remote_ci_review_verified_green",
-                    "scope": "ignored_manual_remote_ci_review_receipt_no_cache_github_api",
-                    "branch": current_head["branch"],
-                    "head": current_head["head"],
-                    "head_full": current_head["head_full"],
-                    "workflow_name": "Command Center 3 Push Gate",
-                    "event": "push",
-                    "run_id": 123456789,
-                    "run_url": "https://github.com/lishark-of/stock-MING/actions/runs/123456789",
-                    "actions_status": "completed",
-                    "actions_conclusion": "success",
-                    "job_name": "push-gate",
-                    "job_conclusion": "success",
-                    "artifact_name": "command-center-3-push-gate-evidence-123456789",
-                    "artifact_digest": "sha256:" + ("a" * 64),
-                    "artifact_digest_verified": True,
-                    "explicit_user_actions_review_authorized": True,
-                    "remote_actions_status_known": True,
-                    "latest_remote_run_verified_green": True,
-                    "remote_ci_job_page_green_observed": True,
-                    "remote_ci_artifact_digest_pending": False,
-                    "release_review_complete": False,
-                    "release_gate_complete": False,
-                    "production_release_complete": False,
-                    "cache_get_external_calls": False,
-                    "cache_get_calls_github_api": False,
-                    "external_calls_triggered": False,
-                    "tushare_called": False,
-                    "deepseek_called": False,
-                    "github_called": False,
-                    "github_api_called": False,
-                    "does_not_execute_trades": True,
-                    "does_not_modify_strategy_action": True,
-                    "contains_secret": False,
-                },
-                ensure_ascii=False,
-            ),
-            encoding="utf-8",
+        self._record_current_head_remote_ci_green(
+            current_head,
+            run_id=123456789,
+            artifact_digest="sha256:" + ("a" * 64),
         )
-        audit_service.SECRET_ARTIFACT_ALLOWLIST_REVIEW_RECEIPT_PATH.parent.mkdir(parents=True, exist_ok=True)
-        audit_service.SECRET_ARTIFACT_ALLOWLIST_REVIEW_RECEIPT_PATH.write_text(
-            json.dumps(
-                {
-                    "schema_version": audit_service.SECRET_ARTIFACT_ALLOWLIST_REVIEW_RECEIPT_SCHEMA_VERSION,
-                    "status": "secret_artifact_allowlist_review_ready",
-                    "scope": "ignored_manual_secret_artifact_allowlist_review_no_cache_github_api",
-                    "branch": current_head["branch"],
-                    "head": current_head["head"],
-                    "head_full": current_head["head_full"],
-                    "reviewer": "unit_test",
-                    "high_risk_secret_scan_status": "clean",
-                    "secret_keyword_review_status": "secret_keyword_review_contract_ready_manual_review_pending",
-                    "generated_artifact_scan_status": "clean_or_allowed_assets_only",
-                    "explicit_user_allowlist_review_authorized": True,
-                    "periodic_allowlist_review_ready": True,
-                    "false_positive_allowlist_review_ready": True,
-                    "release_review_complete": False,
-                    "release_gate_complete": False,
-                    "production_release_complete": False,
-                    "cache_get_external_calls": False,
-                    "cache_get_calls_github_api": False,
-                    "external_calls_triggered": False,
-                    "tushare_called": False,
-                    "deepseek_called": False,
-                    "github_called": False,
-                    "github_api_called": False,
-                    "does_not_execute_trades": True,
-                    "does_not_modify_strategy_action": True,
-                    "contains_secret": False,
-                },
-                ensure_ascii=False,
-            ),
-            encoding="utf-8",
-        )
+        self._record_current_head_allowlist_review(current_head)
 
         original_origin_ahead_summary = audit_service._current_origin_ahead_summary
         audit_service._current_origin_ahead_summary = lambda: {
@@ -26895,118 +26850,16 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
             ),
             encoding="utf-8",
         )
-        audit_service.REMOTE_CI_REVIEW_RECEIPT_PATH.parent.mkdir(parents=True, exist_ok=True)
-        audit_service.REMOTE_CI_REVIEW_RECEIPT_PATH.write_text(
-            json.dumps(
-                {
-                    "schema_version": audit_service.REMOTE_CI_REVIEW_RECEIPT_SCHEMA_VERSION,
-                    "status": "remote_ci_review_verified_green",
-                    "scope": "ignored_manual_remote_ci_review_receipt_no_cache_github_api",
-                    "branch": current_head["branch"],
-                    "head": current_head["head"],
-                    "head_full": current_head["head_full"],
-                    "workflow_name": "Command Center 3 Push Gate",
-                    "event": "push",
-                    "run_id": 123456789,
-                    "run_url": "https://github.com/lishark-of/stock-MING/actions/runs/123456789",
-                    "actions_status": "completed",
-                    "actions_conclusion": "success",
-                    "job_name": "push-gate",
-                    "job_conclusion": "success",
-                    "artifact_name": "command-center-3-push-gate-evidence-123456789",
-                    "artifact_digest": artifact_digest,
-                    "artifact_digest_verified": True,
-                    "explicit_user_actions_review_authorized": True,
-                    "remote_actions_status_known": True,
-                    "latest_remote_run_verified_green": True,
-                    "remote_ci_job_page_green_observed": True,
-                    "remote_ci_artifact_digest_pending": False,
-                    "release_review_complete": False,
-                    "release_gate_complete": False,
-                    "production_release_complete": False,
-                    "cache_get_external_calls": False,
-                    "cache_get_calls_github_api": False,
-                    "external_calls_triggered": False,
-                    "tushare_called": False,
-                    "deepseek_called": False,
-                    "github_called": False,
-                    "github_api_called": False,
-                    "does_not_execute_trades": True,
-                    "does_not_modify_strategy_action": True,
-                    "contains_secret": False,
-                },
-                ensure_ascii=False,
-            ),
-            encoding="utf-8",
+        self._record_current_head_remote_ci_green(
+            current_head,
+            run_id=123456789,
+            artifact_digest=artifact_digest,
         )
-        audit_service.SECRET_ARTIFACT_ALLOWLIST_REVIEW_RECEIPT_PATH.write_text(
-            json.dumps(
-                {
-                    "schema_version": audit_service.SECRET_ARTIFACT_ALLOWLIST_REVIEW_RECEIPT_SCHEMA_VERSION,
-                    "status": "secret_artifact_allowlist_review_ready",
-                    "scope": "ignored_manual_secret_artifact_allowlist_review_no_cache_github_api",
-                    "branch": current_head["branch"],
-                    "head": current_head["head"],
-                    "head_full": current_head["head_full"],
-                    "reviewer": "unit_test",
-                    "high_risk_secret_scan_status": "clean",
-                    "secret_keyword_review_status": "reviewed_no_high_risk_values",
-                    "generated_artifact_scan_status": "clean_or_allowed_assets_only",
-                    "explicit_user_allowlist_review_authorized": True,
-                    "periodic_allowlist_review_ready": True,
-                    "false_positive_allowlist_review_ready": True,
-                    "release_review_complete": False,
-                    "release_gate_complete": False,
-                    "production_release_complete": False,
-                    "cache_get_external_calls": False,
-                    "cache_get_calls_github_api": False,
-                    "external_calls_triggered": False,
-                    "tushare_called": False,
-                    "deepseek_called": False,
-                    "github_called": False,
-                    "github_api_called": False,
-                    "does_not_execute_trades": True,
-                    "does_not_modify_strategy_action": True,
-                    "contains_secret": False,
-                },
-                ensure_ascii=False,
-            ),
-            encoding="utf-8",
-        )
-        audit_service.RELEASE_GATE_REVIEW_RECEIPT_PATH.write_text(
-            json.dumps(
-                {
-                    "schema_version": audit_service.RELEASE_GATE_REVIEW_RECEIPT_SCHEMA_VERSION,
-                    "status": "release_gate_review_ready",
-                    "scope": "ignored_manual_release_gate_review_no_cache_github_api",
-                    "reviewed_at_utc": "2026-06-29T00:30:00Z",
-                    "reviewer": "unit_test",
-                    "branch": current_head["branch"],
-                    "head": current_head["head"],
-                    "head_full": current_head["head_full"],
-                    "remote_run_id": "123456789",
-                    "remote_artifact_digest": artifact_digest,
-                    "decision": "release_review_complete_strict_closeout_blocked",
-                    "explicit_user_release_review_authorized": True,
-                    "release_review_complete": True,
-                    "release_gate_complete": False,
-                    "strict_closeout_ready": False,
-                    "can_close_goal": False,
-                    "production_release_complete": False,
-                    "cache_get_external_calls": False,
-                    "cache_get_calls_github_api": False,
-                    "external_calls_triggered": False,
-                    "tushare_called": False,
-                    "deepseek_called": False,
-                    "github_called": False,
-                    "github_api_called": False,
-                    "does_not_execute_trades": True,
-                    "does_not_modify_strategy_action": True,
-                    "contains_secret": False,
-                },
-                ensure_ascii=False,
-            ),
-            encoding="utf-8",
+        self._record_current_head_allowlist_review(current_head)
+        self._record_current_head_release_review(
+            current_head,
+            run_id=123456789,
+            artifact_digest=artifact_digest,
         )
 
         original_origin_ahead_summary = audit_service._current_origin_ahead_summary
