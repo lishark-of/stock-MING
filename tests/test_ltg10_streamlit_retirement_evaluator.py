@@ -80,38 +80,9 @@ def _build_challenge(*, nonce: bytes, package: dict, source: dict) -> dict:
 
 
 def _copy_source_contract(root: Path) -> None:
-    for relative in (
-        Path("app.py"),
-        Path("desktop/src/App.tsx"),
-        Path("desktop/src/components/Layout.tsx"),
-        Path("desktop/src/api/client.ts"),
-        Path("desktop/src/components/BackendOfflineNotice.tsx"),
-        Path("desktop/src/components/ChartSafetyStrip.tsx"),
-        Path("desktop/src/components/DataLineageTable.tsx"),
-        Path("desktop/src/components/DeepSeekModelStrategyLedger.tsx"),
-        Path("desktop/src/components/EChartPanel.tsx"),
-        Path("desktop/src/components/JsonDetails.tsx"),
-        Path("desktop/src/components/MetricGrid.tsx"),
-        Path("desktop/src/components/NextSessionChart.tsx"),
-        Path("desktop/src/components/PacketCard.tsx"),
-        Path("desktop/src/components/PageStateBanner.tsx"),
-        Path("desktop/src/components/RouteCacheLoadingBoundary.tsx"),
-        Path("desktop/src/components/StateClarityRail.tsx"),
-        Path("desktop/src/components/StatusBadge.tsx"),
-        Path("desktop/src/components/TaskBoundarySummary.tsx"),
-        Path("desktop/src/components/TaskLaunchReceipt.tsx"),
-        Path("desktop/src/components/TaskStatusPanel.tsx"),
-        Path("desktop/src/routes/CommandCenterHome.tsx"),
-        Path("desktop/src/routes/CandidateRadar.tsx"),
-        Path("desktop/src/routes/FactorQuantHub.tsx"),
-        Path("desktop/src/routes/NextSessionMap.tsx"),
-        Path("desktop/src/routes/MarginEtf.tsx"),
-        Path("desktop/src/routes/QmtReplayLab.tsx"),
-        Path("desktop/src/routes/LegacyTools.tsx"),
-        Path("desktop/package.json"),
-        Path("server/services/legacy_service.py"),
-        Path("scripts/streamlit_retirement_packaged_qa_runner.mjs"),
-    ):
+    relatives = set(retirement.TRUSTED_SOURCE_RELATIVES)
+    relatives.add(Path("desktop/package.json"))
+    for relative in sorted(relatives):
         destination = root / relative
         destination.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(ROOT / relative, destination)

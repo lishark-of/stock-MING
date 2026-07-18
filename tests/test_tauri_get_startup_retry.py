@@ -16,7 +16,11 @@ class TauriGetStartupRetryTests(unittest.TestCase):
         self.assertIn('method === "GET" && isTauriRuntime()', source)
         self.assertIn("TAURI_GET_STARTUP_RETRY_ATTEMPTS = 40", source)
         self.assertIn("TAURI_GET_STARTUP_RETRY_DELAY_MS = 500", source)
-        self.assertIn("await waitForLocalBackend(TAURI_GET_STARTUP_RETRY_DELAY_MS)", source)
+        self.assertIn(
+            "await waitForLocalBackend(Math.min(TAURI_GET_STARTUP_RETRY_DELAY_MS, remainingStartupMs))",
+            source,
+        )
+        self.assertIn("if (remainingStartupMs <= 0) break", source)
         self.assertNotIn('method === "POST" && isTauriRuntime()', source)
 
     def test_retry_only_follows_local_connection_failure(self) -> None:

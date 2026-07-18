@@ -138,7 +138,7 @@ TRUSTED_RUNNER_SAFE_FAILURE_CODES = frozenset(
         "unknown",
     }
 )
-EXPECTED_IMPORT_MANIFEST_DIGEST = "2136c935ff75b56ca26fc8ad48285afdcb3846d7cf8659f6e3feb9c6bb8e0df8"
+EXPECTED_IMPORT_MANIFEST_DIGEST = "4c7e0101c8f95c020a8282443fdf034e629c9ad92b9dc77734a9991a477ddc91"
 EXPECTED_ROUTES = (
     ("#home", "CommandCenterHome"),
     ("#candidates", "CandidateRadar"),
