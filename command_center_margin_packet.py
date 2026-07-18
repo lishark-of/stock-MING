@@ -423,4 +423,7 @@ def build_command_center_margin_packet(
             packet[field] = payload[field]
         else:
             packet.pop(field, None)
+    if payload.get("packet_key") != "command_center_margin_packet":
+        packet.update({field: False for field in LOCAL_READ_FALSE_SAFETY_FIELDS})
+        packet.update({field: True for field in LOCAL_READ_TRUE_SAFETY_FIELDS})
     return packet

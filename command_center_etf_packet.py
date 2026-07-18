@@ -566,6 +566,23 @@ def _apply_etf_packet_contract(packet: Any = None) -> dict:
     return payload
 
 
+def _finalize_legacy_local_read_safety(packet: dict, source: Mapping[str, Any]) -> dict:
+    """Expose deterministic GET safety flags without blessing canonical packets.
+
+    Canonical producer packets must carry their own complete safety projection; a
+    missing field there stays missing so the Margin/ETF provenance gate fails
+    closed.  Older local inputs have no canonical packet identity, so their
+    adapted public packet reports what this local builder actually did: no
+    provider, model, worker, GitHub, or trading call.
+    """
+
+    if source.get("packet_key") == "command_center_etf_packet":
+        return packet
+    packet.update({field: False for field in LOCAL_READ_FALSE_SAFETY_FIELDS})
+    packet.update({field: True for field in LOCAL_READ_TRUE_SAFETY_FIELDS})
+    return packet
+
+
 def _build_evidence_chain(payload: Mapping[str, Any], bucket: str, margin_context: Mapping[str, Any] | None = None) -> list[dict]:
     context = as_mapping(margin_context)
     tracking = _first_text(payload.get("tracking_index"), payload.get("index_name"), payload.get("index"), default="待验证")
@@ -951,7 +968,10 @@ def build_command_center_etf_packet(
                 default="融资 ETF 只读取本地配置或手动刷新结果；页面打开不会自动全量发现。",
             ),
         }
-        return _apply_etf_packet_contract(packet)
+        return _finalize_legacy_local_read_safety(
+            _apply_etf_packet_contract(packet),
+            existing,
+        )
     allocation = as_mapping(state_map.get("legacy_margin_etf_allocation_result"))
     daily = as_mapping(state_map.get("legacy_margin_etf_daily_packet"))
     current_ratio = _first_number(
@@ -1013,4 +1033,7 @@ def build_command_center_etf_packet(
     packet["margin_risk_notice"] = _margin_risk_notice(current_ratio, recommended_ratio, packet["allow_new_margin"])
     packet["etf_replacement_hint"] = _replacement_hint(current_ratio, recommended_ratio)
     packet["leverage_guardrail"] = "不建议因为 ETF 强而额外加杠杆追高。"
-    return _apply_etf_packet_contract(packet)
+    return _finalize_legacy_local_read_safety(
+        _apply_etf_packet_contract(packet),
+        {},
+    )
