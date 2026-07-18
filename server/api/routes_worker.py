@@ -70,7 +70,12 @@ def run_worker_production_promotion_review(payload: dict[str, Any] | None = None
 def run_full_market_production_acceptance(payload: dict[str, Any] | None = None) -> dict:
     from server.services import full_market_worker_service
 
-    packet = full_market_worker_service.run_full_market_worker_production_acceptance(payload or {})
+    local_packet = full_market_worker_service.run_full_market_worker_production_acceptance(
+        payload or {}
+    )
+    packet = full_market_worker_service.public_full_market_worker_acceptance_response(
+        local_packet
+    )
     return envelope(packet, call_ledger=packet.get("call_ledger"), warnings=packet.get("warnings"))
 
 

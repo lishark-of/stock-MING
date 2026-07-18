@@ -357,11 +357,15 @@ def _validate_claims(consumer: str, event: Mapping[str, Any], source: Mapping[st
     )
 
 
-def _stored_packet_event_matches(
+def _strict_registry_consumer_matches(
     consumer: str,
+    registry: Mapping[str, Any],
     packet: Mapping[str, Any],
     event: Mapping[str, Any],
 ) -> bool:
+    events = registry.get("events")
+    events = [dict(row) for row in events] if isinstance(events, list) else []
+    latest = events[-1] if events else {}
     source = packet.get("source_binding")
     source = dict(source) if isinstance(source, Mapping) else {}
     source_material = {
@@ -369,17 +373,66 @@ def _stored_packet_event_matches(
     }
     consumer_key, _, _ = _consumer_keys(consumer)
     return bool(
-        packet.get("schema_version") == CONSUMER_SCHEMA_VERSION
+        registry.get("schema_version") == external_trust.REGISTRY_SCHEMA_VERSION
+        and registry.get("packet_key") == external_trust.REGISTRY_PACKET_KEY
+        and registry.get("status")
+        == "external_attestation_registry_production_trust_verified"
+        and registry.get("head_full") == external_trust._current_head_full()
+        and registry.get("head_full") == latest.get("head_full")
+        and type(registry.get("event_count")) is int
+        and registry.get("event_count") == len(events)
+        and registry.get("last_attestation_id") == latest.get("attestation_id")
+        and type(registry.get("last_monotonic_counter")) is int
+        and registry.get("last_monotonic_counter") == latest.get("monotonic_counter")
+        and type(registry.get("head_key_epoch")) is int
+        and registry.get("head_key_epoch") == latest.get("head_key_epoch")
+        and registry.get("head_key_epoch_digest") == latest.get("head_key_epoch_digest")
+        and registry.get("monotonic_anchor_digest") == latest.get("monotonic_anchor_digest")
+        and registry.get("external_signature_verified") is True
+        and registry.get("external_trust_verified") is True
+        and registry.get("production_trusted") is True
+        and registry.get("snapshot_rollback_resistant") is True
+        and registry.get("private_key_generated") is False
+        and registry.get("private_key_loaded") is False
+        and registry.get("external_calls_triggered") is False
+        and registry.get("contains_secret") is False
+        and registry.get("does_not_execute_trades") is True
+        and registry.get("blockers") == []
+        and all(
+            row.get("head_full") == registry.get("head_full")
+            and type(row.get("monotonic_counter")) is int
+            and type(row.get("head_key_epoch")) is int
+            and row.get("external_signature_verified") is True
+            and row.get("external_trust_verified") is True
+            and row.get("production_trusted") is True
+            and row.get("snapshot_rollback_resistant") is True
+            and row.get("private_key_generated") is False
+            and row.get("private_key_loaded") is False
+            and row.get("contains_secret") is False
+            and row.get("does_not_execute_trades") is True
+            for row in events
+        )
+        and packet.get("schema_version") == CONSUMER_SCHEMA_VERSION
         and packet.get("packet_key") == consumer_key
         and packet.get("consumer") == consumer
         and packet.get("attestation_id") == event.get("attestation_id")
+        and type(packet.get("monotonic_counter")) is int
+        and type(event.get("monotonic_counter")) is int
         and packet.get("monotonic_counter") == event.get("monotonic_counter")
+        and type(packet.get("head_key_epoch")) is int
+        and type(event.get("head_key_epoch")) is int
         and packet.get("head_key_epoch") == event.get("head_key_epoch")
         and packet.get("head_key_epoch_digest") == event.get("head_key_epoch_digest")
         and packet.get("monotonic_anchor_digest") == event.get("monotonic_anchor_digest")
+        and packet.get("external_signature_verified") is True
+        and packet.get("external_trust_verified") is True
         and packet.get("production_trusted") is True
         and packet.get("snapshot_rollback_resistant") is True
+        and packet.get("private_key_generated") is False
+        and packet.get("private_key_loaded") is False
+        and packet.get("external_calls_triggered") is False
         and packet.get("does_not_execute_trades") is True
+        and packet.get("contains_secret") is False
         and source.get("consumer") == consumer
         and source.get("schema_version")
         == "command_center_3_external_production_source_binding.v1"
@@ -419,6 +472,7 @@ def _previous_current_matches_source_last_good(
 
 def _stored_pointer_matches(
     consumer: str,
+    registry: Mapping[str, Any],
     pointer: Mapping[str, Any],
     event: Mapping[str, Any],
     *,
@@ -441,7 +495,7 @@ def _stored_pointer_matches(
         == event.get("attestation_id")
         and pointer.get("generation") == source.get("generation")
         and pointer.get("consumer_packet_digest") == _digest(packet)
-        and _stored_packet_event_matches(consumer, packet, event)
+        and _strict_registry_consumer_matches(consumer, registry, packet, event)
     )
 
 
@@ -515,13 +569,20 @@ def validate_consumer(
         }
         and _validate_claims(consumer, event, source)
         and event == expected_current_event
-        and _stored_pointer_matches(consumer, current, event, pointer_kind="current")
+        and _stored_pointer_matches(
+            consumer,
+            registry_source,
+            current,
+            event,
+            pointer_kind="current",
+        )
         and current.get("generation") == source.get("generation")
         and current.get("consumer_packet_digest") == packet_digest
         and current.get("consumer_packet") == packet
         and last_good_event == expected_last_good_event
         and _stored_pointer_matches(
             consumer,
+            registry_source,
             last_good,
             last_good_event,
             pointer_kind="last_good",
@@ -613,8 +674,12 @@ def import_and_promote_consumer(consumer: str, payload: Any) -> dict[str, Any]:
             "monotonic_anchor_digest": prepared["monotonic_anchor_digest"],
             "source_binding": source_packet,
             "claims": source["claims"],
+            "external_signature_verified": True,
+            "external_trust_verified": True,
             "production_trusted": True,
             "snapshot_rollback_resistant": True,
+            "private_key_generated": False,
+            "private_key_loaded": False,
             "external_calls_triggered": False,
             "does_not_execute_trades": True,
             "contains_secret": False,
@@ -653,6 +718,7 @@ def import_and_promote_consumer(consumer: str, payload: Any) -> dict[str, Any]:
                 registry_current_ready
                 and _stored_pointer_matches(
                     consumer,
+                    registry_packet,
                     previous_current,
                     current_event,
                     pointer_kind="current",
@@ -660,6 +726,7 @@ def import_and_promote_consumer(consumer: str, payload: Any) -> dict[str, Any]:
                 and previous_current.get("generation") == source.get("generation")
                 and _stored_pointer_matches(
                     consumer,
+                    registry_packet,
                     previous_last_good,
                     expected_last_good_event,
                     pointer_kind="last_good",
@@ -674,6 +741,7 @@ def import_and_promote_consumer(consumer: str, payload: Any) -> dict[str, Any]:
                 registry_current_ready
                 and _stored_pointer_matches(
                     consumer,
+                    registry_packet,
                     previous_current,
                     prior_event,
                     pointer_kind="current",

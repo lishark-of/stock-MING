@@ -2619,9 +2619,12 @@ def _promote_official_candidate_results(
         "transport_execution_event_digest": transport.get("execution_event_digest"),
         "promotion_journal_binding_digest": journal.get("journal_binding_digest"),
         "direct_provenance_complete": True,
-        "production_worker_complete": True,
-        "full_market_worker_runtime": True,
-        "celery_redis_runtime": True,
+        "production_worker_complete": False,
+        "full_market_worker_runtime": False,
+        "celery_redis_runtime": False,
+        "local_production_worker_complete": True,
+        "local_full_market_worker_runtime": True,
+        "local_celery_redis_runtime": True,
         **_candidate_radar_replacement_claim_fields(
             authoritative_cache_validated=False,
             external_lineage_validated=False,
@@ -3284,12 +3287,18 @@ def _validate_full_market_worker_local_fact(
         and packet.get("production_worker_complete") is False
         and packet.get("full_market_worker_runtime") is False
         and packet.get("celery_redis_runtime") is False
+        and packet.get("local_production_worker_complete") is True
+        and packet.get("local_full_market_worker_runtime") is True
+        and packet.get("local_celery_redis_runtime") is True
         and packet.get("candidate_radar_production_replacement") is False
     ) if candidate_mode else bool(
         packet.get("status") == "full_market_worker_production_complete"
-        and packet.get("production_worker_complete") is True
-        and packet.get("full_market_worker_runtime") is True
-        and packet.get("celery_redis_runtime") is True
+        and packet.get("production_worker_complete") is False
+        and packet.get("full_market_worker_runtime") is False
+        and packet.get("celery_redis_runtime") is False
+        and packet.get("local_production_worker_complete") is True
+        and packet.get("local_full_market_worker_runtime") is True
+        and packet.get("local_celery_redis_runtime") is True
         and packet.get("candidate_radar_production_replacement") is False
     )
     packets_ready = bool(
@@ -3608,6 +3617,9 @@ def _validate_full_market_worker_local_fact(
         ),
         "full_market_worker_runtime": ready,
         "celery_redis_runtime": ready,
+        "local_production_worker_complete": ready,
+        "local_full_market_worker_runtime": ready,
+        "local_celery_redis_runtime": ready,
         "worker_output_kind": "candidate_radar_full_market_scores",
         "full_market_factor_research": False,
         "candidate_radar_production_replacement": bool(
@@ -3716,6 +3728,62 @@ def validate_full_market_worker_production_fact(
         "candidate_radar_external_production_consumer": radar_consumer,
         "candidate_radar_replacement_blockers": list(dict.fromkeys(radar_blockers)),
         "blockers": list(dict.fromkeys(blockers)),
+    }
+
+
+def public_full_market_worker_acceptance_response(
+    local_packet: Mapping[str, Any],
+    *,
+    evidence_root: Path | None = None,
+) -> dict[str, Any]:
+    """Expose local execution separately; only exact Phase-2 trust is production."""
+
+    packet = dict(local_packet)
+    fact = validate_full_market_worker_production_fact(evidence_root or EVIDENCE_ROOT)
+    consumer = fact.get("external_production_consumer")
+    consumer = dict(consumer) if isinstance(consumer, Mapping) else {}
+    local_ready = bool(
+        packet.get("local_production_worker_complete") is True
+        and packet.get("local_full_market_worker_runtime") is True
+        and packet.get("local_celery_redis_runtime") is True
+        and packet.get("acceptance_run_id")
+        and packet.get("result_version_id")
+    )
+    exact_consumer = bool(
+        consumer.get("ready") is True
+        and consumer.get("subject") == packet.get("acceptance_run_id")
+        and consumer.get("generation") == packet.get("result_version_id")
+    )
+    production_ready = bool(
+        local_ready
+        and exact_consumer
+        and fact.get("ready") is True
+        and fact.get("production_trusted") is True
+        and fact.get("snapshot_rollback_resistant") is True
+    )
+    return {
+        **packet,
+        "status": (
+            "full_market_worker_production_acceptance_external_trust_verified"
+            if production_ready
+            else "full_market_worker_local_runtime_complete_external_trust_pending"
+            if local_ready
+            else packet.get("status") or "full_market_worker_production_acceptance_blocked"
+        ),
+        "local_status": packet.get("status") or "",
+        "ready": production_ready,
+        "production_worker_complete": production_ready,
+        "full_market_worker_runtime": production_ready,
+        "celery_redis_runtime": production_ready,
+        "local_production_worker_complete": local_ready,
+        "local_full_market_worker_runtime": local_ready,
+        "local_celery_redis_runtime": local_ready,
+        "local_runtime_fact_ready": fact.get("local_runtime_fact_ready") is True,
+        "external_production_consumer": consumer,
+        "external_consumer_exact_source_match": exact_consumer,
+        "external_trust_verified": production_ready,
+        "production_trusted": production_ready,
+        "snapshot_rollback_resistant": production_ready,
     }
 
 

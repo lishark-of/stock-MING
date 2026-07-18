@@ -1663,7 +1663,9 @@ class ExternalProductionAttestationTests(unittest.TestCase):
                 "cross_consumer_reseal",
                 "packet_key",
                 "monotonic_counter",
+                "monotonic_counter_bool",
                 "head_key_epoch",
+                "head_key_epoch_bool",
                 "head_key_epoch_digest",
                 "monotonic_anchor_digest",
                 "production_trusted",
@@ -1701,8 +1703,12 @@ class ExternalProductionAttestationTests(unittest.TestCase):
                         packet["packet_key"] = "wrong-consumer-packet-key"
                     elif mismatch == "monotonic_counter":
                         packet["monotonic_counter"] += 100
+                    elif mismatch == "monotonic_counter_bool":
+                        packet["monotonic_counter"] = True
                     elif mismatch == "head_key_epoch":
                         packet["head_key_epoch"] += 100
+                    elif mismatch == "head_key_epoch_bool":
+                        packet["head_key_epoch"] = True
                     elif mismatch in {
                         "head_key_epoch_digest",
                         "monotonic_anchor_digest",
@@ -1738,6 +1744,138 @@ class ExternalProductionAttestationTests(unittest.TestCase):
                     ),
                     (consumer, digest_field),
                 )
+
+    def test_phase2_strict_registry_matrix_rejects_every_consumer(self) -> None:
+        previous = ""
+        for counter, consumer in enumerate(("worker", "factor", "radar"), start=1):
+            self._install_phase2_source(consumer)
+            envelope = self._phase2_envelope(consumer, counter, previous)
+            self._install_external_proof(envelope)
+            promoted = phase2_consumers.import_and_promote_consumer(
+                consumer, {"signed_envelope": envelope}
+            )
+            self.assertTrue(promoted["ready"], promoted)
+            previous = str(promoted["current_pointer"]["attestation_id"])
+            registry = SQLiteMetaStore(self.db_path, read_only=True).read_packet(
+                external.REGISTRY_PACKET_KEY
+            )
+            packet = promoted["current_pointer"]["consumer_packet"]
+            event = next(
+                row
+                for row in registry["events"]
+                if row["attestation_id"] == packet["attestation_id"]
+            )
+            self.assertTrue(
+                phase2_consumers._strict_registry_consumer_matches(
+                    consumer,
+                    registry,
+                    packet,
+                    event,
+                )
+            )
+            mutations = {
+                "schema_version": "wrong-schema",
+                "packet_key": "wrong-registry-key",
+                "status": "wrong-status",
+                "head_full": "a" * 40,
+                "event_count": True,
+                "last_attestation_id": "b" * 64,
+                "last_monotonic_counter": True,
+                "head_key_epoch": True,
+                "head_key_epoch_digest": "c" * 64,
+                "monotonic_anchor_digest": "d" * 64,
+                "external_signature_verified": False,
+                "external_trust_verified": False,
+                "production_trusted": False,
+                "snapshot_rollback_resistant": False,
+                "private_key_generated": True,
+                "private_key_loaded": True,
+                "external_calls_triggered": True,
+                "contains_secret": True,
+                "does_not_execute_trades": False,
+                "blockers": ["tampered"],
+            }
+            for field, bad_value in mutations.items():
+                tampered = json.loads(json.dumps(registry))
+                tampered[field] = bad_value
+                self.assertFalse(
+                    phase2_consumers._strict_registry_consumer_matches(
+                        consumer,
+                        tampered,
+                        packet,
+                        event,
+                    ),
+                    (consumer, field),
+                )
+
+    def test_worker_production_post_exposes_three_external_trust_states(self) -> None:
+        client = TestClient(app)
+        local_packet = {
+            "status": "full_market_worker_production_complete",
+            "acceptance_run_id": "worker-run-1",
+            "result_version_id": "worker-generation-1",
+            "production_worker_complete": True,
+            "full_market_worker_runtime": True,
+            "celery_redis_runtime": True,
+            "local_production_worker_complete": True,
+            "local_full_market_worker_runtime": True,
+            "local_celery_redis_runtime": True,
+            "call_ledger": [],
+        }
+        states = {
+            "missing": {
+                "ready": False,
+                "production_trusted": False,
+                "snapshot_rollback_resistant": False,
+                "local_runtime_fact_ready": True,
+                "external_production_consumer": {"ready": False},
+            },
+            "mismatch": {
+                "ready": True,
+                "production_trusted": True,
+                "snapshot_rollback_resistant": True,
+                "local_runtime_fact_ready": True,
+                "external_production_consumer": {
+                    "ready": True,
+                    "subject": "other-run",
+                    "generation": "other-generation",
+                },
+            },
+            "ready": {
+                "ready": True,
+                "production_trusted": True,
+                "snapshot_rollback_resistant": True,
+                "local_runtime_fact_ready": True,
+                "external_production_consumer": {
+                    "ready": True,
+                    "subject": "worker-run-1",
+                    "generation": "worker-generation-1",
+                },
+            },
+        }
+        for state, fact in states.items():
+            with self.subTest(state=state), patch.object(
+                full_market_worker_service,
+                "run_full_market_worker_production_acceptance",
+                return_value=local_packet,
+            ), patch.object(
+                full_market_worker_service,
+                "validate_full_market_worker_production_fact",
+                return_value=fact,
+            ):
+                response = client.post(
+                    "/api/worker/full-market-production-acceptance",
+                    json={"operator_approved": True},
+                )
+            data = response.json()["data"]
+            expected = state == "ready"
+            self.assertEqual(data["ready"], expected)
+            self.assertEqual(data["production_worker_complete"], expected)
+            self.assertEqual(data["full_market_worker_runtime"], expected)
+            self.assertEqual(data["celery_redis_runtime"], expected)
+            self.assertTrue(data["local_production_worker_complete"])
+            self.assertTrue(data["local_full_market_worker_runtime"])
+            self.assertTrue(data["local_celery_redis_runtime"])
 
 
 if __name__ == "__main__":
