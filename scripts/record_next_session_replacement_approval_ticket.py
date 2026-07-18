@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Record one operator-approved LTG-08 promotion ticket without using FastAPI."""
+"""Run LTG-08 local approval QA; never emits production authority."""
 
 from __future__ import annotations
 

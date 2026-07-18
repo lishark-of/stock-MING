@@ -1,10 +1,10 @@
-"""Fail-closed LTG-08 production replacement promotion evidence.
+"""Fail-closed LTG-08 replacement evidence and future promotion contract.
 
-The read path validates fixed-disk evidence and an install-local HMAC journal.
-It never creates keys, files, tasks, browser runs, or network calls.  The write
-path accepts one literal user approval only after independently re-reading the
-current Next Session packet, trusted Motion pair, sealed LTG-10 visual event,
-and matching remote CI receipt.
+The local read path audits fixed-disk prerequisites without writes or external
+calls.  Same-UID keys, approval tickets, journals, and high-water files cannot
+provide out-of-band authority or rollback resistance, so the public recorder,
+validator, and writer remain production-ineligible until an external trusted
+approval capability and rollback-resistant high-water service exist.
 """
 
 from __future__ import annotations
@@ -16,6 +16,7 @@ import math
 import os
 import re
 import secrets
+import sqlite3
 import stat
 import subprocess
 import uuid
@@ -29,6 +30,7 @@ from . import (
     release_promotion_service,
     streamlit_retirement_evidence_service,
 )
+from .sqlite_evidence_reader import immutable_evidence_connection
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -49,6 +51,10 @@ VALIDATION_SCHEMA = "next_session_production_replacement_validation.v1"
 APPROVAL_TICKET_SCHEMA = "next_session_production_replacement_approval_ticket.v1"
 APPROVAL_STATE_SCHEMA = "next_session_production_replacement_approval_state.v1"
 SCOPE = "ltg08_next_session_current_head_production_replacement"
+STRUCTURAL_PRODUCTION_BLOCKERS = (
+    "external_trusted_approval_capability_unavailable",
+    "rollback_resistant_high_water_unavailable",
+)
 
 _HEAD = re.compile(r"^[0-9a-f]{40}$")
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
@@ -273,6 +279,79 @@ def _evidence_anchor_valid(path: Path) -> bool:
     )
 
 
+def _evidence_tree_symlink_blocker(path: Path) -> str:
+    """Reject a caller-selected evidence tree containing any symlink.
+
+    Resolving the path before checking it would erase the fact that the caller
+    supplied a symlink.  A production evidence reader must fail closed for a
+    symlink at the root or at any traversed descendant.
+    """
+
+    try:
+        if path.is_symlink():
+            return "next_session_replacement_evidence_root_symlink_invalid"
+        if not path.exists():
+            return ""
+        pending = [path]
+        while pending:
+            current = pending.pop()
+            with os.scandir(current) as entries:
+                for entry in entries:
+                    if entry.is_symlink():
+                        return "next_session_replacement_evidence_tree_symlink_invalid"
+                    if entry.is_dir(follow_symlinks=False):
+                        pending.append(Path(entry.path))
+    except OSError:
+        return "next_session_replacement_evidence_tree_unreadable"
+    return ""
+
+
+def _read_immutable_source_task_status(
+    evidence_root: Path,
+    task_id: str,
+) -> dict[str, Any]:
+    """Read the current task and its latest append-only history row in RO mode."""
+
+    db_path = evidence_root / "meta.sqlite"
+    try:
+        metadata = db_path.lstat()
+    except OSError:
+        return {}
+    if not stat.S_ISREG(metadata.st_mode) or stat.S_ISLNK(metadata.st_mode):
+        return {}
+    connection: sqlite3.Connection | None = None
+    try:
+        connection = immutable_evidence_connection(db_path)
+        if connection is None:
+            return {}
+        current = connection.execute(
+            "SELECT payload_json FROM task_status WHERE task_id = ?",
+            (task_id,),
+        ).fetchone()
+        history = connection.execute(
+            """
+            SELECT payload_json, payload_digest
+            FROM task_status_history
+            WHERE task_id = ?
+            ORDER BY history_id DESC
+            LIMIT 1
+            """,
+            (task_id,),
+        ).fetchone()
+        if current is None or history is None or current[0] != history[0]:
+            return {}
+        payload_json = str(current[0])
+        if hashlib.sha256(payload_json.encode("utf-8")).hexdigest() != str(history[1] or ""):
+            return {}
+        payload = json.loads(payload_json)
+        return dict(payload) if isinstance(payload, Mapping) else {}
+    except Exception:
+        return {}
+    finally:
+        if connection is not None:
+            connection.close()
+
+
 def _read_secret(evidence_root: Path | str) -> tuple[bytes | None, str]:
     root, events, key_path, _ = _paths(evidence_root)
     trust = key_path.parent
@@ -482,14 +561,24 @@ def record_next_session_replacement_approval_ticket(
     approved_by_user: bool,
     project_root: Path = PROJECT_ROOT,
 ) -> dict[str, Any]:
-    """Out-of-band operator recorder; intentionally not exposed by FastAPI."""
+    """Record no authority: this process can only perform local QA review.
 
-    root = Path(evidence_root).expanduser().resolve()
+    A same-UID file and key cannot be an out-of-band operator capability.  The
+    public recorder therefore never creates a production-eligible ticket.
+    """
+
+    root = Path(evidence_root).expanduser().absolute()
     head_full = _normalize_head(expected_head_full)
-    prerequisites = _collect_prerequisites(
-        root,
-        expected_head_full=head_full,
-        project_root=project_root,
+    symlink_blocker = _evidence_tree_symlink_blocker(root)
+    prerequisites = (
+        _collect_prerequisites(root, expected_head_full=head_full, project_root=project_root)
+        if not symlink_blocker
+        else {
+            "ready": False,
+            "head_full": head_full,
+            "semantic_digest": "",
+            "blockers": [symlink_blocker],
+        }
     )
     expected_review_id = _approval_review_id(
         head_full=head_full,
@@ -502,62 +591,15 @@ def record_next_session_replacement_approval_ticket(
         blockers.append("next_session_replacement_approval_semantic_digest_mismatch")
     if review_id != expected_review_id:
         blockers.append("next_session_replacement_approval_review_id_mismatch")
-    if blockers:
-        return {
-            "status": "next_session_replacement_approval_ticket_blocked",
-            "ticket_written": False,
-            "review_id": expected_review_id,
-            "blockers": sorted(set(blockers)),
-        }
-    _, _, ticket_path, _ = _approval_paths(root)
-    if ticket_path.exists():
-        return {
-            "status": "next_session_replacement_approval_ticket_blocked",
-            "ticket_written": False,
-            "review_id": expected_review_id,
-            "blockers": ["next_session_replacement_approval_ticket_already_pending"],
-        }
-    secret, blocker = _read_approval_secret(root)
-    if secret is None and blocker == "next_session_replacement_out_of_band_approval_capability_missing":
-        secret, blocker = _create_approval_secret(root)
-    if secret is None:
-        return {
-            "status": "next_session_replacement_approval_ticket_blocked",
-            "ticket_written": False,
-            "review_id": expected_review_id,
-            "blockers": [blocker],
-        }
-    issued = datetime.now(timezone.utc).replace(microsecond=0)
-    nonce_digest = hashlib.sha256(secrets.token_bytes(32)).hexdigest()
-    ticket: dict[str, Any] = {
-        "schema_version": APPROVAL_TICKET_SCHEMA,
-        "status": "next_session_replacement_approval_ticket_issued",
-        "scope": SCOPE,
-        "head_full": head_full,
-        "semantic_digest": semantic_digest,
-        "review_id": review_id,
-        "ticket_id": "",
-        "nonce_digest": nonce_digest,
-        "approved_by_user": True,
-        "issued_at_utc": issued.isoformat().replace("+00:00", "Z"),
-        "expires_at_utc": (issued + timedelta(minutes=15)).isoformat().replace("+00:00", "Z"),
-        "ticket_mac": "",
-    }
-    ticket["ticket_id"] = _digest(
-        {key: value for key, value in _approval_without_mac(ticket).items() if key != "ticket_id"}
-    )
-    ticket["ticket_mac"] = _mac(secret, _approval_without_mac(ticket))
-    blocker = _atomic_private_json(ticket_path, ticket, replace=False)
+    blockers.extend(STRUCTURAL_PRODUCTION_BLOCKERS)
     return {
-        "status": (
-            "next_session_replacement_approval_ticket_issued"
-            if not blocker
-            else "next_session_replacement_approval_ticket_blocked"
-        ),
-        "ticket_written": not blocker,
-        "review_id": review_id,
-        "ticket_id": ticket["ticket_id"] if not blocker else "",
-        "blockers": [] if not blocker else [blocker],
+        "status": "next_session_replacement_local_qa_review_only",
+        "ticket_written": False,
+        "production_eligible": False,
+        "local_qa_only": True,
+        "review_id": expected_review_id,
+        "ticket_id": "",
+        "blockers": sorted(set(blockers)),
         "contains_secret": False,
     }
 
@@ -787,6 +829,7 @@ def _next_packet_evidence(
     *,
     head_full: str,
     authoritative: Mapping[str, Any],
+    source_task: Mapping[str, Any],
 ) -> tuple[dict[str, Any], list[str]]:
     chart = packet.get("chart_payload") if isinstance(packet.get("chart_payload"), Mapping) else {}
     summary = packet.get("chart_summary") if isinstance(packet.get("chart_summary"), Mapping) else {}
@@ -812,16 +855,23 @@ def _next_packet_evidence(
         and chart.get("is_exact_next_session_packet") is True
         and summary.get("is_exact_next_session_packet") is True
     )
-    provider_binding_material = {
-        "head_full": head_full,
-        "source_task_id": provenance.get("source_task_id"),
-        "symbol": authoritative.get("symbol"),
-        "data_date": authoritative.get("data_date"),
-        "provider_scope_hash": authoritative.get("provider_scope_hash"),
-        "dataset_version_digest": authoritative.get("dataset_version_digest"),
-        "daily_rows_digest": authoritative.get("daily_rows_digest"),
-        "trade_calendar_digest": authoritative.get("trade_calendar_digest"),
-    }
+    source_task_binding = bool(
+        source_task.get("task_id") == provenance.get("source_task_id")
+        and source_task.get("status") == "success"
+        and source_task.get("head_full") == head_full
+        and all(
+            source_task.get(key) == authoritative.get(key)
+            for key in (
+                "symbol",
+                "data_date",
+                "provider_scope_hash",
+                "dataset_version_digest",
+                "daily_rows_digest",
+                "trade_calendar_digest",
+            )
+        )
+        and provenance.get("source_task_digest") == _digest(source_task)
+    )
     authoritative_lineage = bool(
         set(provenance) == _PROVENANCE_FIELDS
         and provenance.get("schema_version") == "next_session_production_replacement_provenance.v1"
@@ -830,7 +880,7 @@ def _next_packet_evidence(
         and isinstance(provenance.get("source_task_id"), str)
         and bool(provenance.get("source_task_id"))
         and provenance.get("source_task_status") == "success"
-        and provenance.get("source_task_digest") == _digest(provider_binding_material)
+        and source_task_binding
         and all(provenance.get(key) == authoritative.get(key) for key in (
             "symbol",
             "data_date",
@@ -929,6 +979,7 @@ def _next_packet_evidence(
         "safe_boundary": safe,
         "authoritative_provider_dataset": authoritative.get("ready") is True,
         "authoritative_current_head_lineage": authoritative_lineage,
+        "immutable_source_task_status_verified": source_task_binding,
         "historical_point_count": len(historical),
         "scenario_anchor_count": anchor_count,
         "scenario_anchored_count": anchored_count,
@@ -1081,10 +1132,20 @@ def _collect_prerequisites(
         blockers.append("next_session_replacement_expected_head_not_current")
     packet = _read_next_packet()
     authoritative = _authoritative_provider_daily_evidence(evidence_root, packet)
+    provenance = (
+        packet.get("production_replacement_provenance")
+        if isinstance(packet.get("production_replacement_provenance"), Mapping)
+        else {}
+    )
+    source_task = _read_immutable_source_task_status(
+        evidence_root,
+        str(provenance.get("source_task_id") or ""),
+    )
     packet_fact, packet_blockers = _next_packet_evidence(
         packet,
         head_full=expected_head_full,
         authoritative=authoritative,
+        source_task=source_task,
     )
     motion_fact, motion_blockers = _motion_evidence(evidence_root, expected_head_full, project_root)
     streamlit_fact, streamlit_blockers = _streamlit_evidence(evidence_root, expected_head_full, project_root)
@@ -1201,7 +1262,11 @@ def _public_summary(
     event: Mapping[str, Any] | None,
     blockers: list[str],
 ) -> dict[str, Any]:
-    ready = event is not None and not blockers
+    blockers = sorted(set([*blockers, *STRUCTURAL_PRODUCTION_BLOCKERS]))
+    # Same-UID local files cannot provide an out-of-band approval capability
+    # or rollback-resistant high-water mark.  Until such external trust exists,
+    # no in-process event can be production evidence.
+    ready = False
     semantic_digest = str(prerequisites.get("semantic_digest") or "")
     review_id = (
         _approval_review_id(
@@ -1240,7 +1305,7 @@ def _public_summary(
         "motion_pair_evidence": prerequisites.get("motion_pair") or {},
         "streamlit_retirement_evidence": prerequisites.get("streamlit_retirement") or {},
         "remote_ci_evidence": prerequisites.get("remote_ci") or {},
-        "blockers": sorted(set(blockers)),
+        "blockers": blockers,
         "read_only": True,
         "writes_storage": False,
         "creates_task": False,
@@ -1264,39 +1329,27 @@ def validate_next_session_production_replacement(
     expected_head_full: str | None = None,
     project_root: Path = PROJECT_ROOT,
 ) -> dict[str, Any]:
-    """Read-only validation; never creates or repairs trust material."""
+    """Read-only local-QA validation; production remains fail-closed."""
 
-    root = Path(evidence_root).expanduser().resolve()
+    root = Path(evidence_root).expanduser().absolute()
     head_full = _normalize_head(expected_head_full) if expected_head_full is not None else _current_head(project_root)
-    prerequisites = _collect_prerequisites(
-        root,
-        expected_head_full=head_full,
-        project_root=project_root,
+    symlink_blocker = _evidence_tree_symlink_blocker(root)
+    prerequisites = (
+        _collect_prerequisites(root, expected_head_full=head_full, project_root=project_root)
+        if not symlink_blocker
+        else {
+            "ready": False,
+            "head_full": head_full,
+            "semantic_digest": "",
+            "next_packet": {},
+            "motion_pair": {},
+            "streamlit_retirement": {},
+            "remote_ci": {},
+            "blockers": [symlink_blocker],
+        }
     )
     blockers = list(prerequisites.get("blockers") or [])
-    secret, trust_blocker = _read_secret(root)
-    event: Mapping[str, Any] | None = None
-    if secret is None:
-        blockers.append(trust_blocker or "next_session_replacement_trusted_writer_key_missing")
-    else:
-        events, chain_blocker = _load_chain(root, secret)
-        if chain_blocker:
-            blockers.append(chain_blocker)
-        elif events:
-            latest = events[-1]
-            approval_high_water_blocker = _approval_high_water_blocker(root, latest)
-            if approval_high_water_blocker:
-                blockers.append(approval_high_water_blocker)
-            material = prerequisites.get("material") if isinstance(prerequisites.get("material"), Mapping) else {}
-            if not (
-                prerequisites.get("ready") is True
-                and latest.get("semantic_digest") == prerequisites.get("semantic_digest")
-                and all(latest.get(key) == material.get(key) for key in material)
-            ):
-                blockers.append("next_session_replacement_event_evidence_binding_mismatch")
-            else:
-                event = latest
-    return _public_summary(prerequisites=prerequisites, event=event, blockers=blockers)
+    return _public_summary(prerequisites=prerequisites, event=None, blockers=blockers)
 
 
 def promote_next_session_production_replacement(
@@ -1306,155 +1359,41 @@ def promote_next_session_production_replacement(
     expected_head_full: str | None = None,
     project_root: Path = PROJECT_ROOT,
 ) -> dict[str, Any]:
-    """Append one current-evidence event after literal user approval."""
+    """Fail closed without an external approval and rollback-resistant anchor."""
 
     request = dict(payload) if isinstance(payload, Mapping) else {}
     approved = set(request) == {"approved_by_user"} and request.get("approved_by_user") is True
-    root = Path(evidence_root).expanduser().resolve()
+    root = Path(evidence_root).expanduser().absolute()
     head_full = _normalize_head(expected_head_full) if expected_head_full is not None else _current_head(project_root)
-    prerequisites = _collect_prerequisites(
-        root,
-        expected_head_full=head_full,
-        project_root=project_root,
+    symlink_blocker = _evidence_tree_symlink_blocker(root)
+    prerequisites = (
+        _collect_prerequisites(root, expected_head_full=head_full, project_root=project_root)
+        if not symlink_blocker
+        else {
+            "ready": False,
+            "head_full": head_full,
+            "semantic_digest": "",
+            "next_packet": {},
+            "motion_pair": {},
+            "streamlit_retirement": {},
+            "remote_ci": {},
+            "blockers": [symlink_blocker],
+        }
     )
     blockers = list(prerequisites.get("blockers") or [])
     if not approved:
         blockers.insert(0, "explicit_user_next_session_replacement_approval_required")
-    if blockers:
-        result = _public_summary(prerequisites=prerequisites, event=None, blockers=blockers)
-        result.update({"promotion_written": False, "idempotent_replay": False})
-        return result
-    material = dict(prerequisites["material"])
-    semantic_digest = str(prerequisites["semantic_digest"])
-    secret, blocker = _read_secret(root)
-    events: list[dict[str, Any]] = []
-    if secret is not None:
-        events, chain_blocker = _load_chain(root, secret)
-        if chain_blocker == "next_session_replacement_event_missing":
-            events, chain_blocker = [], ""
-        if chain_blocker:
-            result = _public_summary(prerequisites=prerequisites, event=None, blockers=[chain_blocker])
-            result.update({"promotion_written": False, "idempotent_replay": False})
-            return result
-        latest_existing = events[-1] if events else None
-        if latest_existing is not None and latest_existing.get("semantic_digest") == semantic_digest:
-            result = validate_next_session_production_replacement(
-                root,
-                expected_head_full=head_full,
-                project_root=project_root,
-            )
-            result.update({"promotion_written": False, "idempotent_replay": True, "read_only": False, "writes_storage": False})
-            return result
-    elif blocker != "next_session_replacement_trusted_writer_key_missing":
-        result = _public_summary(prerequisites=prerequisites, event=None, blockers=[blocker])
-        result.update({"promotion_written": False, "idempotent_replay": False})
-        return result
-    approval, approval_blocker = _load_approval_ticket(
-        root,
-        head_full=head_full,
-        semantic_digest=semantic_digest,
+    result = _public_summary(prerequisites=prerequisites, event=None, blockers=blockers)
+    result.update(
+        {
+            "promotion_written": False,
+            "idempotent_replay": False,
+            "read_only": False,
+            "writes_storage": False,
+            "local_qa_only": True,
+            "production_eligible": False,
+        }
     )
-    if approval is None:
-        result = _public_summary(prerequisites=prerequisites, event=None, blockers=[approval_blocker])
-        result.update({"promotion_written": False, "idempotent_replay": False})
-        return result
-    if secret is None:
-        secret, blocker = _create_secret(root)
-    if secret is None:
-        result = _public_summary(prerequisites=prerequisites, event=None, blockers=[blocker])
-        result.update({"promotion_written": False, "idempotent_replay": False})
-        return result
-    latest = events[-1] if events else None
-    sequence = len(events) + 1
-    recorded_at = _now_iso()
-    if latest is not None and recorded_at < str(latest.get("recorded_at_utc") or ""):
-        result = _public_summary(
-            prerequisites=prerequisites,
-            event=None,
-            blockers=["next_session_replacement_writer_clock_moved_backwards"],
-        )
-        result.update({"promotion_written": False, "idempotent_replay": False})
-        return result
-    event: dict[str, Any] = {
-        "schema_version": EVENT_SCHEMA,
-        "status": "next_session_production_replacement_promoted",
-        "sequence_no": sequence,
-        "event_id": "",
-        "semantic_digest": semantic_digest,
-        "scope": SCOPE,
-        **material,
-        "approval_review_id": approval["review_id"],
-        "approval_ticket_id": approval["ticket_id"],
-        "approval_nonce_digest": approval["nonce_digest"],
-        "approved_by_user": True,
-        "recorded_at_utc": recorded_at,
-        "previous_event_mac": str(latest.get("event_mac") or "") if latest else "",
-        "event_mac": "",
-    }
-    event["event_id"] = _digest({key: value for key, value in _event_without_mac(event).items() if key != "event_id"})
-    event["event_mac"] = _mac(secret, _event_without_mac(event))
-    _, events_root, _, state_path = _paths(root)
-    blocker = _atomic_private_json(events_root / f"{sequence:08d}.json", event, replace=False)
-    if blocker:
-        result = _public_summary(prerequisites=prerequisites, event=None, blockers=[blocker])
-        result.update({"promotion_written": False, "idempotent_replay": False})
-        return result
-    unsigned_state = {
-        "schema_version": STATE_SCHEMA,
-        "sequence_no": sequence,
-        "event_id": event["event_id"],
-        "event_mac": event["event_mac"],
-        "updated_at_utc": recorded_at,
-    }
-    state = {**unsigned_state, "state_mac": _mac(secret, unsigned_state)}
-    blocker = _atomic_private_json(state_path, state, replace=True)
-    if blocker:
-        result = _public_summary(prerequisites=prerequisites, event=None, blockers=[blocker])
-        result.update({"promotion_written": True, "idempotent_replay": False})
-        return result
-    _, _, approval_ticket_path, approval_state_path = _approval_paths(root)
-    approval_secret, approval_blocker = _read_approval_secret(root)
-    if approval_secret is None:
-        result = _public_summary(prerequisites=prerequisites, event=None, blockers=[approval_blocker])
-        result.update({"promotion_written": True, "idempotent_replay": False})
-        return result
-    approval_state_unsigned = {
-        "schema_version": APPROVAL_STATE_SCHEMA,
-        "sequence_no": sequence,
-        "event_id": event["event_id"],
-        "event_mac": event["event_mac"],
-        "approval_ticket_id": approval["ticket_id"],
-        "consumed_at_utc": _now_iso(),
-    }
-    approval_state = {
-        **approval_state_unsigned,
-        "state_mac": _mac(approval_secret, approval_state_unsigned),
-    }
-    blocker = _atomic_private_json(approval_state_path, approval_state, replace=True)
-    if blocker:
-        result = _public_summary(
-            prerequisites=prerequisites,
-            event=None,
-            blockers=["next_session_replacement_approval_high_water_write_failed"],
-        )
-        result.update({"promotion_written": True, "idempotent_replay": False})
-        return result
-    try:
-        approval_ticket_path.unlink()
-    except OSError:
-        result = _public_summary(
-            prerequisites=prerequisites,
-            event=None,
-            blockers=["next_session_replacement_approval_ticket_consume_failed"],
-        )
-        result.update({"promotion_written": True, "idempotent_replay": False})
-        return result
-    result = validate_next_session_production_replacement(
-        root,
-        expected_head_full=head_full,
-        project_root=project_root,
-    )
-    result.update({"promotion_written": True, "idempotent_replay": False, "read_only": False, "writes_storage": True})
     return result
 
 

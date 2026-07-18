@@ -512,6 +512,7 @@ class V1EvidenceCloseoutTests(unittest.TestCase):
             "candidate_radar_production_replacement",
             rows["LTG-13"]["missing_production_evidence"],
         )
+
     def test_forged_next_session_boolean_does_not_bypass_ltg08_validator(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir) / "evidence"

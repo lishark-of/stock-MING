@@ -64,7 +64,7 @@ def _replacement_promotion_ledger(packet: dict[str, Any], *, request_method: str
             "mode": (
                 "read_only_validation"
                 if request_method == "GET"
-                else "operator_ticket_bound_literal_approval_write"
+                else "local_qa_review_only_production_fail_closed"
             ),
             "call_status": packet.get("status") or "next_session_production_replacement_blocked",
             "row_count": 1 if packet.get("production_replacement_complete") is True else 0,
