@@ -279,6 +279,7 @@ def _source_binding(consumer: str, *, evidence_root: Path | None = None) -> dict
         "task_id": identity.get("task_id"),
         "scope_hash": identity.get("scope_hash"),
         "generation": identity.get("generation"),
+        "last_good_generation": last_good_expected_version,
         "source_current_packet_digest": _digest(current_packet) if current_packet else "",
         "source_last_good_packet_digest": _digest(last_good_packet) if last_good_packet else "",
         "current_pointer_digest": _digest(current_pointer_raw) if current_pointer_raw else "",
@@ -363,10 +364,17 @@ def _stored_packet_event_matches(
 ) -> bool:
     source = packet.get("source_binding")
     source = dict(source) if isinstance(source, Mapping) else {}
+    source_material = {
+        key: value for key, value in source.items() if key != "artifact_digest"
+    }
     return bool(
         packet.get("schema_version") == CONSUMER_SCHEMA_VERSION
         and packet.get("consumer") == consumer
         and packet.get("attestation_id") == event.get("attestation_id")
+        and source.get("consumer") == consumer
+        and source.get("schema_version")
+        == "command_center_3_external_production_source_binding.v1"
+        and source.get("artifact_digest") == _digest(source_material)
         and event.get("attestation_kind") == _CONFIG[consumer]["kind"]
         and event.get("head_full") == source.get("head_full")
         and event.get("subject") == source.get("subject")
@@ -377,6 +385,34 @@ def _stored_packet_event_matches(
         and event.get("external_trust_verified") is True
         and event.get("production_trusted") is True
         and event.get("snapshot_rollback_resistant") is True
+    )
+
+
+def _stored_pointer_matches(
+    consumer: str,
+    pointer: Mapping[str, Any],
+    event: Mapping[str, Any],
+    *,
+    pointer_kind: str,
+) -> bool:
+    packet = pointer.get("consumer_packet")
+    packet = dict(packet) if isinstance(packet, Mapping) else {}
+    source = packet.get("source_binding")
+    source = dict(source) if isinstance(source, Mapping) else {}
+    _, current_key, last_good_key = _consumer_keys(consumer)
+    return bool(
+        pointer.get("schema_version") == POINTER_SCHEMA_VERSION
+        and pointer.get("packet_key")
+        == (current_key if pointer_kind == "current" else last_good_key)
+        and pointer.get("pointer") == pointer_kind
+        and pointer.get("consumer") == consumer
+        and pointer.get("immutable") is True
+        and pointer.get("attestation_id")
+        == packet.get("attestation_id")
+        == event.get("attestation_id")
+        and pointer.get("generation") == source.get("generation")
+        and pointer.get("consumer_packet_digest") == _digest(packet)
+        and _stored_packet_event_matches(consumer, packet, event)
     )
 
 
@@ -404,6 +440,12 @@ def validate_consumer(
         else ({}, "consumer_state_missing")
     )
     events = registry_source.get("events") if isinstance(registry_source.get("events"), list) else []
+    consumer_events = [
+        dict(row)
+        for row in events
+        if isinstance(row, Mapping)
+        and row.get("attestation_kind") == _CONFIG[consumer]["kind"]
+    ]
     event = next(
         (
             dict(row)
@@ -426,6 +468,10 @@ def validate_consumer(
         ),
         {},
     )
+    expected_current_event = consumer_events[-1] if consumer_events else {}
+    expected_last_good_event = (
+        consumer_events[-2] if len(consumer_events) > 1 else expected_current_event
+    )
     packet_digest = _digest(packet) if packet else ""
     ready = bool(
         source.get("ready") is True
@@ -439,23 +485,19 @@ def validate_consumer(
             if key not in {"ready", "status", "claims", "writes_performed"}
         }
         and _validate_claims(consumer, event, source)
-        and current.get("schema_version") == POINTER_SCHEMA_VERSION
-        and current.get("pointer") == "current"
-        and current.get("consumer") == consumer
-        and current.get("immutable") is True
+        and event == expected_current_event
+        and _stored_pointer_matches(consumer, current, event, pointer_kind="current")
         and current.get("generation") == source.get("generation")
         and current.get("consumer_packet_digest") == packet_digest
         and current.get("consumer_packet") == packet
-        and current.get("attestation_id") == packet.get("attestation_id")
-        and last_good.get("schema_version") == POINTER_SCHEMA_VERSION
-        and last_good.get("pointer") == "last_good"
-        and last_good.get("consumer") == consumer
-        and last_good.get("immutable") is True
-        and last_good.get("generation")
-        and last_good.get("attestation_id")
-        and last_good.get("consumer_packet_digest")
-        and last_good.get("consumer_packet_digest") == _digest(last_good_packet)
-        and _stored_packet_event_matches(consumer, last_good_packet, last_good_event)
+        and last_good_event == expected_last_good_event
+        and _stored_pointer_matches(
+            consumer,
+            last_good,
+            last_good_event,
+            pointer_kind="last_good",
+        )
+        and last_good.get("generation") == source.get("last_good_generation")
     )
     blockers: list[str] = []
     if source.get("ready") is not True:
@@ -561,11 +603,81 @@ def import_and_promote_consumer(consumer: str, payload: Any) -> dict[str, Any]:
             "immutable": True,
         }
         previous_current = _read_packet(SQLITE_META_PATH, current_key)
-        if previous_current and previous_current.get("attestation_id") != current["attestation_id"]:
-            last_good = {**previous_current, "packet_key": last_good_key, "pointer": "last_good"}
+        previous_last_good = _read_packet(SQLITE_META_PATH, last_good_key)
+        registry_events = [
+            dict(row)
+            for row in registry_packet.get("events") or []
+            if isinstance(row, Mapping)
+            and row.get("attestation_kind") == _CONFIG[consumer]["kind"]
+        ]
+        current_event = registry_events[-1] if registry_events else {}
+        prior_event = registry_events[-2] if len(registry_events) > 1 else {}
+        idempotent = prepared.get("idempotent_reuse") is True
+        registry_current_ready = bool(
+            current_event.get("attestation_id") == prepared.get("attestation_id")
+            and current_event.get("attestation_kind") == _CONFIG[consumer]["kind"]
+        )
+        history_ready = False
+        if idempotent:
+            expected_last_good_event = prior_event or current_event
+            history_ready = bool(
+                registry_current_ready
+                and _stored_pointer_matches(
+                    consumer,
+                    previous_current,
+                    current_event,
+                    pointer_kind="current",
+                )
+                and previous_current.get("generation") == source.get("generation")
+                and _stored_pointer_matches(
+                    consumer,
+                    previous_last_good,
+                    expected_last_good_event,
+                    pointer_kind="last_good",
+                )
+                and previous_last_good.get("generation")
+                == source.get("last_good_generation")
+            )
+        elif prior_event:
+            history_ready = bool(
+                registry_current_ready
+                and _stored_pointer_matches(
+                    consumer,
+                    previous_current,
+                    prior_event,
+                    pointer_kind="current",
+                )
+                and previous_current.get("generation")
+                == source.get("last_good_generation")
+            )
         else:
-            previous_last_good = _read_packet(SQLITE_META_PATH, last_good_key)
-            last_good = previous_last_good or {
+            history_ready = bool(
+                registry_current_ready
+                and not previous_current
+                and not previous_last_good
+                and source.get("last_good_generation") == source.get("generation")
+            )
+        if not history_ready:
+            return {
+                "ready": False,
+                "status": f"external_{consumer}_consumer_generation_history_invalid",
+                "writes_performed": False,
+                "production_trusted": False,
+                "snapshot_rollback_resistant": False,
+                "blockers": [
+                    "external_consumer_last_good_previous_current_generation_mismatch"
+                ],
+            }
+        if idempotent:
+            last_good = previous_last_good
+        elif prior_event:
+            last_good = {
+                **previous_current,
+                "packet_key": last_good_key,
+                "pointer": "last_good",
+            }
+        else:
+            last_good = {
                 **current,
                 "packet_key": last_good_key,
                 "pointer": "last_good",
