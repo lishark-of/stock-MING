@@ -16,12 +16,16 @@ def immutable_evidence_connection(db_path: Path) -> sqlite3.Connection | None:
     """
 
     try:
-        if db_path.is_symlink() or not db_path.is_file():
+        if db_path.is_symlink() or db_path.parent.is_symlink() or not db_path.is_file():
             return None
         companions = tuple(
             Path(f"{db_path}{suffix}") for suffix in ("-wal", "-shm", "-journal")
         )
-        if any(path.exists() or path.is_symlink() for path in companions):
+        if (
+            db_path.is_symlink()
+            or db_path.parent.is_symlink()
+            or any(path.exists() or path.is_symlink() for path in companions)
+        ):
             return None
         resolved = db_path.resolve(strict=True)
         connection = sqlite3.connect(

@@ -582,6 +582,42 @@ class V1EvidenceCloseoutTests(unittest.TestCase):
             finally:
                 connection.close()
 
+    def test_migration_get_rejects_symlinked_evidence_root_without_tree_writes(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            container = Path(temp_dir)
+            actual_root = container / "actual-evidence"
+            _write_packets(
+                actual_root / "meta.sqlite",
+                {
+                    "command_center_3_factor_full_market_worker_production_acceptance": {
+                        "status": "caller_boolean_must_not_be_trusted",
+                        "full_market_factor_research": True,
+                    },
+                    "command_center_3_candidate_radar_cache": {
+                        "status": "caller_boolean_must_not_be_trusted",
+                        "global_candidate_cache_overwritten": True,
+                    },
+                },
+            )
+            evidence_root = container / "evidence"
+            evidence_root.symlink_to(actual_root, target_is_directory=True)
+            before = _tree_digest(container)
+
+            with patch.object(v1_closeout_service, "EVIDENCE_ROOT", evidence_root):
+                response = TestClient(app).get("/api/migration/status")
+
+            after = _tree_digest(container)
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(after, before)
+            payload = response.json()["data"]["command_center_3_v1_local_rc"]
+            self.assertFalse(payload["writes_storage"])
+            self.assertFalse(
+                payload["factor_full_market_research_summary"]["ready"]
+            )
+            self.assertFalse(
+                payload["candidate_radar_production_replacement_summary"]["ready"]
+            )
+
 
 if __name__ == "__main__":
     unittest.main()
