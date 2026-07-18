@@ -19,6 +19,14 @@ from storage.sqlite_meta import SQLiteMetaStore
 
 
 SCOPE_HASH = "a" * 64
+INDUSTRY_BINDING = {
+    "industry_scope_digest": "1" * 64,
+    "industry_source_version_digest": "2" * 64,
+    "industry_artifact_sha256": "3" * 64,
+    "industry_manifest_digest": "4" * 64,
+    "industry_pointer_digest": "5" * 64,
+    "industry_semantic_evidence_sha256": "6" * 64,
+}
 
 
 def _valid_symbols(count: int) -> list[str]:
@@ -113,6 +121,7 @@ def _shared_provider_result(symbols: list[str], *, ready: bool = True) -> dict:
         "universe_digest": service._canonical_digest(symbols),
         "frames": _verified_frames(symbols),
         "blockers": [] if ready else ["fixture_blocked"],
+        **INDUSTRY_BINDING,
     }
 
 
@@ -132,6 +141,7 @@ def _score_universe(symbol: str = "000001.SZ") -> dict:
         "universe_digest": service._canonical_digest([symbol]),
         "validated_trade_date": "20260710",
         "_frames": frames,
+        **INDUSTRY_BINDING,
     }
 
 
@@ -216,6 +226,8 @@ def _worker_batch_fixture(
         "symbols": list(symbols),
         "batch_symbol_hash": service._canonical_digest(symbols),
         "batch_input_hash": service._batch_input_hash(universe, symbols),
+        **INDUSTRY_BINDING,
+        "industry_input_digest": service._industry_input_digest(universe),
         "celery_task_id": task_id,
         "worker_challenge_id": challenge_id,
     }
@@ -250,6 +262,8 @@ def _worker_batch_fixture(
             "universe_digest": universe["universe_digest"],
             "provider_scope_hash": universe["scope_hash"],
             "provider_version_digest": universe["version_digest"],
+            **INDUSTRY_BINDING,
+            "industry_input_digest": service._industry_input_digest(universe),
             "worker_challenge_id": challenge_id,
         },
         "candidate_rows": rows,
@@ -815,6 +829,18 @@ class FullMarketWorkerProductionTests(unittest.TestCase):
             )
             self.assertTrue(metric_audit["ready"], metric_audit["blockers"])
             run_id = uuid.uuid4().hex
+            industry_input_digest = service._canonical_digest(INDUSTRY_BINDING)
+            factor_batch_input_digest = service._canonical_digest(
+                {
+                    "provider_scope_hash": "a" * 64,
+                    "provider_version_digest": "b" * 64,
+                    "universe_digest": universe_digest,
+                    "validated_trade_date": "20260710",
+                    "symbols": symbols,
+                    "industry_binding": INDUSTRY_BINDING,
+                    "industry_input_digest": industry_input_digest,
+                }
+            )
             packet = {
                 "schema_version": service.FACTOR_SCHEMA_VERSION,
                 "status": "factor_full_market_worker_production_complete",
@@ -829,6 +855,10 @@ class FullMarketWorkerProductionTests(unittest.TestCase):
                 "provider_version_digest": "b" * 64,
                 "universe_digest": universe_digest,
                 "universe_count": len(symbols),
+                "validated_trade_date": "20260710",
+                **INDUSTRY_BINDING,
+                "industry_input_digest": industry_input_digest,
+                "factor_batch_input_digest": factor_batch_input_digest,
                 "result_version_id": f"factor-{run_id}",
                 "result_artifact_sha256": "c" * 64,
                 "result_output_hash": result_output_hash,
@@ -855,6 +885,10 @@ class FullMarketWorkerProductionTests(unittest.TestCase):
                     "factor_output_contract_digest": service.FACTOR_OUTPUT_CONTRACT_DIGEST,
                     "universe_digest": universe_digest,
                     "provider_version_digest": packet["provider_version_digest"],
+                    "validated_trade_date": "20260710",
+                    **INDUSTRY_BINDING,
+                    "industry_input_digest": industry_input_digest,
+                    "factor_batch_input_digest": factor_batch_input_digest,
                     "neutralization_audit_digest": metric_audit["audit_digest"],
                 },
             }
@@ -865,6 +899,8 @@ class FullMarketWorkerProductionTests(unittest.TestCase):
                 "scope_hash": packet["provider_scope_hash"],
                 "version_digest": packet["provider_version_digest"],
                 "universe_digest": universe_digest,
+                "validated_trade_date": "20260710",
+                **INDUSTRY_BINDING,
                 "blockers": [],
             }
             with patch.object(
@@ -901,6 +937,44 @@ class FullMarketWorkerProductionTests(unittest.TestCase):
                 fact["blockers"],
                 [service.PRODUCTION_LINEAGE_EXTERNAL_RUNNER_BLOCKER],
             )
+            stale_packet = dict(packet)
+            stale_packet.pop("industry_pointer_digest")
+            stale_packet["production_binding_digest"] = service._canonical_digest(
+                {
+                    key: value
+                    for key, value in stale_packet.items()
+                    if key != "production_binding_digest"
+                }
+            )
+            store.write_packet(service.FACTOR_PACKET_KEY, stale_packet)
+            store.write_packet(service.FACTOR_LAST_GOOD_PACKET_KEY, stale_packet)
+            with patch.object(
+                service,
+                "_authoritative_provider_universe",
+                return_value=universe,
+            ), patch.object(
+                service.parquet_store,
+                "versioned_dataset_pointer",
+                return_value=pointer,
+            ), patch.object(pd, "read_parquet", return_value=pd.DataFrame(rows)):
+                stale_fact = service.validate_factor_full_market_research_fact(root)
+            self.assertIn("factor_worker_packet_direct_binding", stale_fact["blockers"])
+
+    def test_radar_batch_input_hash_binds_pointer_and_semantic_digests(self) -> None:
+        universe = _score_universe()
+        symbols = list(universe["symbols"])
+        baseline = service._batch_input_hash(universe, symbols)
+        for key in (
+            "industry_pointer_digest",
+            "industry_semantic_evidence_sha256",
+        ):
+            with self.subTest(key=key):
+                tampered = dict(universe)
+                tampered[key] = "f" * 64
+                self.assertNotEqual(
+                    baseline,
+                    service._batch_input_hash(tampered, symbols),
+                )
 
     def test_introspected_runner_capability_cannot_promote_lineage(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

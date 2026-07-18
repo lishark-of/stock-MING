@@ -22102,12 +22102,14 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         )
         self.assertEqual(route_coverage["task_creation_route_count"], catalog["task_count"])
         self.assertEqual(route_coverage["local_lifecycle_route_count"], 2)
-        self.assertEqual(route_coverage["local_control_plane_route_count"], 2)
+        self.assertEqual(route_coverage["local_control_plane_route_count"], 4)
         self.assertEqual(
             route_coverage["local_control_plane_routes"],
             [
+                "POST /api/audit/external-production-attestation",
                 "POST /api/audit/production-release-promotion",
                 "POST /api/next-session/production-replacement",
+                "POST /api/storage/cache-ttl/production-attestation",
             ],
         )
         self.assertEqual(route_coverage["uncovered_post_routes"], [])
@@ -27102,6 +27104,10 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("GET /api/storage/{dataset}", coverage["known_get_routes"])
         self.assertIn(
             "GET /api/next-session/production-replacement",
+            coverage["known_get_routes"],
+        )
+        self.assertIn(
+            "GET /api/audit/external-production-attestation",
             coverage["known_get_routes"],
         )
         self.assertTrue(any(row.get("source") == "call_ledger_audit_self" and row.get("not_invoked_by_audit_reader") for row in coverage["parameterized_local_routes"]))

@@ -28,9 +28,14 @@ EVIDENCE_ROOT = PROJECT_ROOT / ".stock_ming_3"
 INDUSTRY_ROOT_RELATIVE = Path("full_market_industry_membership")
 POINTER_FILE = "pointer.json"
 
-POINTER_SCHEMA_VERSION = "full_market_industry_membership_pointer.v1"
-MANIFEST_SCHEMA_VERSION = "full_market_industry_membership_manifest.v1"
+POINTER_SCHEMA_VERSION = "full_market_industry_membership_pointer.v2"
+MANIFEST_SCHEMA_VERSION = "full_market_industry_membership_manifest.v2"
 ARTIFACT_SCHEMA_VERSION = "full_market_industry_membership_artifact.v1"
+SEMANTIC_EVIDENCE_SCHEMA_VERSION = (
+    "full_market_industry_membership_out_date_semantic_evidence.v1"
+)
+SCOPE_SCHEMA_VERSION = "full_market_industry_membership_scope.v1"
+SOURCE_VERSION_SCHEMA_VERSION = "full_market_industry_membership_source_version.v1"
 EXECUTION_REQUEST_SCHEMA_VERSION = (
     "full_market_industry_membership_execution_request.v1"
 )
@@ -47,6 +52,16 @@ MINIMUM_ELIGIBLE_SYMBOLS = 3000
 _HEX_64 = re.compile(r"^[0-9a-f]{64}$")
 _DATE = re.compile(r"^[0-9]{8}$")
 _SYMBOL = re.compile(r"^[0-9]{6}\.(BJ|SH|SZ)$")
+_VERSION_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
+
+INDUSTRY_BINDING_DIGEST_KEYS = (
+    "industry_scope_digest",
+    "industry_source_version_digest",
+    "industry_artifact_sha256",
+    "industry_manifest_digest",
+    "industry_pointer_digest",
+    "industry_semantic_evidence_sha256",
+)
 
 
 def _canonical_bytes(value: Any) -> bytes:
@@ -65,9 +80,12 @@ def _digest(value: Any) -> str:
 
 def _file_digest(path: Path) -> str:
     digest = hashlib.sha256()
-    with path.open("rb") as handle:
-        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
-            digest.update(chunk)
+    try:
+        with path.open("rb") as handle:
+            for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+                digest.update(chunk)
+    except OSError:
+        return ""
     return digest.hexdigest()
 
 
@@ -169,18 +187,25 @@ def _interval_blockers(
         }:
             blockers.append("artifact_row_schema_not_exact")
             continue
-        symbol = str(row.get("ts_code") or "").strip().upper()
-        industry = str(row.get("industry_code") or "").strip()
-        start = _date(row.get("effective_from"))
+        raw_symbol = row.get("ts_code")
+        raw_industry = row.get("industry_code")
+        raw_start = row.get("effective_from")
+        raw_source_api = row.get("source_api")
+        symbol = raw_symbol.strip().upper() if type(raw_symbol) is str else ""
+        industry = raw_industry.strip() if type(raw_industry) is str else ""
+        start = _date(raw_start) if type(raw_start) is str else ""
         raw_end = row.get("effective_to")
-        end = "" if raw_end in (None, "") else _date(raw_end)
+        end_type_valid = raw_end is None or type(raw_end) is str
+        end = "" if raw_end in (None, "") else _date(raw_end) if end_type_valid else ""
         if (
             not _SYMBOL.fullmatch(symbol)
             or not industry
             or not start
+            or not end_type_valid
             or (raw_end not in (None, "") and not end)
             or (end and start >= end)
-            or row.get("source_api") != SOURCE_API
+            or type(raw_source_api) is not str
+            or raw_source_api != SOURCE_API
         ):
             blockers.append("artifact_effective_dated_row_invalid")
             continue
@@ -235,7 +260,12 @@ def validate_full_market_industry_membership(
 
     root = evidence_root / INDUSTRY_ROOT_RELATIVE
     pointer_path = root / POINTER_FILE
-    pointer = _read_json(pointer_path) if pointer_path.is_file() and not pointer_path.is_symlink() else None
+    root_safe = not evidence_root.is_symlink() and not root.is_symlink()
+    pointer = (
+        _read_json(pointer_path)
+        if root_safe and pointer_path.is_file() and not pointer_path.is_symlink()
+        else None
+    )
     pointer = dict(pointer) if isinstance(pointer, Mapping) else {}
     pointer_material = {key: value for key, value in pointer.items() if key != "pointer_digest"}
     if set(pointer) != {
@@ -247,6 +277,7 @@ def validate_full_market_industry_membership(
         "schema_version",
         "scope_digest",
         "source_version_digest",
+        "semantic_evidence_sha256",
         "universe_digest",
         "validated_trade_date",
         "version_id",
@@ -273,11 +304,16 @@ def validate_full_market_industry_membership(
         "out_date_semantics",
         "out_date_semantics_evidence_digest",
         "out_date_semantics_validated",
+        "scope",
         "schema_version",
         "scope_digest",
         "source_api",
         "source_scope",
         "source_version_digest",
+        "source_version",
+        "semantic_evidence_file",
+        "semantic_evidence_schema_version",
+        "semantic_evidence_sha256",
         "status",
         "universe_digest",
         "validated_trade_date",
@@ -292,15 +328,68 @@ def validate_full_market_industry_membership(
     if manifest.get("status") != "full_market_industry_membership_verified":
         blockers.append("industry_manifest_status_invalid")
 
+    semantic_path = _safe_relative_file(root, manifest.get("semantic_evidence_file"))
+    semantic_sha256 = _file_digest(semantic_path) if semantic_path else ""
+    semantic = _read_json(semantic_path) if semantic_path else None
+    semantic = dict(semantic) if isinstance(semantic, Mapping) else {}
+    semantic_content = semantic.get("content")
+    required_semantic_keys = {
+        "content",
+        "content_digest",
+        "endpoint_field",
+        "resolved_semantics",
+        "schema_version",
+        "source_api",
+        "source_reference",
+        "source_scope",
+        "status",
+        "validation_method",
+    }
+    required_semantic_content = {
+        "field": "out_date",
+        "interval_convention": "effective_from_inclusive_effective_to_exclusive",
+        "non_null_boundary": "first_excluded_trade_date",
+        "null_meaning": "membership_current_at_validated_trade_date",
+    }
+    if set(semantic) != required_semantic_keys:
+        blockers.append("industry_semantic_evidence_schema_not_exact")
+    if (
+        semantic.get("schema_version") != SEMANTIC_EVIDENCE_SCHEMA_VERSION
+        or semantic.get("status") != "independently_validated"
+        or semantic.get("source_api") != SOURCE_API
+        or semantic.get("source_scope") != SOURCE_SCOPE
+        or semantic.get("endpoint_field") != "out_date"
+        or semantic.get("resolved_semantics") != RESOLVED_OUT_DATE_SEMANTICS
+        or semantic.get("validation_method")
+        != "independent_local_documentation_and_fixture_review"
+        or type(semantic.get("source_reference")) is not str
+        or not semantic.get("source_reference", "").strip()
+        or type(semantic_content) is not dict
+        or semantic_content != required_semantic_content
+        or semantic.get("content_digest") != _digest(semantic_content)
+    ):
+        blockers.append("industry_out_date_semantic_evidence_invalid")
+    if (
+        manifest.get("semantic_evidence_schema_version")
+        != SEMANTIC_EVIDENCE_SCHEMA_VERSION
+        or manifest.get("semantic_evidence_sha256") != semantic_sha256
+        or pointer.get("semantic_evidence_sha256") != semantic_sha256
+    ):
+        blockers.append("industry_out_date_semantic_evidence_binding_invalid")
+
     artifact_path = _safe_relative_file(root, manifest.get("artifact_file"))
     artifact_sha256 = _file_digest(artifact_path) if artifact_path else ""
     artifact = _read_json(artifact_path) if artifact_path else None
     artifact = dict(artifact) if isinstance(artifact, Mapping) else {}
     raw_rows = artifact.get("rows")
-    rows = [dict(row) for row in raw_rows or [] if isinstance(row, Mapping)]
+    rows = (
+        [dict(row) for row in raw_rows]
+        if type(raw_rows) is list and all(type(row) is dict for row in raw_rows)
+        else []
+    )
     if set(artifact) != {"rows", "schema_version"} or artifact.get("schema_version") != ARTIFACT_SCHEMA_VERSION:
         blockers.append("industry_artifact_schema_invalid")
-    if not isinstance(raw_rows, list) or len(rows) != len(raw_rows):
+    if type(raw_rows) is not list or len(rows) != len(raw_rows):
         blockers.append("industry_artifact_rows_not_exact_objects")
     blockers.extend(
         _interval_blockers(
@@ -317,6 +406,7 @@ def validate_full_market_industry_membership(
         "artifact_sha256": artifact_sha256,
         "scope_digest": manifest.get("scope_digest"),
         "source_version_digest": manifest.get("source_version_digest"),
+        "semantic_evidence_sha256": semantic_sha256,
         "universe_digest": universe_digest,
         "validated_trade_date": validated_trade_date,
         "as_of_date": as_of_date,
@@ -326,21 +416,66 @@ def validate_full_market_industry_membership(
             blockers.append(f"industry_pointer_manifest_{key}_mismatch")
     if manifest.get("artifact_sha256") != artifact_sha256:
         blockers.append("industry_artifact_digest_mismatch")
-    if manifest.get("artifact_row_count") != len(rows):
+    if (
+        type(manifest.get("artifact_row_count")) is not int
+        or manifest.get("artifact_row_count") != len(rows)
+    ):
         blockers.append("industry_artifact_row_count_mismatch")
     if manifest.get("artifact_schema_version") != ARTIFACT_SCHEMA_VERSION:
         blockers.append("industry_artifact_version_binding_invalid")
     if manifest.get("source_api") != SOURCE_API or manifest.get("source_scope") != SOURCE_SCOPE:
         blockers.append("industry_source_api_or_scope_invalid")
+    version_id = manifest.get("version_id")
+    if type(version_id) is not str or not _VERSION_ID.fullmatch(version_id):
+        blockers.append("industry_version_id_invalid")
+    scope = manifest.get("scope") if type(manifest.get("scope")) is dict else {}
+    expected_scope = {
+        "schema_version": SCOPE_SCHEMA_VERSION,
+        "source_api": SOURCE_API,
+        "source_scope": SOURCE_SCOPE,
+        "eligible_symbol_count": len(symbols),
+        "exchanges": list(REQUIRED_EXCHANGES),
+        "universe_digest": universe_digest,
+        "validated_trade_date": validated_trade_date,
+        "as_of_date": as_of_date,
+    }
+    if scope != expected_scope or manifest.get("scope_digest") != _digest(scope):
+        blockers.append("industry_scope_binding_invalid")
     if not _HEX_64.fullmatch(str(manifest.get("scope_digest") or "")):
         blockers.append("industry_scope_digest_invalid")
+    source_version = (
+        manifest.get("source_version")
+        if type(manifest.get("source_version")) is dict
+        else {}
+    )
+    expected_source_version = {
+        "schema_version": SOURCE_VERSION_SCHEMA_VERSION,
+        "version_id": version_id,
+        "source_api": SOURCE_API,
+        "source_scope": SOURCE_SCOPE,
+        "scope_digest": manifest.get("scope_digest"),
+        "artifact_schema_version": ARTIFACT_SCHEMA_VERSION,
+        "artifact_sha256": artifact_sha256,
+        "semantic_evidence_sha256": semantic_sha256,
+    }
+    if (
+        source_version != expected_source_version
+        or manifest.get("source_version_digest") != _digest(source_version)
+    ):
+        blockers.append("industry_source_version_binding_invalid")
     if not _HEX_64.fullmatch(str(manifest.get("source_version_digest") or "")):
         blockers.append("industry_source_version_digest_invalid")
     if manifest.get("universe_digest") != universe_digest:
         blockers.append("industry_universe_digest_mismatch")
-    if manifest.get("eligible_symbol_count") != len(symbols):
+    if (
+        type(manifest.get("eligible_symbol_count")) is not int
+        or manifest.get("eligible_symbol_count") != len(symbols)
+    ):
         blockers.append("industry_eligible_symbol_count_mismatch")
-    if manifest.get("exchanges") != list(REQUIRED_EXCHANGES):
+    if (
+        type(manifest.get("exchanges")) is not list
+        or manifest.get("exchanges") != list(REQUIRED_EXCHANGES)
+    ):
         blockers.append("industry_three_exchange_manifest_invalid")
     if manifest.get("validated_trade_date") != validated_trade_date:
         blockers.append("industry_validated_trade_date_mismatch")
@@ -349,7 +484,7 @@ def validate_full_market_industry_membership(
     if (
         manifest.get("out_date_semantics") != RESOLVED_OUT_DATE_SEMANTICS
         or manifest.get("out_date_semantics_validated") is not True
-        or not _HEX_64.fullmatch(str(manifest.get("out_date_semantics_evidence_digest") or ""))
+        or manifest.get("out_date_semantics_evidence_digest") != semantic_sha256
     ):
         blockers.append("industry_out_date_semantics_unresolved")
 
@@ -370,6 +505,8 @@ def validate_full_market_industry_membership(
         "artifact_sha256": artifact_sha256,
         "universe_digest": universe_digest,
         "manifest_digest": str(manifest.get("manifest_digest") or ""),
+        "pointer_digest": str(pointer.get("pointer_digest") or ""),
+        "semantic_evidence_sha256": semantic_sha256,
         "eligible_symbol_count": len(symbols),
         "exchanges": sorted({_exchange(symbol) for symbol in symbols if _exchange(symbol)}),
         "validated_trade_date": validated_trade_date,
@@ -549,6 +686,7 @@ def create_full_market_industry_membership_execution_request(
 
 __all__ = (
     "EXECUTION_REQUEST_TASK_TYPE",
+    "INDUSTRY_BINDING_DIGEST_KEYS",
     "MINIMUM_ELIGIBLE_SYMBOLS",
     "create_full_market_industry_membership_execution_request",
     "read_full_market_industry_membership_status",

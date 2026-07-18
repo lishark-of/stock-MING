@@ -6,7 +6,7 @@ import json
 import sqlite3
 from contextlib import closing
 from pathlib import Path
-from typing import Any
+from typing import Any, Mapping, Sequence
 from urllib.parse import quote
 
 
@@ -189,6 +189,328 @@ class SQLiteMetaStore:
             "readback_verified_before_commit": True,
             "current_payload_digest": hashlib.sha256(pairs[0][1].encode("utf-8")).hexdigest(),
             "last_good_payload_digest": hashlib.sha256(pairs[1][1].encode("utf-8")).hexdigest(),
+        }
+
+    def write_packet_task_bundle_atomic(
+        self,
+        *,
+        packets: Mapping[str, Any],
+        tasks: Sequence[Mapping[str, Any]],
+        request_bundle_id: str,
+        bundle_digest: str,
+    ) -> dict[str, Any]:
+        """Atomically persist request packets and their terminal task records."""
+
+        if self.read_only:
+            raise RuntimeError("read_only_store_cannot_write_bundle")
+        packet_rows = [
+            (
+                str(packet_key),
+                json.dumps(
+                    packet,
+                    ensure_ascii=False,
+                    sort_keys=True,
+                    separators=(",", ":"),
+                    default=str,
+                ),
+            )
+            for packet_key, packet in packets.items()
+        ]
+        task_rows: list[tuple[str, str, str, str]] = []
+        for task in tasks:
+            task_id = str(task.get("task_id") or "")
+            task_type = str(task.get("task_type") or "")
+            if not task_id or not task_type:
+                raise ValueError("bundle_task_identity_required")
+            payload = json.dumps(
+                dict(task),
+                ensure_ascii=False,
+                sort_keys=True,
+                separators=(",", ":"),
+                default=str,
+            )
+            task_rows.append(
+                (
+                    task_id,
+                    task_type,
+                    payload,
+                    hashlib.sha256(payload.encode("utf-8")).hexdigest(),
+                )
+            )
+        packet_keys = [row[0] for row in packet_rows]
+        task_ids = [row[0] for row in task_rows]
+        request_bundle_id = str(request_bundle_id or "").lower()
+        bundle_digest = str(bundle_digest or "").lower()
+
+        def sha256_text(value: str) -> bool:
+            return len(value) == 64 and all(character in "0123456789abcdef" for character in value)
+
+        if (
+            not packet_rows
+            or not task_rows
+            or any(not key for key in packet_keys)
+            or len(set(packet_keys)) != len(packet_keys)
+            or len(set(task_ids)) != len(task_ids)
+            or not sha256_text(request_bundle_id)
+            or not sha256_text(bundle_digest)
+        ):
+            raise ValueError("bundle_packet_or_task_identity_invalid")
+
+        for _, payload in packet_rows:
+            try:
+                decoded_packet = json.loads(payload)
+            except Exception as exc:
+                raise ValueError("bundle_packet_json_invalid") from exc
+            if not (
+                isinstance(decoded_packet, dict)
+                and decoded_packet.get("request_bundle_id") == request_bundle_id
+                and decoded_packet.get("bundle_digest") == bundle_digest
+            ):
+                raise ValueError("bundle_packet_binding_invalid")
+
+        for task_id, task_type, payload, _ in task_rows:
+            try:
+                decoded_task = json.loads(payload)
+            except Exception as exc:
+                raise ValueError("bundle_task_json_invalid") from exc
+            payload_safe = (
+                decoded_task.get("payload_safe")
+                if isinstance(decoded_task, dict)
+                and isinstance(decoded_task.get("payload_safe"), dict)
+                else {}
+            )
+            if not (
+                decoded_task.get("task_id") == task_id
+                and decoded_task.get("task_type") == task_type
+                and payload_safe.get("request_bundle_id") == request_bundle_id
+                and payload_safe.get("bundle_digest") == bundle_digest
+            ):
+                raise ValueError("bundle_task_binding_invalid")
+
+        def canonical_terminal_task(task: Any) -> dict[str, Any] | None:
+            if not isinstance(task, dict):
+                return None
+            normalized = json.loads(
+                json.dumps(
+                    task,
+                    ensure_ascii=False,
+                    sort_keys=True,
+                    separators=(",", ":"),
+                    default=str,
+                )
+            )
+            created_at = normalized.get("created_at")
+            started_at = normalized.get("started_at")
+            finished_at = normalized.get("finished_at")
+            if not (
+                isinstance(created_at, str)
+                and created_at == started_at == finished_at
+            ):
+                return None
+            try:
+                parsed_created_at = _dt.datetime.fromisoformat(created_at)
+            except (TypeError, ValueError):
+                return None
+            if parsed_created_at.isoformat(timespec="microseconds") != created_at:
+                return None
+            progress = normalized.get("progress")
+            if not (
+                normalized.get("status") == "success"
+                and type(progress) in {int, float}
+                and float(progress) == 1.0
+                and normalized.get("external_calls_triggered") is False
+                and normalized.get("deepseek_called") is False
+                and normalized.get("tushare_called") is False
+                and normalized.get("github_called") is False
+                and normalized.get("does_not_execute_trades") is True
+                and normalized.get("does_not_modify_strategy_action") is True
+            ):
+                return None
+            status_history = normalized.get("status_history")
+            expected_status_event = {
+                "at": created_at,
+                "current_step": normalized.get("current_step"),
+                "progress": progress,
+                "status": "success",
+            }
+            if status_history != [expected_status_event]:
+                return None
+            task_log = normalized.get("task_log")
+            expected_task_log = {
+                "at": created_at,
+                "contains_secret": False,
+                "current_step": normalized.get("current_step"),
+                "event": "task_created",
+                "external": False,
+                "external_calls_triggered": False,
+                "message_safe": "local task record created without external work",
+                "stack_trace_included": False,
+                "status": "success",
+            }
+            if task_log != [expected_task_log]:
+                return None
+            time_sentinel = "<canonical-terminal-task-time>"
+            normalized["created_at"] = time_sentinel
+            normalized["started_at"] = time_sentinel
+            normalized["finished_at"] = time_sentinel
+            normalized["status_history"][0]["at"] = time_sentinel
+            normalized["task_log"][0]["at"] = time_sentinel
+            return normalized
+
+        for _, _, payload, _ in task_rows:
+            if canonical_terminal_task(json.loads(payload)) is None:
+                raise ValueError("bundle_task_terminal_wrapper_invalid")
+
+        now = _dt.datetime.now().isoformat(timespec="microseconds")
+        with closing(self._connect()) as conn:
+            try:
+                conn.execute("BEGIN IMMEDIATE")
+                existing_packets = {
+                    packet_key: (
+                        conn.execute(
+                            "SELECT payload_json FROM packets WHERE packet_key = ?",
+                            (packet_key,),
+                        ).fetchone()
+                        or (None,)
+                    )[0]
+                    for packet_key in packet_keys
+                }
+                packets_exact = all(
+                    existing_packets.get(packet_key) == payload
+                    for packet_key, payload in packet_rows
+                )
+                existing_tasks = {
+                    task_id: conn.execute(
+                        "SELECT payload_json FROM task_status WHERE task_id = ?",
+                        (task_id,),
+                    ).fetchone()
+                    for task_id in task_ids
+                }
+                existing_histories = {
+                    task_id: conn.execute(
+                        """
+                        SELECT task_type, payload_json, payload_digest
+                        FROM task_status_history
+                        WHERE task_id = ?
+                        ORDER BY history_id ASC
+                        """,
+                        (task_id,),
+                    ).fetchall()
+                    for task_id in task_ids
+                }
+                if packets_exact:
+                    for task_id, task_type, expected_payload, _ in task_rows:
+                        row = existing_tasks.get(task_id)
+                        if row is None:
+                            raise RuntimeError("idempotent_bundle_task_missing")
+                        try:
+                            current_task = json.loads(str(row[0]))
+                            expected_task = json.loads(expected_payload)
+                        except Exception as exc:
+                            raise RuntimeError("idempotent_bundle_task_json_invalid") from exc
+                        current_terminal = canonical_terminal_task(current_task)
+                        expected_terminal = canonical_terminal_task(expected_task)
+                        if not (
+                            current_terminal is not None
+                            and expected_terminal is not None
+                            and hashlib.sha256(
+                                json.dumps(
+                                    current_terminal,
+                                    ensure_ascii=False,
+                                    sort_keys=True,
+                                    separators=(",", ":"),
+                                ).encode("utf-8")
+                            ).hexdigest()
+                            == hashlib.sha256(
+                                json.dumps(
+                                    expected_terminal,
+                                    ensure_ascii=False,
+                                    sort_keys=True,
+                                    separators=(",", ":"),
+                                ).encode("utf-8")
+                            ).hexdigest()
+                        ):
+                            raise RuntimeError("idempotent_bundle_task_binding_invalid")
+                        history_rows = existing_histories.get(task_id) or []
+                        history_row = history_rows[0] if len(history_rows) == 1 else None
+                        current_payload = str(row[0])
+                        if not (
+                            history_row is not None
+                            and str(history_row[0]) == task_type
+                            and str(history_row[1]) == current_payload
+                            and str(history_row[2])
+                            == hashlib.sha256(current_payload.encode("utf-8")).hexdigest()
+                        ):
+                            raise RuntimeError("idempotent_bundle_history_binding_invalid")
+                    conn.rollback()
+                    return {
+                        "status": "packet_task_bundle_reused",
+                        "request_bundle_id": request_bundle_id,
+                        "bundle_digest": bundle_digest,
+                        "packet_keys": packet_keys,
+                        "task_ids": task_ids,
+                        "transaction_committed": False,
+                        "idempotent_reuse": True,
+                        "writes_performed": 0,
+                    }
+                if (
+                    any(payload is not None for payload in existing_packets.values())
+                    or any(row is not None for row in existing_tasks.values())
+                    or any(existing_histories.values())
+                ):
+                    raise RuntimeError("idempotent_bundle_partial_or_conflicting_state")
+                for packet_key, payload in packet_rows:
+                    conn.execute(
+                        """
+                        INSERT INTO packets(
+                            packet_key, payload_json, updated_at
+                        ) VALUES (?, ?, ?)
+                        """,
+                        (packet_key, payload, now),
+                    )
+                    row = conn.execute(
+                        "SELECT payload_json FROM packets WHERE packet_key = ?",
+                        (packet_key,),
+                    ).fetchone()
+                    if row is None or str(row[0]) != payload:
+                        raise RuntimeError("atomic_bundle_packet_readback_mismatch")
+                for task_id, task_type, payload, payload_digest in task_rows:
+                    conn.execute(
+                        """
+                        INSERT INTO task_status(
+                            task_id, payload_json, updated_at
+                        ) VALUES (?, ?, ?)
+                        """,
+                        (task_id, payload, now),
+                    )
+                    conn.execute(
+                        """
+                        INSERT INTO task_status_history(
+                            task_id, task_type, payload_json, updated_at, payload_digest
+                        ) VALUES (?, ?, ?, ?, ?)
+                        """,
+                        (task_id, task_type, payload, now, payload_digest),
+                    )
+                    row = conn.execute(
+                        "SELECT payload_json FROM task_status WHERE task_id = ?",
+                        (task_id,),
+                    ).fetchone()
+                    if row is None or str(row[0]) != payload:
+                        raise RuntimeError("atomic_bundle_task_readback_mismatch")
+                conn.commit()
+            except Exception:
+                conn.rollback()
+                raise
+        return {
+            "status": "packet_task_bundle_committed",
+            "request_bundle_id": request_bundle_id,
+            "bundle_digest": bundle_digest,
+            "packet_keys": packet_keys,
+            "task_ids": task_ids,
+            "updated_at": now,
+            "transaction_committed": True,
+            "readback_verified_before_commit": True,
+            "idempotent_reuse": False,
         }
 
     def restore_packet_pair_and_delete_event_atomic(

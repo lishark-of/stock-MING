@@ -312,6 +312,15 @@ def _parameterized_get_route_specs() -> list[dict[str, Any]]:
             "not_invoked_by_audit_reader": True,
         },
         {
+            "route": "GET /api/audit/external-production-attestation",
+            "source": "external_production_attestation_local_validation",
+            "route_type": "read_only_local_validation",
+            "cache_only": True,
+            "external_calls_triggered": False,
+            "requires_runtime_parameter": False,
+            "not_invoked_by_audit_reader": True,
+        },
+        {
             "route": "GET /api/next-session/production-replacement",
             "source": "next_session_production_replacement_local_validation",
             "route_type": "read_only_local_validation",

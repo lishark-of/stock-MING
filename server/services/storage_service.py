@@ -12,7 +12,7 @@ from typing import Any, Mapping
 from storage import duckdb_store, parquet_store
 from storage.sqlite_meta import SQLiteMetaStore
 
-from . import production_evidence_journal, task_service
+from . import external_production_attestation_service, production_evidence_journal, task_service
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 PARQUET_ROOT = PROJECT_ROOT / ".stock_ming_3" / "parquet"
@@ -71,14 +71,9 @@ DUCKDB_QUERY_MAX_LIMIT = 10000
 DUCKDB_QUERY_FILTER_PARAMS = ["limit", "cursor", "ts_code", "trade_date", "start_date", "end_date"]
 CURRENT_RESULT_TTL_SECONDS = 24 * 60 * 60
 CURRENT_RESULT_MAX_VERSIONS = 10
-DATASET_TTL_SECONDS = {
-    "factor_values": 6 * 60 * 60,
-    "daily": 24 * 60 * 60,
-    "daily_basic": 24 * 60 * 60,
-    "moneyflow": 24 * 60 * 60,
-    "trade_cal": 14 * 24 * 60 * 60,
-    "backtest_results": 30 * 24 * 60 * 60,
-}
+DATASET_TTL_SECONDS = dict(
+    external_production_attestation_service.CANONICAL_STORAGE_TTL_SECONDS
+)
 DATASET_COMPACTION_SIZE_THRESHOLD_BYTES = 128 * 1024 * 1024
 DATASET_VERSION_MANIFEST_NAME = "_dataset_versions.json"
 STORAGE_PHYSICAL_EXECUTION_PHASES = [
@@ -740,10 +735,11 @@ def _storage_cache_ttl_resolution_material(row: Mapping[str, Any], head_full: st
 
 
 def storage_cache_ttl_refresh_evidence() -> dict[str, Any]:
-    """Validate a future explicit TTL maintenance run without writing or refreshing.
+    """Validate explicit TTL maintenance evidence without writing or refreshing.
 
-    One trusted current-HEAD journal event is required for every canonical
-    dataset.  A single refreshed dataset can therefore never clear LTG-05.
+    Local HMAC evidence remains useful for diagnostics but cannot cross the
+    production boundary.  Production requires an externally signed,
+    current-HEAD attestation for every canonical dataset.
     """
 
     packet, read_status = _read_storage_meta_packet_no_init(CACHE_TTL_REFRESH_EVIDENCE_PACKET_KEY)
@@ -809,7 +805,35 @@ def storage_cache_ttl_refresh_evidence() -> dict[str, Any]:
             scope_hash=scope_hash,
             payload_digest=payload_digest,
         )
-        verified = bool(head_matches and shape_ready and journal.get("ready") is True)
+        external_lineage = external_production_attestation_service.validate_attested_lineage(
+            attestation_kind="storage_ttl_resolution",
+            subject=dataset,
+            scope_hash=scope_hash,
+            task_id=material["refresh_task_id"],
+            artifact_digest=artifact_sha256,
+        )
+        expected_claims = {
+            "dataset": dataset,
+            "resolution": resolution,
+            "refresh_task_id": material["refresh_task_id"],
+            "before_ttl_state": material["before_ttl_state"],
+            "after_ttl_state": material["after_ttl_state"],
+            "refresh_executed": material["refresh_executed"],
+            "provider_call_count": material["provider_call_count"],
+            "fetched_at": material["fetched_at"],
+            "external_calls_triggered": material["external_calls_triggered"],
+            "does_not_execute_trades": material["does_not_execute_trades"],
+        }
+        local_verified = bool(head_matches and shape_ready and journal.get("ready") is True)
+        external_signature_verified = bool(
+            head_matches
+            and shape_ready
+            and external_lineage.get("local_integrity_ready") is True
+            and external_lineage.get("claims") == expected_claims
+            and str(row.get("external_attestation_id") or "")
+            == str(external_lineage.get("attestation_id") or "")
+        )
+        verified = bool(local_verified or external_signature_verified)
         validated_rows.append(
             {
                 "dataset": dataset,
@@ -819,24 +843,32 @@ def storage_cache_ttl_refresh_evidence() -> dict[str, Any]:
                 "head_matches": head_matches,
                 "shape_ready": shape_ready,
                 "journal_verified": journal.get("ready") is True,
+                "local_integrity_verified": local_verified,
+                "external_attestation_verified": external_signature_verified,
+                "external_signature_verified": external_signature_verified,
+                "external_production_trusted": False,
+                "external_attestation_id": str(row.get("external_attestation_id") or ""),
                 "refresh_executed": material["refresh_executed"],
                 "provider_call_count": material["provider_call_count"],
                 "does_not_execute_trades": True,
             }
         )
     verified_count = sum(1 for row in validated_rows if row["verified"])
+    local_verified_count = sum(1 for row in validated_rows if row["local_integrity_verified"])
+    external_verified_count = sum(1 for row in validated_rows if row["external_attestation_verified"])
     local_resolution_ready = bool(
         source.get("schema_version") == CACHE_TTL_REFRESH_EVIDENCE_SCHEMA_VERSION
         and read_status == "packet_present"
         and head_matches
         and not duplicate_or_unknown
-        and verified_count == len(CANONICAL_PARQUET_DATASETS)
+        and local_verified_count == len(CANONICAL_PARQUET_DATASETS)
     )
+    production_resolution_ready = False
     return {
         "schema_version": CACHE_TTL_REFRESH_EVIDENCE_SCHEMA_VERSION,
         "packet_key": CACHE_TTL_REFRESH_EVIDENCE_PACKET_KEY,
         "status": "storage_cache_ttl_local_resolution_evidence_verified_production_blocked"
-        if local_resolution_ready
+        if local_resolution_ready or external_verified_count
         else "storage_cache_ttl_refresh_evidence_blocked",
         "read_status": read_status,
         "head_full": packet_head,
@@ -845,6 +877,8 @@ def storage_cache_ttl_refresh_evidence() -> dict[str, Any]:
         "dataset_count": len(CANONICAL_PARQUET_DATASETS),
         "verified_dataset_count": verified_count,
         "resolution_verified_dataset_count": verified_count,
+        "local_integrity_verified_dataset_count": local_verified_count,
+        "external_attestation_verified_dataset_count": external_verified_count,
         "refresh_executed_count": sum(
             1 for row in validated_rows if row["verified"] and row["resolution"] == "refreshed"
         ),
@@ -859,10 +893,15 @@ def storage_cache_ttl_refresh_evidence() -> dict[str, Any]:
         "local_ttl_resolution_evidence_ready": local_resolution_ready,
         "local_integrity_current_head_journal_required": True,
         "trusted_current_head_journal_required": False,
-        "production_trust_boundary_satisfied": False,
+        "production_trust_boundary_satisfied": production_resolution_ready,
         "snapshot_rollback_resistant": False,
+        "external_signature_is_local_integrity_only": True,
+        "production_trusted": False,
+        "production_blockers": list(
+            external_production_attestation_service.PRODUCTION_TRUST_BLOCKERS
+        ),
         "requires_independently_held_or_external_production_capability": True,
-        "production_ttl_evidence_ready": False,
+        "production_ttl_evidence_ready": production_resolution_ready,
         "production_storage_complete": False,
         "cache_get_writes_files": False,
         "refresh_executed_by_validator": False,
@@ -871,6 +910,46 @@ def storage_cache_ttl_refresh_evidence() -> dict[str, Any]:
         "contains_secret": False,
         "rows": validated_rows,
     }
+
+
+def import_storage_cache_ttl_external_attestation(payload: Any) -> dict[str, Any]:
+    """Import a signed TTL statement as local integrity evidence only.
+
+    The registry and the storage cache packet are separate state machines.  In
+    the absence of a cross-store transaction and an external monotonic anchor,
+    this route deliberately does not mutate the storage consumer packet.
+    """
+
+    imported = external_production_attestation_service.import_signed_attestation(
+        payload,
+        expected_kind="storage_ttl_resolution",
+    )
+    if imported.get("local_integrity_ready") is not True:
+        return {
+            **imported,
+            "storage_packet_written": False,
+            "consumer_state_unchanged": True,
+            "production_trusted": False,
+            "production_ttl_evidence_ready": False,
+            "production_blockers": list(
+                external_production_attestation_service.PRODUCTION_TRUST_BLOCKERS
+            ),
+        }
+    return {
+        **imported,
+        "ready": False,
+        "status": "storage_ttl_external_signature_imported_consumer_not_wired",
+        "dataset": str(imported.get("subject") or ""),
+        "storage_packet_written": False,
+        "consumer_state_unchanged": True,
+        "production_trusted": False,
+        "production_ttl_evidence_ready": False,
+        "production_blockers": list(
+            external_production_attestation_service.PRODUCTION_TRUST_BLOCKERS
+        ),
+    }
+
+
 def _dataset_version_manifest_path() -> Path:
     return PARQUET_ROOT / DATASET_VERSION_MANIFEST_NAME
 
