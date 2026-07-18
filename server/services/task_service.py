@@ -3287,6 +3287,25 @@ TASK_LIFECYCLE_POST_ROUTES = [
 
 TASK_CONTROL_PLANE_POST_ROUTES = [
     {
+        "route": "POST /api/audit/external-production-attestation",
+        "label": "导入外部签名证明到本地完整性注册表",
+        "route_type": "local_external_attestation_control_plane",
+        "button_gated": True,
+        "current_backend": "local_ed25519_verification_registry",
+        "external_call_policy": "signed_envelope_local_verification_only_no_external_call",
+        "possible_external_sources": [],
+        "creates_task": False,
+        "production_eligible": False,
+        "structural_production_blockers": [
+            "external_monotonic_anchor_unavailable",
+            "trusted_head_key_epoch_unavailable",
+            "production_consumer_not_wired",
+        ],
+        "call_ledger_required": True,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+    },
+    {
         "route": "POST /api/audit/production-release-promotion",
         "label": "确认并写入 current-head 生产发布提升事件",
         "route_type": "local_release_control_plane",
@@ -3315,6 +3334,25 @@ TASK_CONTROL_PLANE_POST_ROUTES = [
         "structural_production_blockers": [
             "external_trusted_approval_capability_unavailable",
             "rollback_resistant_high_water_unavailable",
+        ],
+        "call_ledger_required": True,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+    },
+    {
+        "route": "POST /api/storage/cache-ttl/production-attestation",
+        "label": "导入 Storage TTL 外部签名证明到本地完整性注册表",
+        "route_type": "local_external_attestation_control_plane",
+        "button_gated": True,
+        "current_backend": "local_ed25519_verification_registry",
+        "external_call_policy": "signed_envelope_local_verification_only_no_external_call",
+        "possible_external_sources": [],
+        "creates_task": False,
+        "production_eligible": False,
+        "structural_production_blockers": [
+            "external_monotonic_anchor_unavailable",
+            "trusted_head_key_epoch_unavailable",
+            "production_consumer_not_wired",
         ],
         "call_ledger_required": True,
         "does_not_execute_trades": True,
