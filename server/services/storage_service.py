@@ -71,14 +71,9 @@ DUCKDB_QUERY_MAX_LIMIT = 10000
 DUCKDB_QUERY_FILTER_PARAMS = ["limit", "cursor", "ts_code", "trade_date", "start_date", "end_date"]
 CURRENT_RESULT_TTL_SECONDS = 24 * 60 * 60
 CURRENT_RESULT_MAX_VERSIONS = 10
-DATASET_TTL_SECONDS = {
-    "factor_values": 6 * 60 * 60,
-    "daily": 24 * 60 * 60,
-    "daily_basic": 24 * 60 * 60,
-    "moneyflow": 24 * 60 * 60,
-    "trade_cal": 14 * 24 * 60 * 60,
-    "backtest_results": 30 * 24 * 60 * 60,
-}
+DATASET_TTL_SECONDS = dict(
+    external_production_attestation_service.CANONICAL_STORAGE_TTL_SECONDS
+)
 DATASET_COMPACTION_SIZE_THRESHOLD_BYTES = 128 * 1024 * 1024
 DATASET_VERSION_MANIFEST_NAME = "_dataset_versions.json"
 STORAGE_PHYSICAL_EXECUTION_PHASES = [

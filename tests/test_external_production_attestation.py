@@ -78,7 +78,7 @@ class ExternalProductionAttestationTests(unittest.TestCase):
                 "after_ttl_state": "fresh",
                 "refresh_executed": False,
                 "provider_call_count": 0,
-                "fetched_at": "2026-07-18T00:00:00+00:00",
+                "fetched_at": (datetime.now(timezone.utc) - timedelta(seconds=1)).isoformat(),
                 "external_calls_triggered": False,
                 "does_not_execute_trades": True,
             }
@@ -215,6 +215,72 @@ class ExternalProductionAttestationTests(unittest.TestCase):
         self.assertFalse(crafted["ready"])
         self.assertEqual(crafted["status"], "signed_envelope_only_required")
 
+    def test_idempotent_replay_still_requires_exact_valid_envelope(self) -> None:
+        signed = self._envelope("worker_runtime_lineage", "worker-run-1", 1, "")
+        imported = self._import(signed)
+        self.assertTrue(imported["local_integrity_ready"])
+
+        attacks = []
+        for field, value in (("schema_version", "evil.v1"), ("algorithm", "RSA")):
+            attack = {**signed, "statement": dict(signed["statement"])}
+            attack[field] = value
+            attacks.append(attack)
+        extra = {**signed, "statement": dict(signed["statement"]), "production": True}
+        attacks.append(extra)
+
+        for attack in attacks:
+            with self.subTest(keys=sorted(attack), algorithm=attack.get("algorithm")):
+                rejected = self._import(attack)
+                self.assertFalse(rejected["local_integrity_ready"])
+                self.assertFalse(rejected["writes_performed"])
+        registry = external.validate_registry()
+        self.assertTrue(registry["local_integrity_ready"])
+        self.assertEqual(registry["event_count"], 1)
+
+    def test_storage_ttl_timestamp_semantics_are_bounded_by_resolution(self) -> None:
+        now = datetime.now(timezone.utc)
+        ancient = self._claims("storage_ttl_resolution", "daily")
+        ancient["fetched_at"] = "2000-01-01T00:00:00+00:00"
+        rejected = self._import(
+            self._envelope("storage_ttl_resolution", "daily", 1, "", claims=ancient)
+        )
+        self.assertFalse(rejected["local_integrity_ready"])
+        self.assertEqual(rejected["status"], "signed_statement_contract_invalid")
+
+        within_ttl = self._claims("storage_ttl_resolution", "factor_values")
+        within_ttl["fetched_at"] = (now - timedelta(hours=5)).isoformat()
+        accepted = self._import(
+            self._envelope(
+                "storage_ttl_resolution", "factor_values", 1, "", claims=within_ttl
+            )
+        )
+        self.assertTrue(accepted["local_integrity_ready"])
+
+        refreshed = self._claims("storage_ttl_resolution", "daily")
+        refreshed.update(
+            {
+                "resolution": "refreshed",
+                "refresh_task_id": "refresh-daily-v2",
+                "before_ttl_state": "stale",
+                "after_ttl_state": "fresh",
+                "refresh_executed": True,
+                "provider_call_count": 1,
+                "fetched_at": (now - timedelta(minutes=16)).isoformat(),
+                "external_calls_triggered": True,
+            }
+        )
+        stale_refresh = self._import(
+            self._envelope(
+                "storage_ttl_resolution",
+                "daily",
+                2,
+                accepted["attestation_id"],
+                claims=refreshed,
+            )
+        )
+        self.assertFalse(stale_refresh["local_integrity_ready"])
+        self.assertEqual(stale_refresh["status"], "signed_statement_contract_invalid")
+
     def test_wrong_key_controls_signature_and_chain_fail_closed(self) -> None:
         key_path = self.trust_root / "ed25519-public.pem"
         key_bytes = key_path.read_bytes()
@@ -335,6 +401,11 @@ class ExternalProductionAttestationTests(unittest.TestCase):
             second["status"],
             "external_attestation_registry_existing_state_invalid",
         )
+        registry = external.validate_registry()
+        self.assertFalse(registry["production_trusted"])
+        self.assertFalse(registry["external_trust_verified"])
+        self.assertFalse(registry["snapshot_rollback_resistant"])
+        self.assertEqual(registry["blockers"], list(external.PRODUCTION_TRUST_BLOCKERS))
         unchanged = store.read_packet(external.REGISTRY_PACKET_KEY)
         self.assertEqual(unchanged["events"][0]["attestation_id"], "0" * 64)
         self.assertEqual(len(unchanged["events"]), 1)
@@ -632,6 +703,40 @@ class ExternalProductionAttestationTests(unittest.TestCase):
         self.assertEqual(
             store.read_packet(storage_service.CACHE_TTL_REFRESH_EVIDENCE_PACKET_KEY), sentinel
         )
+
+    def test_post_commit_exception_is_reconciled_and_retry_is_idempotent(self) -> None:
+        signed = self._envelope("worker_runtime_lineage", "worker-run-retry", 1, "")
+        original_promote = SQLiteMetaStore.promote_packet_atomic
+
+        def commit_then_raise(store: SQLiteMetaStore, packet_key: str, packet: dict) -> dict:
+            original_promote(store, packet_key, packet)
+            raise RuntimeError("injected_post_commit_failure")
+
+        with patch.object(
+            external.SQLiteMetaStore,
+            "promote_packet_atomic",
+            new=commit_then_raise,
+        ):
+            first = self._import(signed)
+        self.assertTrue(first["writes_performed"])
+        self.assertTrue(first["local_integrity_ready"])
+        self.assertEqual(
+            first["status"],
+            "external_attestation_imported_after_write_exception_reconciled",
+        )
+
+        replay = self._import(signed)
+        self.assertTrue(replay["local_integrity_ready"])
+        self.assertFalse(replay["writes_performed"])
+        self.assertEqual(
+            replay["status"],
+            "external_attestation_already_imported_local_integrity_only",
+        )
+        registry = external.validate_registry()
+        self.assertTrue(registry["local_integrity_ready"])
+        self.assertEqual(registry["event_count"], 1)
+        self.assertEqual(registry["last_monotonic_counter"], 1)
+        self.assertFalse(registry["production_trusted"])
 
     def test_semantic_relationship_attacks_are_rejected_before_write(self) -> None:
         attacks: list[dict] = []

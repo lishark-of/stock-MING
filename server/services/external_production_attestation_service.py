@@ -43,9 +43,16 @@ PRODUCTION_TRUST_BLOCKERS = (
     "trusted_head_key_epoch_unavailable",
     "production_consumer_not_wired",
 )
-CANONICAL_STORAGE_DATASETS = frozenset(
-    {"factor_values", "daily", "daily_basic", "moneyflow", "trade_cal", "backtest_results"}
-)
+CANONICAL_STORAGE_TTL_SECONDS = {
+    "factor_values": 6 * 60 * 60,
+    "daily": 24 * 60 * 60,
+    "daily_basic": 24 * 60 * 60,
+    "moneyflow": 24 * 60 * 60,
+    "trade_cal": 14 * 24 * 60 * 60,
+    "backtest_results": 30 * 24 * 60 * 60,
+}
+CANONICAL_STORAGE_DATASETS = frozenset(CANONICAL_STORAGE_TTL_SECONDS)
+STORAGE_REFRESH_ATTESTATION_MAX_AGE_SECONDS = 15 * 60
 FACTOR_RESULT_DATASET = "factor_values"
 CANDIDATE_RADAR_PACKET_KEY = "command_center_3_candidate_radar_cache"
 
@@ -331,7 +338,13 @@ def _parse_utc(value: Any) -> datetime | None:
     return parsed.astimezone(timezone.utc)
 
 
-def _claims_ready(kind: str, claims: Any, *, subject: str) -> bool:
+def _claims_ready(
+    kind: str,
+    claims: Any,
+    *,
+    subject: str,
+    issued_at: datetime | None,
+) -> bool:
     if not isinstance(claims, Mapping):
         return False
     schema = _CLAIM_SCHEMAS.get(kind, {})
@@ -358,12 +371,17 @@ def _claims_ready(kind: str, claims: Any, *, subject: str) -> bool:
     if kind == "storage_ttl_resolution":
         if claims.get("dataset") != subject or subject not in CANONICAL_STORAGE_DATASETS:
             return False
-        if _parse_utc(claims.get("fetched_at")) is None:
+        fetched_at = _parse_utc(claims.get("fetched_at"))
+        if fetched_at is None or issued_at is None:
+            return False
+        age_seconds = (issued_at - fetched_at).total_seconds()
+        if age_seconds < 0:
             return False
         resolution = claims.get("resolution")
         if resolution == "fresh_no_refresh_required":
             return bool(
-                claims.get("before_ttl_state") == "fresh"
+                age_seconds <= CANONICAL_STORAGE_TTL_SECONDS[subject]
+                and claims.get("before_ttl_state") == "fresh"
                 and claims.get("after_ttl_state") == "fresh"
                 and claims.get("refresh_executed") is False
                 and claims.get("provider_call_count") == 0
@@ -371,12 +389,12 @@ def _claims_ready(kind: str, claims: Any, *, subject: str) -> bool:
             )
         if resolution == "refreshed":
             return bool(
-                claims.get("before_ttl_state") in {"stale", "missing"}
+                age_seconds <= STORAGE_REFRESH_ATTESTATION_MAX_AGE_SECONDS
+                and claims.get("before_ttl_state") in {"stale", "missing"}
                 and claims.get("after_ttl_state") == "fresh"
                 and claims.get("refresh_executed") is True
                 and claims.get("provider_call_count") > 0
                 and claims.get("external_calls_triggered") is True
-                and _parse_utc(claims.get("fetched_at")) is not None
             )
         return False
     if kind == "factor_full_market_lineage":
@@ -451,7 +469,12 @@ def _verify_envelope(
         and expires_at is not None
         and issued_at < expires_at
         and (expires_at - issued_at).total_seconds() <= 900
-        and _claims_ready(kind, statement.get("claims"), subject=subject)
+        and _claims_ready(
+            kind,
+            statement.get("claims"),
+            subject=subject,
+            issued_at=issued_at,
+        )
         and (
             kind != "storage_ttl_resolution"
             or statement.get("claims", {}).get("refresh_task_id") == task_id
@@ -461,9 +484,6 @@ def _verify_envelope(
             or statement.get("claims", {}).get("cache_write_task_id") == task_id
         )
     ):
-        return {"ready": False, "status": "signed_statement_contract_invalid"}
-    fetched_at = _parse_utc(statement.get("claims", {}).get("fetched_at"))
-    if fetched_at is not None and issued_at is not None and fetched_at > issued_at:
         return {"ready": False, "status": "signed_statement_contract_invalid"}
     if enforce_freshness:
         now = datetime.now(timezone.utc)
@@ -539,11 +559,16 @@ def validate_registry() -> dict[str, Any]:
     for event in events:
         if not isinstance(event, Mapping) or not isinstance(event.get("signed_envelope"), Mapping):
             return {
-                "ready": False,
+                **_local_only_trust_state(),
                 "status": "external_attestation_registry_event_invalid",
                 "read_status": read_status,
                 "event_count": len(events),
                 "writes_performed": False,
+                "private_key_generated": False,
+                "private_key_loaded": False,
+                "external_calls_triggered": False,
+                "contains_secret": False,
+                "does_not_execute_trades": True,
             }
         result = _verify_envelope(
             event["signed_envelope"],
@@ -553,11 +578,16 @@ def validate_registry() -> dict[str, Any]:
         )
         if not result.get("ready") or result.get("attestation_id") != event.get("attestation_id"):
             return {
-                "ready": False,
+                **_local_only_trust_state(),
                 "status": "external_attestation_registry_chain_invalid",
                 "read_status": read_status,
                 "event_count": len(events),
                 "writes_performed": False,
+                "private_key_generated": False,
+                "private_key_loaded": False,
+                "external_calls_triggered": False,
+                "contains_secret": False,
+                "does_not_execute_trades": True,
             }
         validated.append(result)
     local_integrity_ready = bool(
@@ -630,44 +660,40 @@ def import_signed_attestation(payload: Any, *, expected_kind: str | None = None)
                 "does_not_execute_trades": True,
             }
         envelope = payload["signed_envelope"]
-        if isinstance(envelope, Mapping):
-            statement = envelope.get("statement") if isinstance(envelope.get("statement"), Mapping) else {}
-            signature_text = str(envelope.get("signature_base64") or "")
-            try:
-                signature = base64.b64decode(signature_text, validate=True)
-            except (ValueError, binascii.Error):
-                signature = b""
-            if len(signature) == 64:
-                candidate_id = _sha256(
-                    {
-                        "statement": dict(statement),
-                        "key_fingerprint_sha256": str(envelope.get("key_fingerprint_sha256") or ""),
-                        "signature_sha256": _sha256_bytes(signature),
-                    }
-                )
-                existing = next((row for row in prior_events if row.get("attestation_id") == candidate_id), None)
-                if existing:
-                    if expected_kind is not None and existing.get("attestation_kind") != expected_kind:
-                        return {
-                            **_local_only_trust_state(),
-                            "status": "external_production_attestation_kind_mismatch",
-                            "writes_performed": False,
-                            "external_calls_triggered": False,
-                            "contains_secret": False,
-                            "does_not_execute_trades": True,
-                        }
-                    return {
-                        **existing,
-                        "ready": False,
-                        "local_integrity_ready": True,
-                        "external_signature_verified": True,
-                        "external_trust_verified": False,
-                        "production_trusted": False,
-                        "snapshot_rollback_resistant": False,
-                        "blockers": list(PRODUCTION_TRUST_BLOCKERS),
-                        "status": "external_attestation_already_imported_local_integrity_only",
-                        "writes_performed": False,
-                    }
+        existing = next(
+            (
+                row
+                for row in prior_events
+                if isinstance(envelope, Mapping)
+                and set(envelope) == _ENVELOPE_KEYS
+                and isinstance(envelope.get("statement"), Mapping)
+                and set(envelope["statement"]) == _STATEMENT_KEYS
+                and row.get("signed_envelope") == envelope
+            ),
+            None,
+        )
+        if existing:
+            if expected_kind is not None and existing.get("attestation_kind") != expected_kind:
+                return {
+                    **_local_only_trust_state(),
+                    "status": "external_production_attestation_kind_mismatch",
+                    "writes_performed": False,
+                    "external_calls_triggered": False,
+                    "contains_secret": False,
+                    "does_not_execute_trades": True,
+                }
+            return {
+                **existing,
+                "ready": False,
+                "local_integrity_ready": True,
+                "external_signature_verified": True,
+                "external_trust_verified": False,
+                "production_trusted": False,
+                "snapshot_rollback_resistant": False,
+                "blockers": list(PRODUCTION_TRUST_BLOCKERS),
+                "status": "external_attestation_already_imported_local_integrity_only",
+                "writes_performed": False,
+            }
         verified = _verify_envelope(
             envelope,
             prior_events=list(prior_events),
@@ -710,6 +736,25 @@ def import_signed_attestation(payload: Any, *, expected_kind: str | None = None)
         try:
             SQLiteMetaStore(SQLITE_META_PATH).promote_packet_atomic(REGISTRY_PACKET_KEY, packet)
         except Exception:
+            readback = validate_registry()
+            if (
+                readback.get("local_integrity_ready") is True
+                and readback.get("last_attestation_id") == verified["attestation_id"]
+                and readback.get("last_monotonic_counter") == verified["monotonic_counter"]
+            ):
+                return {
+                    **verified,
+                    "ready": False,
+                    "local_integrity_ready": True,
+                    "external_signature_verified": True,
+                    "external_trust_verified": False,
+                    "production_trusted": False,
+                    "snapshot_rollback_resistant": False,
+                    "blockers": list(PRODUCTION_TRUST_BLOCKERS),
+                    "status": "external_attestation_imported_after_write_exception_reconciled",
+                    "writes_performed": True,
+                    "external_calls_triggered": False,
+                }
             return {
                 **_local_only_trust_state(),
                 "status": "external_attestation_registry_write_failed",
