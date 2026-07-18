@@ -9,6 +9,7 @@ from server.schemas.packets import cache_envelope, cache_read_call_ledger, cache
 from server.services import (
     deepseek_benchmark_service,
     factor_service,
+    full_market_industry_provider_service,
     full_market_industry_service,
 )
 
@@ -120,6 +121,18 @@ def request_full_market_industry_membership_execution(
     task = (
         full_market_industry_service.create_full_market_industry_membership_execution_request(
             payload
+        )
+    )
+    return task_envelope(task)
+
+
+@router.post("/full-market-industry-membership-provider-execution")
+def run_full_market_industry_membership_provider_execution(
+    payload: dict[str, Any] | None = None,
+) -> dict:
+    task = (
+        full_market_industry_provider_service.run_full_market_industry_membership_provider_execution(
+            payload or {}
         )
     )
     return task_envelope(task)

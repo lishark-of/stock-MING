@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import json
 import tempfile
+import threading
+import time
 import unittest
 import uuid
 from pathlib import Path
@@ -10,8 +12,10 @@ from unittest.mock import patch
 from fastapi.testclient import TestClient
 
 from server.main import app
+from server.services import full_market_industry_provider_service as provider_service
 from server.services import full_market_industry_service as service
 from server.services import task_service
+from storage.sqlite_meta import SQLiteMetaStore
 
 
 def _symbols() -> list[str]:
@@ -544,6 +548,305 @@ class FullMarketIndustryMembershipTests(unittest.TestCase):
                 )
             self.assertFalse(result["ready"])
             reader.assert_not_called()
+
+
+class _PagedIndustryClient:
+    def __init__(self, rows_by_partition: dict[str, list[dict]], *, failure_call: int = 0, failure: str = ""):
+        self.rows_by_partition = rows_by_partition
+        self.failure_call = failure_call
+        self.failure = failure
+        self.calls: list[dict] = []
+        self.receipts: dict[str, dict] = {}
+
+    def get_index_member_all(self, **params):
+        self.calls.append(dict(params))
+        ordinal = len(self.calls)
+        if self.failure_call == ordinal:
+            return {"ok": False, "data": None, "error": self.failure}
+        rows = self.rows_by_partition.get(params["is_new"], [])
+        page = rows[params["offset"] : params["offset"] + params["limit"]]
+        call_id = f"fake-{ordinal}"
+        self.receipts[call_id] = {
+            "api": service.SOURCE_API,
+            "sdk_method_invoked": True,
+            "provider_response_received": True,
+            "official_client_identity_verified": True,
+        }
+        return {
+            "ok": True,
+            "data": page,
+            "error": None,
+            "transport_call_id": call_id,
+        }
+
+    def consume_transport_receipt(self, call_id, api):
+        receipt = self.receipts.pop(call_id, None)
+        return receipt if receipt and receipt["api"] == api else None
+
+
+def _provider_rows(symbols: list[str]) -> list[dict]:
+    return [
+        {
+            "l1_code": "801000",
+            "l1_name": "一级",
+            "l2_code": "801010",
+            "l2_name": "二级",
+            "l3_code": "801011",
+            "l3_name": "三级",
+            "ts_code": symbol,
+            "name": f"fixture-{index}",
+            "in_date": "20200101",
+            "out_date": None,
+            "is_new": "Y",
+        }
+        for index, symbol in enumerate(symbols)
+    ]
+
+
+def _write_semantic_only(evidence_root: Path) -> str:
+    root = evidence_root / service.INDUSTRY_ROOT_RELATIVE
+    relative = "semantics/out-date-v1.json"
+    path = root / relative
+    path.parent.mkdir(parents=True, exist_ok=True)
+    content = {
+        "field": "out_date",
+        "interval_convention": "effective_from_inclusive_effective_to_exclusive",
+        "non_null_boundary": "first_excluded_trade_date",
+        "null_meaning": "membership_current_at_validated_trade_date",
+    }
+    evidence = {
+        "schema_version": service.SEMANTIC_EVIDENCE_SCHEMA_VERSION,
+        "status": "independently_validated",
+        "source_api": service.SOURCE_API,
+        "source_scope": service.SOURCE_SCOPE,
+        "source_reference": "independent-local-provider-contract:index_member_all.out_date",
+        "endpoint_field": "out_date",
+        "resolved_semantics": service.RESOLVED_OUT_DATE_SEMANTICS,
+        "validation_method": "independent_local_documentation_and_fixture_review",
+        "content": content,
+        "content_digest": service._digest(content),
+    }
+    path.write_bytes(service._canonical_bytes(evidence))
+    return relative
+
+
+class FullMarketIndustryProviderRunnerTests(unittest.TestCase):
+    def _request(self, root: Path, symbols: list[str]):
+        upstream = _upstream(symbols)
+        meta_path = root / "meta.sqlite"
+        with patch.object(task_service, "SQLITE_META_PATH", meta_path), patch(
+            "server.services.tushare_production_store.validate_tushare_full_market_production_version",
+            return_value=upstream,
+        ):
+            task = service.create_full_market_industry_membership_execution_request(
+                {
+                    "create_execution_request": True,
+                    "acknowledge_no_provider_execution": True,
+                    "request_nonce": str(uuid.uuid4()),
+                },
+                evidence_root=root,
+            )
+        return task, upstream, meta_path
+
+    @staticmethod
+    def _run(root: Path, meta_path: Path, task: dict, upstream: dict, client, semantic_file: str):
+        payload = {
+            "request_task_id": task["task_id"],
+            "execute_provider_request": True,
+            "acknowledge_external_tushare_call": True,
+            "provider_api": service.SOURCE_API,
+            "semantic_evidence_file": semantic_file,
+        }
+        with patch(
+            "server.services.tushare_production_store.validate_tushare_full_market_production_version",
+            return_value=upstream,
+        ), patch.object(
+            provider_service,
+            "_load_official_index_member_client",
+            return_value=client,
+        ):
+            return provider_service.run_full_market_industry_membership_provider_execution(
+                payload,
+                evidence_root=root,
+                meta_path=meta_path,
+            )
+
+    def test_paginated_success_writes_verified_v3_current_and_last_good(self):
+        symbols = _symbols()
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            semantic_file = _write_semantic_only(root)
+            task, upstream, meta_path = self._request(root, symbols)
+            client = _PagedIndustryClient({"Y": _provider_rows(symbols), "N": []})
+            result = self._run(root, meta_path, task, upstream, client, semantic_file)
+            receipt = result["payload_safe"]
+            verified = service.validate_full_market_industry_membership(
+                root,
+                expected_symbols=symbols,
+                expected_universe_digest=upstream["universe_digest"],
+                expected_validated_trade_date=upstream["validated_trade_date"],
+            )
+            pointer = json.loads(
+                (root / service.INDUSTRY_ROOT_RELATIVE / service.POINTER_FILE).read_text()
+            )
+            last_good = json.loads(
+                (root / service.INDUSTRY_ROOT_RELATIVE / "last_good.json").read_text()
+            )
+        self.assertEqual(result["status"], "success", result)
+        self.assertTrue(receipt["production_pointer_written"])
+        self.assertTrue(verified["ready"], verified["blockers"])
+        self.assertEqual(pointer, last_good)
+        self.assertEqual(pointer["schema_version"], service.PRODUCED_POINTER_SCHEMA_VERSION)
+        self.assertEqual([row["row_count"] for row in result["call_ledger"]], [2000, 1000, 0])
+        self.assertEqual({row["api"] for row in result["call_ledger"]}, {service.SOURCE_API})
+
+    def test_duplicate_overlap_permission_empty_and_partial_failure_preserve_last_good(self):
+        symbols = _symbols()
+        attacks = ("duplicate", "overlap", "permission", "empty", "partial")
+        for attack in attacks:
+            with self.subTest(attack=attack), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                semantic_file = _write_semantic_only(root)
+                first_task, upstream, meta_path = self._request(root, symbols)
+                first_client = _PagedIndustryClient({"Y": _provider_rows(symbols), "N": []})
+                first = self._run(root, meta_path, first_task, upstream, first_client, semantic_file)
+                self.assertEqual(first["status"], "success", first)
+                pointer_path = root / service.INDUSTRY_ROOT_RELATIVE / "last_good.json"
+                before = pointer_path.read_bytes()
+                second_task, upstream, meta_path = self._request(root, symbols)
+                rows = _provider_rows(symbols)
+                if attack == "duplicate":
+                    rows.append(dict(rows[0]))
+                elif attack == "overlap":
+                    overlap = dict(rows[0])
+                    overlap["in_date"] = "20210101"
+                    overlap["l3_code"] = "801099"
+                    rows.append(overlap)
+                client = (
+                    _PagedIndustryClient({"Y": [], "N": []}, failure_call=1, failure="permission denied")
+                    if attack == "permission"
+                    else _PagedIndustryClient({"Y": [], "N": []})
+                    if attack == "empty"
+                    else _PagedIndustryClient({"Y": rows, "N": []}, failure_call=2, failure="network failed")
+                    if attack == "partial"
+                    else _PagedIndustryClient({"Y": rows, "N": []})
+                )
+                result = self._run(root, meta_path, second_task, upstream, client, semantic_file)
+                self.assertEqual(result["status"], "failed", result)
+                self.assertEqual(pointer_path.read_bytes(), before)
+                self.assertFalse(result["payload_safe"]["production_pointer_written"])
+                if attack in {"permission", "empty", "partial"}:
+                    self.assertTrue(result["call_ledger"])
+
+    def test_replay_is_call_free_and_path_attack_is_blocked_before_client_load(self):
+        symbols = _symbols()
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            semantic_file = _write_semantic_only(root)
+            task, upstream, meta_path = self._request(root, symbols)
+            first_client = _PagedIndustryClient({"Y": _provider_rows(symbols), "N": []})
+            first = self._run(root, meta_path, task, upstream, first_client, semantic_file)
+            self.assertEqual(first["status"], "success", first)
+            replay_client = _PagedIndustryClient({"Y": [], "N": []})
+            replay = self._run(root, meta_path, task, upstream, replay_client, semantic_file)
+            self.assertEqual(replay["status"], "success", replay)
+            self.assertTrue(replay["payload_safe"]["replay"])
+            self.assertEqual(replay_client.calls, [])
+
+            second_task, upstream, meta_path = self._request(root, symbols)
+            with patch(
+                "server.services.tushare_production_store.validate_tushare_full_market_production_version",
+                return_value=upstream,
+            ), patch.object(provider_service, "_load_official_index_member_client") as loader:
+                blocked = provider_service.run_full_market_industry_membership_provider_execution(
+                    {
+                        "request_task_id": second_task["task_id"],
+                        "execute_provider_request": True,
+                        "acknowledge_external_tushare_call": True,
+                        "semantic_evidence_file": "../outside.json",
+                    },
+                    evidence_root=root,
+                    meta_path=meta_path,
+                )
+            self.assertEqual(blocked["status"], "failed")
+            loader.assert_not_called()
+
+            locks = root / service.INDUSTRY_ROOT_RELATIVE / "locks"
+            locks.rmdir()
+            outside = root / "outside-locks"
+            outside.mkdir()
+            locks.symlink_to(outside, target_is_directory=True)
+            with patch.object(provider_service, "_load_official_index_member_client") as loader:
+                blocked = self._run(
+                    root,
+                    meta_path,
+                    second_task,
+                    upstream,
+                    loader,
+                    semantic_file,
+                )
+            self.assertEqual(blocked["status"], "failed")
+            loader.assert_not_called()
+
+    def test_concurrent_same_request_allows_only_one_provider_run(self):
+        symbols = _symbols()
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            semantic_file = _write_semantic_only(root)
+            task, upstream, meta_path = self._request(root, symbols)
+            client = _PagedIndustryClient({"Y": _provider_rows(symbols), "N": []})
+            entered = threading.Event()
+            release = threading.Event()
+            original = client.get_index_member_all
+
+            def delayed(**params):
+                entered.set()
+                release.wait(timeout=5)
+                return original(**params)
+
+            client.get_index_member_all = delayed
+            results: list[dict] = []
+
+            def invoke():
+                results.append(self._run(root, meta_path, task, upstream, client, semantic_file))
+
+            first = threading.Thread(target=invoke)
+            first.start()
+            self.assertTrue(entered.wait(timeout=5))
+            second = threading.Thread(target=invoke)
+            second.start()
+            time.sleep(0.05)
+            release.set()
+            first.join(timeout=10)
+            second.join(timeout=10)
+            self.assertEqual(len(results), 2)
+            self.assertEqual(sum(row["status"] == "success" for row in results), 1)
+            self.assertEqual(len(client.calls), 3)
+
+    def test_route_and_catalog_are_explicit_post_only_and_block_before_provider(self):
+        catalog = task_service.build_task_catalog()
+        route = "POST /api/factor-quant/full-market-industry-membership-provider-execution"
+        self.assertIn(route, catalog["route_coverage"]["known_post_routes"])
+        self.assertEqual(catalog["route_coverage"]["uncovered_post_routes"], [])
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            meta_path = root / "meta.sqlite"
+            with patch.object(provider_service, "EVIDENCE_ROOT", root), patch.object(
+                task_service,
+                "SQLITE_META_PATH",
+                meta_path,
+            ), patch.object(provider_service, "_load_official_index_member_client") as loader:
+                response = TestClient(app).post(
+                    "/api/factor-quant/full-market-industry-membership-provider-execution",
+                    json={
+                        "request_task_id": "missing-request",
+                        "execute_provider_request": True,
+                        "acknowledge_external_tushare_call": True,
+                    },
+                )
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(response.json()["data"]["task"]["status"], "failed")
+            loader.assert_not_called()
 
 
 if __name__ == "__main__":
