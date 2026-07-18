@@ -95,13 +95,14 @@ def _replacement_promotion_ledger(packet: dict[str, Any], *, request_method: str
             "mode": (
                 "read_only_validation"
                 if request_method == "GET"
-                else "external_authority_verified_append_only_promotion"
-                if packet.get("production_replacement_complete") is True
+                else "prepared_event_append_awaiting_external_finalization"
+                if packet.get("prepared_event_written") is True
                 else "local_qa_review_only_production_fail_closed"
             ),
             "call_status": packet.get("status") or "next_session_production_replacement_blocked",
             "row_count": 1 if packet.get("production_replacement_complete") is True else 0,
             "promotion_written": packet.get("promotion_written") is True,
+            "prepared_event_written": packet.get("prepared_event_written") is True,
             "idempotent_replay": packet.get("idempotent_replay") is True,
             "external": False,
             "external_calls_triggered": False,

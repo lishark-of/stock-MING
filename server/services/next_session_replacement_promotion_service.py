@@ -1392,7 +1392,7 @@ def _public_summary(
     return {
         "schema_version": VALIDATION_SCHEMA,
         "status": (
-            "next_session_production_replacement_promoted_current_head"
+            "next_session_production_replacement_external_finalized_current_head"
             if ready
             else "next_session_production_replacement_blocked"
         ),
@@ -1421,6 +1421,7 @@ def _public_summary(
         "blockers": blockers,
         "promotion_proposal": trust.get("proposal") or {},
         "external_trusted_approval_verified": trust.get("external_approval_verified") is True,
+        "external_finalization_verified": trust.get("external_finalization_verified") is True,
         "rollback_resistant_high_water_verified": (
             trust.get("rollback_resistant_high_water_verified") is True
         ),
@@ -1521,13 +1522,19 @@ def promote_next_session_production_replacement(
     result.update(
         {
             "promotion_written": write_result.get("promotion_written") is True,
+            "prepared_event_written": write_result.get("prepared_event_written") is True,
+            "prepared": write_result.get("prepared") is True,
             "idempotent_replay": False,
             "read_only": False,
-            "writes_storage": write_result.get("promotion_written") is True,
-            "local_qa_only": write_result.get("promotion_written") is not True,
+            "writes_storage": write_result.get("prepared_event_written") is True,
+            "local_qa_only": True,
             "production_eligible": result.get("production_replacement_complete") is True,
         }
     )
+    if write_result.get("prepared_event_written") is True:
+        result["status"] = (
+            "next_session_production_replacement_prepared_awaiting_external_finalization"
+        )
     return result
 
 

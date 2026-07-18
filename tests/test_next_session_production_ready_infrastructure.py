@@ -15,6 +15,7 @@ from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
 from storage.sqlite_meta import SQLiteMetaStore
+from server.api import routes_next_session
 from server.services import next_session_external_promotion_service as external_promotion
 from server.services import next_session_production_packet_service as producer
 from server.services import next_session_replacement_promotion_service as replacement
@@ -452,6 +453,7 @@ class NextSessionExternalPromotionTests(unittest.TestCase):
         self.trust_root.mkdir(mode=0o700)
         self.approval_path = self.trust_root / "approval.json"
         self.high_water_path = self.trust_root / "high-water.json"
+        self.finalization_path = self.trust_root / "finalization.json"
         self.private_key = Ed25519PrivateKey.generate()
         self.public_key = self.private_key.public_key()
         self.fingerprint = hashlib.sha256(
@@ -463,10 +465,22 @@ class NextSessionExternalPromotionTests(unittest.TestCase):
         self.patches = [
             patch.object(external_promotion, "APPROVAL_PATH", self.approval_path),
             patch.object(external_promotion, "HIGH_WATER_PATH", self.high_water_path),
+            patch.object(external_promotion, "FINALIZATION_PATH", self.finalization_path),
             patch.object(external_promotion, "TRUSTED_OWNER_UIDS", frozenset({os.getuid()})),
             patch.object(
                 external_promotion.external_trust,
                 "_load_trusted_public_key",
+                return_value=(
+                    self.public_key,
+                    {
+                        "status": "external_public_key_verified",
+                        "key_fingerprint_sha256": self.fingerprint,
+                    },
+                ),
+            ),
+            patch.object(
+                external_promotion.external_trust,
+                "_load_trusted_event_public_key",
                 return_value=(
                     self.public_key,
                     {
@@ -571,6 +585,45 @@ class NextSessionExternalPromotionTests(unittest.TestCase):
             path.chmod(0o400)
         return approval_envelope, high_water_envelope
 
+    def _write_finalization(self, event: dict, **overrides: object) -> dict:
+        issued = datetime.now(timezone.utc)
+        prepared_at = datetime.fromisoformat(event["recorded_at_utc"].replace("Z", "+00:00"))
+        if issued <= prepared_at:
+            issued = prepared_at + timedelta(microseconds=1)
+        statement = {
+            "schema_version": external_promotion.FINALIZATION_STATEMENT_SCHEMA,
+            "status": "next_session_replacement_external_finalized",
+            "scope": external_promotion.SCOPE,
+            "head_full": event["head_full"],
+            "event_id": event["event_id"],
+            "sequence_no": event["sequence_no"],
+            "commit_generation": event["commit_generation"],
+            "prepared_event_digest": event["prepared_event_digest"],
+            "semantic_digest": event["semantic_digest"],
+            "approval_signature_digest": event["approval_signature_digest"],
+            "high_water_signature_digest": event["high_water_signature_digest"],
+            "approval_nonce_digest": event["approval_nonce_digest"],
+            "key_epoch": 1,
+            "issued_at": issued.isoformat().replace("+00:00", "Z"),
+            "expires_at": (issued + timedelta(minutes=5)).isoformat().replace("+00:00", "Z"),
+            "external_counter": event["expected_external_counter"],
+            "previous_finalization_digest": event["previous_finalization_digest"],
+        }
+        statement.update(overrides)
+        signature = self.private_key.sign(external_promotion._canonical_bytes(statement))
+        envelope = {
+            "schema_version": external_promotion.FINALIZATION_ENVELOPE_SCHEMA,
+            "algorithm": "Ed25519",
+            "key_fingerprint_sha256": self.fingerprint,
+            "key_epoch": 1,
+            "statement": statement,
+            "signature_base64": base64.b64encode(signature).decode("ascii"),
+        }
+        self.finalization_path.chmod(0o600) if self.finalization_path.exists() else None
+        self.finalization_path.write_text(json.dumps(envelope), encoding="utf-8")
+        self.finalization_path.chmod(0o400)
+        return envelope
+
     def test_signed_external_pair_is_required_and_get_validation_is_zero_write(self) -> None:
         missing = external_promotion.validate_current_promotion(
             self.prerequisites,
@@ -584,7 +637,14 @@ class NextSessionExternalPromotionTests(unittest.TestCase):
             self.prerequisites,
             evidence_root=self.evidence,
         )
-        self.assertTrue(written["promotion_written"], written["blockers"])
+        self.assertFalse(written["promotion_written"])
+        self.assertTrue(written["prepared_event_written"], written["blockers"])
+        self.assertFalse(written["ready"])
+        awaiting = external_promotion.validate_current_promotion(
+            self.prerequisites, evidence_root=self.evidence
+        )
+        self.assertFalse(awaiting["ready"])
+        self._write_finalization(written["event"])
         before = _tree_snapshot(self.evidence)
         validated = external_promotion.validate_current_promotion(
             self.prerequisites,
@@ -602,8 +662,9 @@ class NextSessionExternalPromotionTests(unittest.TestCase):
             self.prerequisites,
             evidence_root=self.evidence,
         )
-        self.assertTrue(first["promotion_written"])
+        self.assertTrue(first["prepared_event_written"])
         first_event_id = first["event_id"]
+        self._write_finalization(first["event"])
 
         self._write_external_pair(nonce="8" * 64, sequence_no=2, previous=first_event_id)
         replay = external_promotion.append_promotion_event(
@@ -611,7 +672,7 @@ class NextSessionExternalPromotionTests(unittest.TestCase):
             self.prerequisites,
             evidence_root=self.evidence,
         )
-        self.assertFalse(replay["promotion_written"])
+        self.assertFalse(replay.get("prepared_event_written", False))
         self.assertIn("next_session_replacement_approval_nonce_replayed", replay["blockers"])
         self.assertEqual(len(list((self.evidence / external_promotion.JOURNAL_NAME / "events").glob("*.json"))), 1)
 
@@ -619,11 +680,7 @@ class NextSessionExternalPromotionTests(unittest.TestCase):
             self.prerequisites,
             evidence_root=self.evidence,
         )
-        self.assertFalse(rolled_back["ready"])
-        self.assertIn(
-            "next_session_external_high_water_does_not_match_latest_event",
-            rolled_back["blockers"],
-        )
+        self.assertTrue(rolled_back["ready"], rolled_back["blockers"])
 
         event_path = self.evidence / external_promotion.JOURNAL_NAME / "events" / "00000001.json"
         event_path.chmod(0o600)
@@ -649,6 +706,98 @@ class NextSessionExternalPromotionTests(unittest.TestCase):
         )
         self.assertFalse(result["promotion_written"])
         self.assertFalse(self.evidence.exists())
+
+    def test_local_final_residue_cannot_replace_external_receipt(self) -> None:
+        self._write_external_pair(nonce="d" * 64)
+        prepared = external_promotion.append_promotion_event(
+            {"approved_by_user": True}, self.prerequisites, evidence_root=self.evidence
+        )
+        residue = self.evidence / external_promotion.JOURNAL_NAME / "commits"
+        residue.mkdir(mode=0o700)
+        (residue / "final.json").write_text(
+            json.dumps({"status": "locally_finalized", "ready": True}), encoding="utf-8"
+        )
+        validated = external_promotion.validate_current_promotion(
+            self.prerequisites, evidence_root=self.evidence
+        )
+        self.assertTrue(prepared["prepared_event_written"])
+        self.assertFalse(validated["ready"])
+        self.assertFalse(validated["production_replacement_complete"])
+        self.assertIn("external_next_session_finalization_missing", validated["blockers"])
+
+    def test_api_audit_labels_phase_a_as_prepared_not_promoted(self) -> None:
+        ledger = routes_next_session._replacement_promotion_ledger(
+            {
+                "status": "next_session_production_replacement_prepared_awaiting_external_finalization",
+                "prepared_event_written": True,
+                "promotion_written": False,
+                "production_replacement_complete": False,
+            },
+            request_method="POST",
+        )[0]
+        self.assertEqual(
+            ledger["mode"], "prepared_event_append_awaiting_external_finalization"
+        )
+        self.assertTrue(ledger["prepared_event_written"])
+        self.assertFalse(ledger["promotion_written"])
+        self.assertEqual(ledger["row_count"], 0)
+
+    def test_receipt_must_bind_prepared_order_head_counter_and_previous(self) -> None:
+        self._write_external_pair(nonce="e" * 64)
+        prepared = external_promotion.append_promotion_event(
+            {"approved_by_user": True}, self.prerequisites, evidence_root=self.evidence
+        )["event"]
+        prepared_at = datetime.fromisoformat(prepared["recorded_at_utc"].replace("Z", "+00:00"))
+        cases = (
+            {"head_full": "b" * 40},
+            {"external_counter": 2},
+            {"previous_finalization_digest": "f" * 64},
+            {
+                "issued_at": (prepared_at - timedelta(seconds=1)).isoformat().replace(
+                    "+00:00", "Z"
+                )
+            },
+        )
+        for override in cases:
+            with self.subTest(override=override):
+                self._write_finalization(prepared, **override)
+                validated = external_promotion.validate_current_promotion(
+                    self.prerequisites, evidence_root=self.evidence
+                )
+                self.assertFalse(validated["ready"])
+                self.assertIn(
+                    "external_next_session_finalization_contract_invalid",
+                    validated["blockers"],
+                )
+
+    def test_old_receipt_replay_cannot_finalize_new_prepared_generation(self) -> None:
+        self._write_external_pair(nonce="1" * 64)
+        first = external_promotion.append_promotion_event(
+            {"approved_by_user": True}, self.prerequisites, evidence_root=self.evidence
+        )
+        old_receipt = self._write_finalization(first["event"])
+        self._write_external_pair(
+            nonce="2" * 64, sequence_no=2, previous=first["event_id"]
+        )
+        second = external_promotion.append_promotion_event(
+            {"approved_by_user": True}, self.prerequisites, evidence_root=self.evidence
+        )
+        self.assertTrue(second["prepared_event_written"], second["blockers"])
+        self.assertNotEqual(
+            first["event"]["commit_generation"], second["event"]["commit_generation"]
+        )
+        self.assertEqual(second["event"]["expected_external_counter"], 2)
+        self.assertEqual(
+            second["event"]["previous_finalization_digest"],
+            external_promotion._digest(old_receipt),
+        )
+        validated = external_promotion.validate_current_promotion(
+            self.prerequisites, evidence_root=self.evidence
+        )
+        self.assertFalse(validated["ready"])
+        self.assertIn(
+            "external_next_session_finalization_contract_invalid", validated["blockers"]
+        )
 
     def test_wrong_key_old_head_and_expired_authority_fail_closed(self) -> None:
         trusted_private_key = self.private_key
@@ -697,13 +846,13 @@ class NextSessionExternalPromotionTests(unittest.TestCase):
             written = external_promotion.append_promotion_event(
                 {"approved_by_user": True}, self.prerequisites, evidence_root=self.evidence
             )
-        self.assertTrue(written["promotion_written"], written["blockers"])
-        self.assertTrue(written["ready"])
+        self.assertTrue(written["prepared_event_written"], written["blockers"])
+        self.assertFalse(written["ready"])
         self.assertTrue(written["postcommit_reconciled"])
         validated = external_promotion.validate_current_promotion(
             self.prerequisites, evidence_root=self.evidence
         )
-        self.assertTrue(validated["ready"], validated["blockers"])
+        self.assertFalse(validated["ready"])
 
 
 if __name__ == "__main__":

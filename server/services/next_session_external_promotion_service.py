@@ -1,9 +1,10 @@
-"""Verify externally provisioned LTG-08 authority and seal local events.
+"""Prepare LTG-08 events and verify externally finalized production truth.
 
 This module owns no signing key and never creates approval or high-water
 artifacts.  Production operators provision two root-owned, read-only signed
-JSON envelopes outside the repository.  The application may append a local
-event only when both envelopes exactly bind the current prerequisite digest.
+JSON envelopes outside the repository.  POST only appends a prepared event.
+Production truth exists only when a later, root-owned finalization receipt
+exactly binds that prepared event; local finalization state is never trusted.
 """
 
 from __future__ import annotations
@@ -33,6 +34,7 @@ EVIDENCE_ROOT = PROJECT_ROOT / ".stock_ming_3"
 TRUST_ROOT = external_trust.TRUST_ROOT
 APPROVAL_PATH = TRUST_ROOT / "next-session-replacement-approval.json"
 HIGH_WATER_PATH = TRUST_ROOT / "next-session-replacement-high-water.json"
+FINALIZATION_PATH = TRUST_ROOT / "next-session-replacement-finalization.json"
 JOURNAL_NAME = "next_session_replacement_promotion"
 EVENTS_NAME = "events"
 LOCK_NAME = "append.lock"
@@ -41,7 +43,9 @@ APPROVAL_ENVELOPE_SCHEMA = "next_session_external_approval_envelope.v1"
 APPROVAL_STATEMENT_SCHEMA = "next_session_external_approval_statement.v1"
 HIGH_WATER_ENVELOPE_SCHEMA = "next_session_external_high_water_envelope.v1"
 HIGH_WATER_STATEMENT_SCHEMA = "next_session_external_high_water_statement.v1"
-EVENT_SCHEMA = "next_session_production_replacement_event.v2"
+EVENT_SCHEMA = "next_session_production_replacement_prepared_event.v1"
+FINALIZATION_ENVELOPE_SCHEMA = "next_session_external_finalization_envelope.v1"
+FINALIZATION_STATEMENT_SCHEMA = "next_session_external_finalization_statement.v1"
 TRUSTED_OWNER_UIDS = frozenset({0})
 _HEAD = re.compile(r"^[0-9a-f]{40}$")
 _DIGEST = re.compile(r"^[0-9a-f]{64}$")
@@ -53,6 +57,7 @@ _ENVELOPE_FIELDS = {
     "statement",
     "signature_base64",
 }
+_FINALIZATION_ENVELOPE_FIELDS = _ENVELOPE_FIELDS | {"key_epoch"}
 _APPROVAL_FIELDS = {
     "schema_version",
     "status",
@@ -102,8 +107,31 @@ _EVENT_FIELDS = {
     "high_water_signature_digest",
     "key_fingerprint_sha256",
     "recorded_at_utc",
+    "commit_generation",
+    "prepared_event_digest",
+    "expected_external_counter",
+    "previous_finalization_digest",
     "approval_envelope",
     "high_water_envelope",
+}
+_FINALIZATION_FIELDS = {
+    "schema_version",
+    "status",
+    "scope",
+    "head_full",
+    "event_id",
+    "sequence_no",
+    "commit_generation",
+    "prepared_event_digest",
+    "semantic_digest",
+    "approval_signature_digest",
+    "high_water_signature_digest",
+    "approval_nonce_digest",
+    "key_epoch",
+    "issued_at",
+    "expires_at",
+    "external_counter",
+    "previous_finalization_digest",
 }
 
 
@@ -119,6 +147,10 @@ def _canonical_bytes(value: Any) -> bytes:
 
 def _digest(value: Any) -> str:
     return hashlib.sha256(_canonical_bytes(value)).hexdigest()
+
+
+def _prepared_digest(event: Mapping[str, Any]) -> str:
+    return _digest({key: value for key, value in event.items() if key != "prepared_event_digest"})
 
 
 def _timestamp(value: object) -> datetime | None:
@@ -336,12 +368,18 @@ def _read_events(evidence_root: Path) -> tuple[list[dict[str, Any]], list[str]]:
         nonce = str(event.get("approval_nonce_digest") or "")
         if not (
             event.get("schema_version") == EVENT_SCHEMA
-            and event.get("status") == "next_session_production_replacement_promoted"
+            and event.get("status") == "next_session_production_replacement_prepared"
             and event.get("scope") == SCOPE
             and event.get("sequence_no") == sequence
             and event.get("previous_event_id") == previous_id
             and event.get("event_id") == expected_event_id
             and event.get("semantic_digest") == expected_semantic_digest
+            and event.get("prepared_event_digest") == _prepared_digest(event)
+            and isinstance(event.get("commit_generation"), str)
+            and bool(re.fullmatch(r"[0-9a-f]{32}", str(event.get("commit_generation"))))
+            and type(event.get("expected_external_counter")) is int
+            and event.get("expected_external_counter") >= 1
+            and _DIGEST.fullmatch(str(event.get("previous_finalization_digest") or ""))
             and _HEAD.fullmatch(str(event.get("head_full") or ""))
             and _DIGEST.fullmatch(str(event.get("semantic_digest") or ""))
             and _DIGEST.fullmatch(nonce)
@@ -362,7 +400,10 @@ def _read_events(evidence_root: Path) -> tuple[list[dict[str, Any]], list[str]]:
             and high_water_statement.get("nonce_digest") == nonce
             and high_water_statement.get("head_full") == event.get("head_full")
             and high_water_statement.get("semantic_digest") == event.get("semantic_digest")
-            and event.get("recorded_at_utc") == high_water_statement.get("issued_at")
+            and _timestamp(event.get("recorded_at_utc")) is not None
+            and _timestamp(high_water_statement.get("issued_at")) is not None
+            and _timestamp(event.get("recorded_at_utc"))
+            >= _timestamp(high_water_statement.get("issued_at"))
         ):
             blockers.append("next_session_promotion_event_authentication_failed")
             break
@@ -390,6 +431,16 @@ def build_proposal(prerequisites: Mapping[str, Any], evidence_root: Path | str) 
         blockers.append("next_session_promotion_prerequisites_not_ready")
     sequence_no = len(events) + 1
     previous_event_id = str(events[-1].get("event_id") or "") if events else ""
+    expected_external_counter = 1
+    previous_finalization_digest = "0" * 64
+    if events:
+        prior_finalization = _verify_external_finalization(events[-1], enforce_freshness=False)
+        if prior_finalization.get("ready") is not True:
+            blockers.extend(prior_finalization.get("blockers") or [])
+            blockers.append("previous_prepared_event_awaiting_external_finalization")
+        else:
+            expected_external_counter = int(prior_finalization["external_counter"]) + 1
+            previous_finalization_digest = str(prior_finalization["finalization_digest"])
     review_id = _review_id(head_full, semantic_digest) if not blockers else ""
     return {
         "ready": not blockers,
@@ -399,6 +450,8 @@ def build_proposal(prerequisites: Mapping[str, Any], evidence_root: Path | str) 
         "head_full": head_full,
         "semantic_digest": semantic_digest,
         "approval_review_id": review_id,
+        "expected_external_counter": expected_external_counter,
+        "previous_finalization_digest": previous_finalization_digest,
         "blockers": sorted(set(blockers)),
     }
 
@@ -505,6 +558,91 @@ def _verify_external_pair(
     }
 
 
+def _verify_external_finalization(
+    prepared: Mapping[str, Any],
+    *,
+    enforce_freshness: bool,
+) -> dict[str, Any]:
+    """Verify the external Phase-B receipt; never consult local final state."""
+
+    envelope, read_status = _read_trusted_json(FINALIZATION_PATH)
+    blockers: list[str] = []
+    if read_status != "verified_read":
+        blockers.append(f"external_next_session_finalization_{read_status}")
+    if (
+        set(envelope) != _FINALIZATION_ENVELOPE_FIELDS
+        or envelope.get("schema_version") != FINALIZATION_ENVELOPE_SCHEMA
+        or envelope.get("algorithm") != "Ed25519"
+    ):
+        blockers.append("external_next_session_finalization_envelope_shape_invalid")
+    statement = envelope.get("statement")
+    statement = dict(statement) if isinstance(statement, Mapping) else {}
+    if set(statement) != _FINALIZATION_FIELDS:
+        blockers.append("external_next_session_finalization_statement_shape_invalid")
+    key_epoch = envelope.get("key_epoch")
+    fingerprint = str(envelope.get("key_fingerprint_sha256") or "")
+    key, trust = external_trust._load_trusted_event_public_key(
+        epoch=key_epoch,
+        fingerprint=fingerprint,
+    )
+    if key is None:
+        blockers.append(str(trust.get("status") or "external_finalization_public_key_unavailable"))
+    signature_digest = ""
+    try:
+        signature = base64.b64decode(str(envelope.get("signature_base64") or ""), validate=True)
+        if len(signature) != 64 or key is None:
+            raise ValueError("invalid signature material")
+        key.verify(signature, _canonical_bytes(statement))
+        signature_digest = hashlib.sha256(signature).hexdigest()
+    except (ValueError, binascii.Error, InvalidSignature):
+        blockers.append("external_next_session_finalization_signature_invalid")
+    except Exception:
+        blockers.append("external_next_session_finalization_verification_failed")
+    issued_at = _timestamp(statement.get("issued_at"))
+    expires_at = _timestamp(statement.get("expires_at"))
+    prepared_at = _timestamp(prepared.get("recorded_at_utc"))
+    contract_ready = bool(
+        statement.get("schema_version") == FINALIZATION_STATEMENT_SCHEMA
+        and statement.get("status") == "next_session_replacement_external_finalized"
+        and statement.get("scope") == SCOPE
+        and statement.get("head_full") == prepared.get("head_full")
+        and statement.get("event_id") == prepared.get("event_id")
+        and statement.get("sequence_no") == prepared.get("sequence_no")
+        and statement.get("commit_generation") == prepared.get("commit_generation")
+        and statement.get("prepared_event_digest") == prepared.get("prepared_event_digest")
+        and statement.get("semantic_digest") == prepared.get("semantic_digest")
+        and statement.get("approval_signature_digest") == prepared.get("approval_signature_digest")
+        and statement.get("high_water_signature_digest") == prepared.get("high_water_signature_digest")
+        and statement.get("approval_nonce_digest") == prepared.get("approval_nonce_digest")
+        and statement.get("key_epoch") == key_epoch
+        and type(key_epoch) is int
+        and key_epoch >= 1
+        and statement.get("external_counter") == prepared.get("expected_external_counter")
+        and statement.get("previous_finalization_digest")
+        == prepared.get("previous_finalization_digest")
+        and issued_at is not None
+        and expires_at is not None
+        and prepared_at is not None
+        and prepared_at < issued_at < expires_at
+        and (expires_at - issued_at).total_seconds() <= 900
+    )
+    if not contract_ready:
+        blockers.append("external_next_session_finalization_contract_invalid")
+    if enforce_freshness and issued_at is not None and expires_at is not None:
+        now = datetime.now(timezone.utc)
+        if not (issued_at <= now <= expires_at):
+            blockers.append("external_next_session_finalization_expired_or_not_yet_valid")
+    ready = not blockers
+    return {
+        "ready": ready,
+        "external_counter": statement.get("external_counter") if ready else 0,
+        "finalization_digest": _digest(envelope) if ready else "",
+        "signature_digest": signature_digest if ready else "",
+        "key_epoch": key_epoch if ready else 0,
+        "blockers": sorted(set(blockers)),
+    }
+
+
 def validate_current_promotion(
     prerequisites: Mapping[str, Any],
     *,
@@ -521,37 +659,29 @@ def validate_current_promotion(
         and latest.get("semantic_digest") == prerequisites.get("semantic_digest")
     ):
         blockers.append("next_session_production_replacement_event_not_current")
-    external_pair = _verify_external_pair(
-        {
-            "scope": SCOPE,
-            "sequence_no": latest.get("sequence_no"),
-            "previous_event_id": latest.get("previous_event_id"),
-            "head_full": latest.get("head_full"),
-            "semantic_digest": latest.get("semantic_digest"),
-            "approval_review_id": latest.get("approval_review_id"),
-        },
-        enforce_freshness=False,
-    ) if latest else {"ready": False, "blockers": ["external_next_session_authority_missing"]}
-    blockers.extend(external_pair.get("blockers") or [])
-    if latest and not (
-        external_pair.get("ready") is True
-        and external_pair.get("event_id") == latest.get("event_id")
-        and external_pair.get("approval_envelope") == latest.get("approval_envelope")
-        and external_pair.get("high_water_envelope") == latest.get("high_water_envelope")
-    ):
-        blockers.append("next_session_external_high_water_does_not_match_latest_event")
+    finalization = (
+        _verify_external_finalization(latest, enforce_freshness=True)
+        if latest
+        else {"ready": False, "blockers": ["external_next_session_finalization_missing"]}
+    )
+    blockers.extend(finalization.get("blockers") or [])
     ready = bool(prerequisites.get("ready") is True and latest and not blockers)
     return {
         "ready": ready,
         "production_replacement_complete": ready,
-        "status": "next_session_production_replacement_promoted_current_head"
+        "status": "next_session_production_replacement_external_finalized_current_head"
         if ready
-        else "next_session_production_replacement_blocked",
+        else (
+            "next_session_production_replacement_prepared_awaiting_external_finalization"
+            if latest
+            else "next_session_production_replacement_blocked"
+        ),
         "event": latest if ready else {},
         "event_count": len(events),
         "proposal": proposal,
-        "external_approval_verified": external_pair.get("ready") is True,
-        "rollback_resistant_high_water_verified": external_pair.get("ready") is True,
+        "external_approval_verified": bool(latest and not _read_events(root)[1]),
+        "external_finalization_verified": finalization.get("ready") is True,
+        "rollback_resistant_high_water_verified": finalization.get("ready") is True,
         "blockers": sorted(set(blockers)),
         "writes_storage": False,
         "private_key_generated": False,
@@ -568,7 +698,7 @@ def _reconcile_event_commit(
     evidence_root: Path,
     write_error: bool,
 ) -> dict[str, Any]:
-    """Return success only when the exact committed event is current and valid."""
+    """Confirm only Phase-A preparation; it can never assert production."""
 
     readback, _metadata = _read_local_event(event_path)
     if readback != dict(event):
@@ -631,28 +761,16 @@ def _reconcile_event_commit(
                 else "next_session_promotion_event_exclusive_write_failed"
             ],
         }
-    validated = validate_current_promotion(prerequisites, evidence_root=evidence_root)
-    if not (
-        validated.get("ready") is True
-        and validated.get("event", {}).get("event_id") == event.get("event_id")
-    ):
-        return {
-            **validated,
-            "ready": False,
-            "promotion_written": False,
-            "blockers": sorted(
-                set(
-                    [
-                        *(validated.get("blockers") or []),
-                        "next_session_promotion_event_postcommit_validation_failed",
-                    ]
-                )
-            ),
-        }
     return {
-        **validated,
-        "promotion_written": True,
+        "ready": False,
+        "production_replacement_complete": False,
+        "status": "next_session_production_replacement_prepared_awaiting_external_finalization",
+        "promotion_written": False,
+        "prepared_event_written": True,
+        "prepared": True,
         "event_id": str(event.get("event_id") or ""),
+        "event": dict(event),
+        "blockers": ["external_next_session_finalization_missing"],
         "postcommit_reconciled": write_error,
     }
 
@@ -772,7 +890,7 @@ def append_promotion_event(
         material = prerequisites.get("material") if isinstance(prerequisites.get("material"), Mapping) else {}
         event = {
             "schema_version": EVENT_SCHEMA,
-            "status": "next_session_production_replacement_promoted",
+            "status": "next_session_production_replacement_prepared",
             "scope": SCOPE,
             "sequence_no": proposal["sequence_no"],
             "event_id": external_pair["event_id"],
@@ -792,10 +910,15 @@ def append_promotion_event(
             "approval_signature_digest": external_pair["approval_signature_digest"],
             "high_water_signature_digest": external_pair["high_water_signature_digest"],
             "key_fingerprint_sha256": external_pair["key_fingerprint_sha256"],
-            "recorded_at_utc": external_pair["recorded_at_utc"],
+            "recorded_at_utc": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+            "commit_generation": uuid.uuid4().hex,
+            "prepared_event_digest": "",
+            "expected_external_counter": proposal["expected_external_counter"],
+            "previous_finalization_digest": proposal["previous_finalization_digest"],
             "approval_envelope": external_pair["approval_envelope"],
             "high_water_envelope": external_pair["high_water_envelope"],
         }
+        event["prepared_event_digest"] = _prepared_digest(event)
         event_path = events_root / f"{proposal['sequence_no']:08d}.json"
         temporary = journal_root / f".{event_path.name}.{uuid.uuid4().hex}.tmp"
         descriptor = -1
