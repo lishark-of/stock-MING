@@ -41,6 +41,7 @@ class ProductionEvidenceJournalTests(unittest.TestCase):
                 payload_digest=payload_digest,
             )
             self.assertTrue(recorded["ready"])
+            self.assertFalse(recorded["production_trusted"])
             self.assertNotIn(nonce, journal.JOURNAL_PATH.read_text(encoding="utf-8"))
             replay = journal.record_event(
                 event_type="worker_runtime_execution",
@@ -55,6 +56,46 @@ class ProductionEvidenceJournalTests(unittest.TestCase):
             events[0]["head_full"] = "0" * 40
             journal.JOURNAL_PATH.write_text(json.dumps(events[0]) + "\n", encoding="utf-8")
             self.assertFalse(journal.validate_journal()["ready"])
+
+    def test_snapshot_rollback_nonce_replay_remains_local_only(self) -> None:
+        with tempfile.TemporaryDirectory() as directory, self._patch_paths(Path(directory)):
+            head = journal.current_head_full()
+            first = journal.record_event(
+                event_type="worker_runtime_execution_request",
+                expected_head_full=head,
+                authorization_nonce="rollback-first-nonce-0123456789-ABCDEFG",
+                subject="request-1",
+                scope_hash="1" * 64,
+                payload_digest="2" * 64,
+            )
+            self.assertTrue(first["local_integrity_ready"])
+            snapshot = {
+                path: path.read_bytes()
+                for path in (journal.KEY_PATH, journal.JOURNAL_PATH, journal.STATE_PATH)
+            }
+            replay_nonce = "rollback-replay-nonce-0123456789-ABCDEFG"
+            second = journal.record_event(
+                event_type="worker_runtime_execution",
+                expected_head_full=head,
+                authorization_nonce=replay_nonce,
+                subject="execution-1",
+                scope_hash="3" * 64,
+                payload_digest="4" * 64,
+            )
+            self.assertTrue(second["local_integrity_ready"])
+            for path, payload in snapshot.items():
+                path.write_bytes(payload)
+            replay_after_rollback = journal.record_event(
+                event_type="worker_runtime_execution",
+                expected_head_full=head,
+                authorization_nonce=replay_nonce,
+                subject="execution-1",
+                scope_hash="3" * 64,
+                payload_digest="4" * 64,
+            )
+            self.assertTrue(replay_after_rollback["local_integrity_ready"])
+            self.assertFalse(replay_after_rollback["production_trusted"])
+            self.assertFalse(journal.validate_journal()["snapshot_rollback_resistant"])
 
 
 class StorageTtlProductionEvidenceTests(unittest.TestCase):
@@ -115,8 +156,26 @@ class StorageTtlProductionEvidenceTests(unittest.TestCase):
                 journal_before = journal.JOURNAL_PATH.read_bytes()
                 state_before = journal.STATE_PATH.read_bytes()
                 ready = storage_service.storage_cache_ttl_refresh_evidence()
-                self.assertTrue(ready["production_ttl_evidence_ready"])
+                self.assertTrue(ready["local_ttl_resolution_evidence_ready"])
+                self.assertFalse(ready["production_ttl_evidence_ready"])
+                self.assertFalse(ready["production_trust_boundary_satisfied"])
                 self.assertEqual(ready["verified_dataset_count"], len(storage_service.CANONICAL_PARQUET_DATASETS))
+                self.assertEqual(ready["refresh_executed_count"], 0)
+                blocker_audit = storage_service.storage_production_blocker_audit(
+                    {
+                        "cache_ttl_refresh_executed_count": ready["refresh_executed_count"],
+                        "cache_ttl_resolution_verified_count": ready["resolution_verified_dataset_count"],
+                        "cache_ttl_refresh_per_dataset_evidence": ready,
+                    }
+                )
+                ttl_row = next(
+                    row
+                    for row in blocker_audit["rows"]
+                    if row["criterion"] == "cache_ttl_refresh_pipeline_executed"
+                )
+                self.assertFalse(ttl_row["passed"])
+                self.assertTrue(ttl_row["production_blocker"])
+                self.assertIn("production_trust=false", ttl_row["current_status"])
                 self.assertEqual(journal.JOURNAL_PATH.read_bytes(), journal_before)
                 self.assertEqual(journal.STATE_PATH.read_bytes(), state_before)
                 packet = SQLiteMetaStore(db_path).read_packet(storage_service.CACHE_TTL_REFRESH_EVIDENCE_PACKET_KEY)
@@ -192,9 +251,12 @@ class WorkerProductionGovernanceTests(unittest.TestCase):
                         "trusted_event_payload_digest": payload_digest,
                     },
                 )
-                self.assertTrue(receipt["trusted_production_execution_request_ready"])
+                self.assertTrue(receipt["local_integrity_execution_request_ready"])
+                self.assertFalse(receipt["trusted_production_execution_request_ready"])
+                self.assertFalse(receipt["production_trust_boundary_satisfied"])
                 self.assertTrue(receipt["expected_head_matches_current"])
-                self.assertTrue(receipt["trusted_event_verified"])
+                self.assertTrue(receipt["local_integrity_event_verified"])
+                self.assertFalse(receipt["trusted_event_verified"])
 
     def test_local_execution_request_does_not_equal_trusted_production_request(self) -> None:
         plan = {"evidence_plan_ready": True, "scope_ticket_sha256": "1" * 64, "status": "ready"}
@@ -231,6 +293,62 @@ class WorkerProductionGovernanceTests(unittest.TestCase):
         self.assertFalse(receipt["approved_by_user"])
         self.assertTrue(receipt["local_promotion_review_ready"])
         self.assertFalse(receipt["trusted_production_promotion_review_ready"])
+
+    def test_self_signed_runtime_claim_cannot_promote_worker(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            trust = Path(directory) / "trust"
+            with patch.multiple(
+                journal,
+                TRUST_ROOT=trust,
+                KEY_PATH=trust / "journal.key",
+                JOURNAL_PATH=trust / "journal.jsonl",
+                STATE_PATH=trust / "state.json",
+                LOCK_PATH=trust / "journal.lock",
+            ):
+                head = journal.current_head_full()
+                task_id = "self-sealed-runtime"
+                event = journal.record_event(
+                    event_type="worker_runtime_execution",
+                    expected_head_full=head,
+                    authorization_nonce="self-sealed-runtime-0123456789-ABCDEFG",
+                    subject=task_id,
+                    scope_hash="5" * 64,
+                    payload_digest="6" * 64,
+                )
+                receipt = worker_service._worker_production_promotion_review_receipt(
+                    runtime_durable_evidence_recipe={
+                        "local_recipe_ready": True,
+                        "missing_durable_evidence": [],
+                        "status": "local_recipe_ready",
+                    },
+                    runtime_qa_execution={
+                        "schema_version": worker_service.RUNTIME_QA_EXECUTION_SCHEMA_VERSION,
+                        "local_runtime_qa_execution_done": True,
+                        "local_fallback_round_trip_verified": True,
+                        "production_worker_complete": False,
+                        "external_calls_triggered": False,
+                        "head_full": head,
+                        "trusted_event_id": event["event_id"],
+                        "trusted_event_subject": task_id,
+                        "trusted_event_scope_hash": "5" * 64,
+                        "trusted_event_payload_digest": "6" * 64,
+                        "worker_started": True,
+                        "celery_worker_started": True,
+                        "redis_pinged": True,
+                        "task_dispatched": True,
+                    },
+                    payload_safe={
+                        "operator_approved": True,
+                        "approved_by_user": True,
+                        "expected_head_full": head,
+                    },
+                    task_id="promotion-review",
+                    reviewed_at="2026-07-18T00:00:00+00:00",
+                )
+                self.assertTrue(receipt["local_runtime_execution_claim_integrity_verified"])
+                self.assertFalse(receipt["trusted_runtime_execution_verified"])
+                self.assertFalse(receipt["trusted_production_promotion_review_ready"])
+                self.assertFalse(receipt["production_worker_complete"])
 
 
 if __name__ == "__main__":

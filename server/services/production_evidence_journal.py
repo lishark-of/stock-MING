@@ -157,6 +157,9 @@ def validate_journal() -> dict[str, Any]:
     if not key or not events or not state:
         return {
             "ready": False,
+            "local_integrity_ready": False,
+            "production_trusted": False,
+            "snapshot_rollback_resistant": False,
             "status": "production_evidence_journal_missing_or_empty",
             "event_count": 0,
             "last_event_mac": "",
@@ -188,6 +191,9 @@ def validate_journal() -> dict[str, Any]:
         ):
             return {
                 "ready": False,
+                "local_integrity_ready": False,
+                "production_trusted": False,
+                "snapshot_rollback_resistant": False,
                 "status": "production_evidence_journal_invalid",
                 "event_count": len(events),
                 "invalid_sequence": index,
@@ -207,6 +213,9 @@ def validate_journal() -> dict[str, Any]:
     )
     return {
         "ready": state_ready,
+        "local_integrity_ready": state_ready,
+        "production_trusted": False,
+        "snapshot_rollback_resistant": False,
         "status": "production_evidence_journal_verified" if state_ready else "production_evidence_state_invalid",
         "event_count": len(events),
         "last_event_mac": previous_mac,
@@ -227,25 +236,25 @@ def record_event(
     head_full = current_head_full()
     nonce_digest = authorization_nonce_digest(authorization_nonce)
     if event_type not in ALLOWED_EVENT_TYPES:
-        return {"ready": False, "status": "production_evidence_event_type_invalid", "writes_performed": False}
+        return {"ready": False, "local_integrity_ready": False, "production_trusted": False, "status": "production_evidence_event_type_invalid", "writes_performed": False}
     if not (_HEX_40.fullmatch(expected_head_full) and expected_head_full == head_full):
-        return {"ready": False, "status": "production_evidence_head_mismatch", "writes_performed": False}
+        return {"ready": False, "local_integrity_ready": False, "production_trusted": False, "status": "production_evidence_head_mismatch", "writes_performed": False}
     if not authorization_nonce_is_strong(authorization_nonce):
-        return {"ready": False, "status": "production_evidence_nonce_weak_or_missing", "writes_performed": False}
+        return {"ready": False, "local_integrity_ready": False, "production_trusted": False, "status": "production_evidence_nonce_weak_or_missing", "writes_performed": False}
     if not (_HEX_64.fullmatch(scope_hash) and _HEX_64.fullmatch(payload_digest)):
-        return {"ready": False, "status": "production_evidence_digest_invalid", "writes_performed": False}
+        return {"ready": False, "local_integrity_ready": False, "production_trusted": False, "status": "production_evidence_digest_invalid", "writes_performed": False}
     TRUST_ROOT.mkdir(parents=True, exist_ok=True)
     with LOCK_PATH.open("a+b") as lock_handle:
         fcntl.flock(lock_handle.fileno(), fcntl.LOCK_EX)
         key = _load_key(create=True)
         if not key:
-            return {"ready": False, "status": "production_evidence_key_unavailable", "writes_performed": False}
+            return {"ready": False, "local_integrity_ready": False, "production_trusted": False, "status": "production_evidence_key_unavailable", "writes_performed": False}
         existing = validate_journal()
         events = existing.get("events") if existing.get("ready") is True else []
         if (JOURNAL_PATH.exists() or STATE_PATH.exists()) and existing.get("ready") is not True:
-            return {"ready": False, "status": "production_evidence_journal_fail_closed", "writes_performed": False}
+            return {"ready": False, "local_integrity_ready": False, "production_trusted": False, "status": "production_evidence_journal_fail_closed", "writes_performed": False}
         if any(row.get("authorization_nonce_digest") == nonce_digest for row in events):
-            return {"ready": False, "status": "production_evidence_nonce_already_consumed", "writes_performed": False}
+            return {"ready": False, "local_integrity_ready": False, "production_trusted": False, "status": "production_evidence_nonce_already_consumed", "writes_performed": False}
         previous_mac = str(events[-1].get("event_mac") or "") if events else ""
         event = {
             "schema_version": EVENT_SCHEMA_VERSION,
@@ -278,9 +287,12 @@ def record_event(
         _atomic_write(STATE_PATH, _canonical_bytes(state))
         verified = validate_journal()
         if verified.get("ready") is not True:
-            return {"ready": False, "status": "production_evidence_event_post_write_validation_failed", "writes_performed": True}
+            return {"ready": False, "local_integrity_ready": False, "production_trusted": False, "status": "production_evidence_event_post_write_validation_failed", "writes_performed": True}
         return {
             "ready": True,
+            "local_integrity_ready": True,
+            "production_trusted": False,
+            "snapshot_rollback_resistant": False,
             "status": "production_evidence_event_recorded",
             "event_id": event["event_id"],
             "event_type": event_type,
@@ -317,6 +329,9 @@ def validate_event(
     )
     return {
         "ready": bool(journal.get("ready") is True and match),
+        "local_integrity_ready": bool(journal.get("ready") is True and match),
+        "production_trusted": False,
+        "snapshot_rollback_resistant": False,
         "status": "production_evidence_event_verified" if match else "production_evidence_event_missing_or_mismatch",
         "journal_status": journal.get("status"),
         "event": dict(match) if isinstance(match, dict) else {},

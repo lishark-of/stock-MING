@@ -821,7 +821,7 @@ def storage_cache_ttl_refresh_evidence() -> dict[str, Any]:
             }
         )
     verified_count = sum(1 for row in validated_rows if row["verified"])
-    ready = bool(
+    local_resolution_ready = bool(
         source.get("schema_version") == CACHE_TTL_REFRESH_EVIDENCE_SCHEMA_VERSION
         and read_status == "packet_present"
         and head_matches
@@ -831,19 +831,34 @@ def storage_cache_ttl_refresh_evidence() -> dict[str, Any]:
     return {
         "schema_version": CACHE_TTL_REFRESH_EVIDENCE_SCHEMA_VERSION,
         "packet_key": CACHE_TTL_REFRESH_EVIDENCE_PACKET_KEY,
-        "status": "storage_cache_ttl_refresh_evidence_verified" if ready else "storage_cache_ttl_refresh_evidence_blocked",
+        "status": "storage_cache_ttl_local_resolution_evidence_verified_production_blocked"
+        if local_resolution_ready
+        else "storage_cache_ttl_refresh_evidence_blocked",
         "read_status": read_status,
         "head_full": packet_head,
         "current_head_full": head_full,
         "head_matches_current": head_matches,
         "dataset_count": len(CANONICAL_PARQUET_DATASETS),
         "verified_dataset_count": verified_count,
+        "resolution_verified_dataset_count": verified_count,
+        "refresh_executed_count": sum(
+            1 for row in validated_rows if row["verified"] and row["resolution"] == "refreshed"
+        ),
+        "fresh_noop_verified_count": sum(
+            1 for row in validated_rows if row["verified"] and row["resolution"] == "fresh_no_refresh_required"
+        ),
         "unresolved_datasets": [row["dataset"] for row in validated_rows if not row["verified"]],
         "duplicate_or_unknown_dataset_rows": duplicate_or_unknown,
         "per_dataset_resolution_required": True,
         "single_dataset_refresh_cannot_promote": True,
-        "trusted_current_head_journal_required": True,
-        "production_ttl_evidence_ready": ready,
+        "local_current_head_integrity_journal_verified": local_resolution_ready,
+        "local_ttl_resolution_evidence_ready": local_resolution_ready,
+        "local_integrity_current_head_journal_required": True,
+        "trusted_current_head_journal_required": False,
+        "production_trust_boundary_satisfied": False,
+        "snapshot_rollback_resistant": False,
+        "requires_independently_held_or_external_production_capability": True,
+        "production_ttl_evidence_ready": False,
         "production_storage_complete": False,
         "cache_get_writes_files": False,
         "refresh_executed_by_validator": False,
@@ -5015,7 +5030,10 @@ def storage_production_readiness(sqlite_meta: Mapping[str, Any] | None = None) -
         "cache_ttl_dry_run_button_gated": True,
         "cache_ttl_dry_run_writes_parquet": False,
         "cache_ttl_dry_run_reads_row_payloads": False,
-        "cache_ttl_refresh_executed_count": int(ttl_refresh_evidence.get("verified_dataset_count") or 0),
+        "cache_ttl_refresh_executed_count": int(ttl_refresh_evidence.get("refresh_executed_count") or 0),
+        "cache_ttl_resolution_verified_count": int(
+            ttl_refresh_evidence.get("resolution_verified_dataset_count") or 0
+        ),
         "cache_ttl_refresh_required_dataset_count": len(CANONICAL_PARQUET_DATASETS),
         "cache_ttl_refresh_per_dataset_evidence": ttl_refresh_evidence,
         "cache_ttl_refresh_per_dataset_ready": ttl_refresh_evidence.get("production_ttl_evidence_ready") is True,
@@ -5090,6 +5108,7 @@ def storage_production_blocker_audit(production_readiness: Mapping[str, Any] | N
     manifest_evidence_count = int(readiness.get("dataset_version_manifest_evidence_validated_count") or 0)
     compaction_executed = int(readiness.get("compaction_executed_count") or 0)
     ttl_refresh_executed = int(readiness.get("cache_ttl_refresh_executed_count") or 0)
+    ttl_resolution_verified = int(readiness.get("cache_ttl_resolution_verified_count") or 0)
     ttl_refresh_evidence = (
         dict(readiness.get("cache_ttl_refresh_per_dataset_evidence") or {})
         if isinstance(readiness.get("cache_ttl_refresh_per_dataset_evidence"), Mapping)
@@ -5169,11 +5188,15 @@ def storage_production_blocker_audit(production_readiness: Mapping[str, Any] | N
         ),
         _storage_production_blocker_row(
             "cache_ttl_refresh_pipeline_executed",
-            ttl_refresh_executed >= dataset_count
+            ttl_resolution_verified >= dataset_count
             and ttl_refresh_evidence.get("production_ttl_evidence_ready") is True,
-            current_status=f"{ttl_refresh_executed}/{dataset_count}",
+            current_status=(
+                f"local_resolution={ttl_resolution_verified}/{dataset_count}; "
+                f"actual_refresh={ttl_refresh_executed}/{dataset_count}; production_trust=false"
+            ),
             evidence=(
-                "TTL production evidence must resolve every canonical dataset on the current HEAD through a trusted journal; "
+                "Local TTL evidence resolves canonical datasets through the current-HEAD integrity journal, but production "
+                "promotion still requires an independently held or external trust capability; "
                 f"unresolved={ttl_refresh_evidence.get('unresolved_datasets') or list(CANONICAL_PARQUET_DATASETS)}."
             ),
             next_action="Run one explicitly approved maintenance scope that resolves every stale/missing dataset and journals fresh no-op rows for the rest.",
@@ -5247,6 +5270,7 @@ def storage_production_blocker_audit(production_readiness: Mapping[str, Any] | N
         "dataset_version_migration_executed_count": version_migrations,
         "compaction_executed_count": compaction_executed,
         "cache_ttl_refresh_executed_count": ttl_refresh_executed,
+        "cache_ttl_resolution_verified_count": ttl_resolution_verified,
         "external_calls_triggered": False,
         "tushare_called": False,
         "deepseek_called": False,
@@ -6442,7 +6466,10 @@ def storage_physical_durable_evidence_recipe(
                 f"verified_dataset_count={ttl_refresh_evidence.get('verified_dataset_count')}; "
                 f"unresolved={ttl_refresh_evidence.get('unresolved_datasets')}"
             ),
-            required_evidence="per-dataset current-HEAD trusted journal evidence resolving all canonical TTL states",
+            required_evidence=(
+                "per-dataset current-HEAD local integrity evidence plus an independently held or external production "
+                "trust capability"
+            ),
             next_step=(
                 "Retain the verified per-dataset journal and continue separate production promotion review."
                 if ttl_refresh_evidence.get("production_ttl_evidence_ready") is True
@@ -6580,15 +6607,23 @@ def storage_physical_durable_evidence_recipe(
         ),
         "physical_compaction_not_needed_count": int(compaction_metadata.get("compaction_not_needed_count") or 0),
         "physical_compaction_dataset_count": int(compaction_metadata.get("dataset_count") or 0),
-        "cache_ttl_refresh_executed": ttl_refresh_evidence.get("production_ttl_evidence_ready") is True,
+        "cache_ttl_refresh_executed": False,
+        "cache_ttl_local_resolution_evidence_ready": ttl_refresh_evidence.get(
+            "local_ttl_resolution_evidence_ready"
+        ) is True,
         "cache_ttl_refresh_metadata_validation_done": cache_ttl_refresh_metadata_validation_done,
         "cache_ttl_refresh_metadata_validation_status": cache_ttl_metadata.get("status"),
         "cache_ttl_refresh_recommended_count": int(cache_ttl_metadata.get("refresh_recommended_count") or 0),
-        "cache_ttl_refresh_executed_count": int(ttl_refresh_evidence.get("verified_dataset_count") or 0),
+        "cache_ttl_refresh_executed_count": int(ttl_refresh_evidence.get("refresh_executed_count") or 0),
         "cache_ttl_refresh_verified_dataset_count": int(ttl_refresh_evidence.get("verified_dataset_count") or 0),
+        "cache_ttl_resolution_verified_count": int(
+            ttl_refresh_evidence.get("resolution_verified_dataset_count") or 0
+        ),
+        "cache_ttl_production_trust_boundary_satisfied": False,
         "cache_ttl_refresh_unresolved_datasets": list(ttl_refresh_evidence.get("unresolved_datasets") or []),
         "cache_ttl_refresh_current_head_bound": ttl_refresh_evidence.get("head_matches_current") is True,
-        "cache_ttl_refresh_trusted_journal_required": True,
+        "cache_ttl_refresh_local_integrity_journal_required": True,
+        "cache_ttl_refresh_trusted_journal_required": False,
         "cache_ttl_dataset_count": int(cache_ttl_metadata.get("dataset_count") or 0),
         "artifact_cleanup_review_done": artifact_cleanup_review_done,
         "artifact_cleanup_review_status": cleanup_review.get("status"),

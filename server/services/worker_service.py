@@ -2654,7 +2654,8 @@ def _worker_runtime_qa_execution_request_receipt(
         },
         "worker_runtime_execution_request",
     )
-    trusted_ready = bool(ready and head_matches and nonce_present and trusted_event.get("ready") is True)
+    local_integrity_event_verified = trusted_event.get("local_integrity_ready") is True
+    local_integrity_ready = bool(ready and head_matches and nonce_present and local_integrity_event_verified)
     rows = [
         _worker_runtime_qa_execution_request_row(
             "explicit_post_execution_request_done",
@@ -2734,7 +2735,9 @@ def _worker_runtime_qa_execution_request_receipt(
         "local_execution_request_only": True,
         "operator_approved": approved,
         "local_execution_request_ready": ready,
-        "trusted_production_execution_request_ready": trusted_ready,
+        "local_integrity_execution_request_ready": local_integrity_ready,
+        "trusted_production_execution_request_ready": False,
+        "production_trust_boundary_satisfied": False,
         "ready_for_manual_runtime_qa_task_submission": ready,
         "ready_to_mark_production_worker_complete": False,
         "production_worker_complete": False,
@@ -2762,7 +2765,8 @@ def _worker_runtime_qa_execution_request_receipt(
         "trusted_event_subject": str(safe_payload.get("trusted_event_subject") or task_id or ""),
         "trusted_event_scope_hash": str(safe_payload.get("trusted_event_scope_hash") or ""),
         "trusted_event_payload_digest": str(safe_payload.get("trusted_event_payload_digest") or ""),
-        "trusted_event_verified": trusted_event.get("ready") is True,
+        "local_integrity_event_verified": local_integrity_event_verified,
+        "trusted_event_verified": False,
         "target_worker_task_route": "future POST /api/worker/runtime-qa-execution",
         "target_worker_task_type": "run_worker_runtime_qa_execution",
         "target_phases": list(runtime_qa_execution_recipe.get("allowed_execution_sequence") or []),
@@ -4223,13 +4227,15 @@ def _read_worker_runtime_qa_execution_packet(
     receipt.setdefault("rows", [])
     receipt.setdefault("phase_rows", [])
     receipt.setdefault("call_ledger", [])
-    trusted_event = _validate_worker_trusted_event(receipt, "worker_runtime_execution")
-    receipt["trusted_event_verified"] = trusted_event.get("ready") is True
-    receipt["trusted_runtime_qa_execution_event_ready"] = bool(
-        trusted_event.get("ready") is True
+    local_event = _validate_worker_trusted_event(receipt, "worker_runtime_execution")
+    receipt["local_integrity_event_verified"] = local_event.get("local_integrity_ready") is True
+    receipt["local_runtime_qa_execution_event_ready"] = bool(
+        receipt["local_integrity_event_verified"]
         and receipt.get("head_full") == production_evidence_journal.current_head_full()
         and receipt.get("predecessor_request_event_id")
     )
+    receipt["trusted_event_verified"] = False
+    receipt["trusted_runtime_qa_execution_event_ready"] = False
     receipt["trusted_production_runtime_execution_ready"] = False
     receipt["source_packet_read_status"] = read_status
     receipt["source_packet_present"] = True
@@ -6133,8 +6139,11 @@ def run_worker_runtime_qa_execution_request(payload: Any = None) -> dict[str, An
                 "trusted_event_subject": str(task.get("task_id") or ""),
                 "trusted_event_scope_hash": event_scope_hash,
                 "trusted_event_payload_digest": event_payload_digest,
-                "trusted_event_verified": event.get("ready") is True,
-                "trusted_production_execution_request_ready": event.get("ready") is True,
+                "local_integrity_event_verified": event.get("local_integrity_ready") is True,
+                "trusted_event_verified": False,
+                "local_integrity_execution_request_ready": event.get("local_integrity_ready") is True,
+                "trusted_production_execution_request_ready": False,
+                "production_trust_boundary_satisfied": False,
             }
         )
         receipt["request_params_safe"].update(
@@ -6205,12 +6214,17 @@ def run_worker_runtime_qa_execution_request(payload: Any = None) -> dict[str, An
         "local_execution_request_ready": receipt["local_execution_request_ready"],
         "ready_for_manual_runtime_qa_task_submission": receipt["ready_for_manual_runtime_qa_task_submission"],
         "trusted_production_execution_request_ready": receipt["trusted_production_execution_request_ready"],
+        "local_integrity_execution_request_ready": receipt.get(
+            "local_integrity_execution_request_ready"
+        ) is True,
+        "production_trust_boundary_satisfied": False,
         "head_full": receipt["head_full"],
         "expected_head_matches_current": receipt["expected_head_matches_current"],
         "authorization_nonce_digest": receipt["authorization_nonce_digest"],
         "authorization_nonce_raw_persisted": False,
         "trusted_event_id": receipt["trusted_event_id"],
-        "trusted_event_verified": receipt["trusted_event_verified"],
+        "local_integrity_event_verified": receipt.get("local_integrity_event_verified") is True,
+        "trusted_event_verified": False,
         "runtime_qa_scope_hash": receipt["runtime_qa_scope_hash"],
         "production_evidence_plan_scope_hash": receipt["production_evidence_plan_scope_hash"],
         "runtime_qa_task_created": False,
@@ -6500,7 +6514,7 @@ def run_worker_runtime_qa_execution(payload: Any = None) -> dict[str, Any]:
     expected_head_full = str(payload_safe.get("expected_head_full") or "")
     if (
         receipt.get("local_runtime_qa_execution_done") is True
-        and runtime_request.get("trusted_production_execution_request_ready") is True
+        and runtime_request.get("local_integrity_execution_request_ready") is True
     ):
         event_scope_hash = _json_sha256(
             {
@@ -6540,8 +6554,10 @@ def run_worker_runtime_qa_execution(payload: Any = None) -> dict[str, Any]:
                 "trusted_event_subject": str(task.get("task_id") or ""),
                 "trusted_event_scope_hash": event_scope_hash,
                 "trusted_event_payload_digest": event_payload_digest,
-                "trusted_event_verified": event.get("ready") is True,
-                "trusted_runtime_qa_execution_event_ready": event.get("ready") is True,
+                "local_integrity_event_verified": event.get("local_integrity_ready") is True,
+                "trusted_event_verified": False,
+                "local_runtime_qa_execution_event_ready": event.get("local_integrity_ready") is True,
+                "trusted_runtime_qa_execution_event_ready": False,
                 "trusted_production_runtime_execution_ready": False,
             }
         )
@@ -6556,7 +6572,9 @@ def run_worker_runtime_qa_execution(payload: Any = None) -> dict[str, Any]:
                 "authorization_nonce_raw_persisted": False,
                 "predecessor_request_event_id": str(runtime_request.get("trusted_event_id") or ""),
                 "trusted_event_id": "",
+                "local_integrity_event_verified": False,
                 "trusted_event_verified": False,
+                "local_runtime_qa_execution_event_ready": False,
                 "trusted_runtime_qa_execution_event_ready": False,
                 "trusted_production_runtime_execution_ready": False,
             }
@@ -6639,13 +6657,17 @@ def run_worker_runtime_qa_execution(payload: Any = None) -> dict[str, Any]:
         "trusted_runtime_qa_execution_event_ready": receipt.get(
             "trusted_runtime_qa_execution_event_ready"
         ) is True,
+        "local_runtime_qa_execution_event_ready": receipt.get(
+            "local_runtime_qa_execution_event_ready"
+        ) is True,
         "head_full": receipt.get("head_full"),
         "expected_head_full": receipt.get("expected_head_full"),
         "authorization_nonce_digest": receipt.get("authorization_nonce_digest"),
         "authorization_nonce_raw_persisted": False,
         "predecessor_request_event_id": receipt.get("predecessor_request_event_id"),
         "trusted_event_id": receipt.get("trusted_event_id"),
-        "trusted_event_verified": receipt.get("trusted_event_verified") is True,
+        "local_integrity_event_verified": receipt.get("local_integrity_event_verified") is True,
+        "trusted_event_verified": False,
         "production_worker_complete": False,
         "activation_ready": False,
         "worker_started": False,
@@ -6723,13 +6745,13 @@ def _worker_production_promotion_review_receipt(
         and runtime_qa_execution.get("production_worker_complete") is False
         and runtime_qa_execution.get("external_calls_triggered") is False
     )
-    trusted_runtime_execution = _validate_worker_trusted_event(
+    local_runtime_execution = _validate_worker_trusted_event(
         runtime_qa_execution,
         "worker_runtime_execution",
     )
-    trusted_runtime_qa_event = trusted_runtime_execution.get("ready") is True
-    trusted_production_runtime = bool(
-        trusted_runtime_qa_event
+    local_runtime_qa_event = local_runtime_execution.get("local_integrity_ready") is True
+    local_runtime_claim_integrity = bool(
+        local_runtime_qa_event
         and runtime_qa_execution.get("worker_started") is True
         and runtime_qa_execution.get("celery_worker_started") is True
         and runtime_qa_execution.get("redis_pinged") is True
@@ -6814,8 +6836,10 @@ def _worker_production_promotion_review_receipt(
         "expected_head_matches_current": current_head_bound,
         "runtime_qa_execution_task_id": runtime_qa_execution.get("execution_task_id") or runtime_qa_execution.get("task_id"),
         "trusted_runtime_execution_event_id": runtime_qa_execution.get("trusted_event_id"),
-        "trusted_runtime_qa_execution_event_verified": trusted_runtime_qa_event,
-        "trusted_runtime_execution_verified": trusted_production_runtime,
+        "local_runtime_qa_execution_event_verified": local_runtime_qa_event,
+        "local_runtime_execution_claim_integrity_verified": local_runtime_claim_integrity,
+        "trusted_runtime_qa_execution_event_verified": False,
+        "trusted_runtime_execution_verified": False,
         "runtime_durable_status": runtime_durable_evidence_recipe.get("status"),
         "missing_durable_evidence": runtime_durable_evidence_recipe.get("missing_durable_evidence") or [],
         "operator_approved": approved,
@@ -6848,8 +6872,10 @@ def _worker_production_promotion_review_receipt(
         "expected_head_full": expected_head_full,
         "expected_head_matches_current": current_head_bound,
         "trusted_runtime_execution_event_id": str(runtime_qa_execution.get("trusted_event_id") or ""),
-        "trusted_runtime_qa_execution_event_verified": trusted_runtime_qa_event,
-        "trusted_runtime_execution_verified": trusted_production_runtime,
+        "local_runtime_qa_execution_event_verified": local_runtime_qa_event,
+        "local_runtime_execution_claim_integrity_verified": local_runtime_claim_integrity,
+        "trusted_runtime_qa_execution_event_verified": False,
+        "trusted_runtime_execution_verified": False,
         "execution_and_promotion_nonce_separated": True,
         "trusted_production_promotion_review_ready": False,
         "runtime_qa_scope_hash": runtime_qa_execution.get("runtime_qa_scope_hash"),
@@ -6962,11 +6988,13 @@ def _read_worker_production_promotion_review_packet(
             "trusted_event_subject": str(receipt.get("trusted_event_subject") or ""),
             "trusted_event_scope_hash": str(receipt.get("trusted_event_scope_hash") or ""),
             "trusted_event_payload_digest": str(receipt.get("trusted_event_payload_digest") or ""),
-            "trusted_event_verified": trusted_event.get("ready") is True,
-            "trusted_promotion_review_event_verified": bool(
-                trusted_event.get("ready") is True
+            "local_integrity_event_verified": trusted_event.get("local_integrity_ready") is True,
+            "trusted_event_verified": False,
+            "local_promotion_review_event_integrity_verified": bool(
+                trusted_event.get("local_integrity_ready") is True
                 and receipt.get("head_full") == production_evidence_journal.current_head_full()
             ),
+            "trusted_promotion_review_event_verified": False,
             "trusted_production_promotion_review_ready": False,
         }
     )
@@ -7021,7 +7049,7 @@ def run_worker_production_promotion_review(payload: Any = None) -> dict[str, Any
     if (
         receipt.get("local_promotion_review_ready") is True
         and receipt.get("approved_by_user") is True
-        and receipt.get("trusted_runtime_qa_execution_event_verified") is True
+        and receipt.get("local_runtime_qa_execution_event_verified") is True
     ):
         event_scope_hash = _json_sha256(
             {
@@ -7058,8 +7086,10 @@ def run_worker_production_promotion_review(payload: Any = None) -> dict[str, Any
                 "trusted_event_subject": str(task.get("task_id") or ""),
                 "trusted_event_scope_hash": event_scope_hash,
                 "trusted_event_payload_digest": event_payload_digest,
-                "trusted_event_verified": event.get("ready") is True,
-                "trusted_promotion_review_event_verified": event.get("ready") is True,
+                "local_integrity_event_verified": event.get("local_integrity_ready") is True,
+                "trusted_event_verified": False,
+                "local_promotion_review_event_integrity_verified": event.get("local_integrity_ready") is True,
+                "trusted_promotion_review_event_verified": False,
                 "trusted_production_promotion_review_ready": False,
             }
         )
@@ -7071,7 +7101,9 @@ def run_worker_production_promotion_review(payload: Any = None) -> dict[str, Any
                 ),
                 "authorization_nonce_raw_persisted": False,
                 "trusted_event_id": "",
+                "local_integrity_event_verified": False,
                 "trusted_event_verified": False,
+                "local_promotion_review_event_integrity_verified": False,
                 "trusted_promotion_review_event_verified": False,
                 "trusted_production_promotion_review_ready": False,
             }
@@ -7140,14 +7172,22 @@ def run_worker_production_promotion_review(payload: Any = None) -> dict[str, Any
         "head_full": receipt.get("head_full"),
         "expected_head_matches_current": receipt.get("expected_head_matches_current") is True,
         "trusted_runtime_execution_event_id": receipt.get("trusted_runtime_execution_event_id"),
-        "trusted_runtime_execution_verified": receipt.get("trusted_runtime_execution_verified") is True,
+        "local_runtime_qa_execution_event_verified": receipt.get(
+            "local_runtime_qa_execution_event_verified"
+        ) is True,
+        "local_runtime_execution_claim_integrity_verified": receipt.get(
+            "local_runtime_execution_claim_integrity_verified"
+        ) is True,
+        "trusted_runtime_execution_verified": False,
         "authorization_nonce_digest": receipt.get("authorization_nonce_digest"),
         "authorization_nonce_raw_persisted": False,
         "trusted_event_id": receipt.get("trusted_event_id"),
-        "trusted_event_verified": receipt.get("trusted_event_verified") is True,
-        "trusted_promotion_review_event_verified": receipt.get(
-            "trusted_promotion_review_event_verified"
+        "local_integrity_event_verified": receipt.get("local_integrity_event_verified") is True,
+        "trusted_event_verified": False,
+        "local_promotion_review_event_integrity_verified": receipt.get(
+            "local_promotion_review_event_integrity_verified"
         ) is True,
+        "trusted_promotion_review_event_verified": False,
         "production_worker_complete": False,
         "worker_started": False,
         "celery_worker_started": False,
