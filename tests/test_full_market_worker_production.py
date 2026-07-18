@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import sqlite3
 import tempfile
 import sys
 import types
@@ -494,9 +495,10 @@ class FullMarketWorkerProductionTests(unittest.TestCase):
             self.assertIn("bound_worker_task_outputs", fact["blockers"])
 
     def test_candidate_worker_output_needs_exact_authoritative_cache_binding(self) -> None:
+        acceptance_run_id = uuid.uuid4().hex
         worker_packet = {
-            "acceptance_run_id": "runtime-123",
-            "result_version_id": "fmw-runtime-123",
+            "acceptance_run_id": acceptance_run_id,
+            "result_version_id": f"fmw-{acceptance_run_id}",
             "result_artifact_sha256": "a" * 64,
             "result_output_hash": "b" * 64,
             "provider_version_digest": "c" * 64,
@@ -513,13 +515,80 @@ class FullMarketWorkerProductionTests(unittest.TestCase):
             "does_not_execute_trades": True,
             "does_not_modify_strategy_action": True,
             "contains_secret": False,
-            "global_candidate_cache_overwritten": True,
+            "global_candidate_cache_overwritten": False,
         }
         self.assertFalse(
             service._candidate_cache_replacement_ready(cache_packet, worker_packet, {})
         )
 
         cache_write_task_id = uuid.uuid4().hex
+        output_binding_digest = service._canonical_digest(
+            {
+                "event_kind": service.RADAR_LINEAGE_EVENT_KIND,
+                "acceptance_run_id": worker_packet["acceptance_run_id"],
+                "source_result_dataset": service.RESULT_DATASET,
+                "source_result_version_id": worker_packet["result_version_id"],
+                "source_result_artifact_sha256": worker_packet["result_artifact_sha256"],
+                "source_result_output_hash": worker_packet["result_output_hash"],
+                "provider_version_digest": worker_packet["provider_version_digest"],
+                "universe_digest": worker_packet["universe_digest"],
+            }
+        )
+        common_evidence = {
+            "head_full": service._current_head_full(),
+            "acceptance_run_id": acceptance_run_id,
+            "source_output_binding_digest": output_binding_digest,
+            "contains_secret": False,
+            "does_not_execute_trades": True,
+        }
+        deep_scan_evidence = {
+            **common_evidence,
+            "schema_version": "candidate_radar_deep_scan_worker_execution_evidence.v1",
+            "status": "candidate_radar_deep_scan_worker_execution_verified",
+            "worker_execution_verified": True,
+            "full_pool_scan_verified": True,
+            "deep_scan_verified": True,
+        }
+        browser_visual_evidence = {
+            **common_evidence,
+            "schema_version": "candidate_radar_browser_visual_qa_evidence.v1",
+            "status": "candidate_radar_browser_visual_qa_passed",
+            "route": "#candidates",
+            "visual_qa_passed": True,
+            "screenshot_count": 2,
+            "review_id": "5" * 64,
+        }
+        browser_performance_evidence = {
+            **common_evidence,
+            "schema_version": "candidate_radar_browser_performance_evidence.v1",
+            "status": "candidate_radar_browser_performance_passed",
+            "route": "#candidates",
+            "performance_passed": True,
+            "p95_ms": 80.0,
+            "p95_budget_ms": 120.0,
+        }
+        legacy_retirement_evidence = {
+            **common_evidence,
+            "schema_version": "candidate_radar_legacy_retirement_evidence.v1",
+            "status": "candidate_radar_legacy_fallback_retired",
+            "legacy_fallback_retired": True,
+            "legacy_fallback_required": False,
+            "streamlit_primary_surface_present": False,
+        }
+        evidence_digests = {
+            "deep_scan_execution_evidence_digest": service._canonical_digest(
+                deep_scan_evidence
+            ),
+            "browser_visual_evidence_digest": service._canonical_digest(
+                browser_visual_evidence
+            ),
+            "browser_performance_evidence_digest": service._canonical_digest(
+                browser_performance_evidence
+            ),
+            "legacy_retirement_evidence_digest": service._canonical_digest(
+                legacy_retirement_evidence
+            ),
+        }
         binding = {
             "schema_version": service.CANDIDATE_CACHE_REPLACEMENT_SCHEMA_VERSION,
             "status": "authoritative_candidate_cache_replaced",
@@ -536,6 +605,7 @@ class FullMarketWorkerProductionTests(unittest.TestCase):
             "candidate_rows_digest": service._canonical_digest(candidate_rows),
             "contains_secret": False,
             "does_not_execute_trades": True,
+            **evidence_digests,
         }
         binding["binding_digest"] = service._canonical_digest(binding)
         cache_packet["full_market_worker_replacement"] = binding
@@ -553,17 +623,9 @@ class FullMarketWorkerProductionTests(unittest.TestCase):
             "external_calls_triggered": False,
             "does_not_execute_trades": True,
             "contains_secret": False,
+            **evidence_digests,
         }
         cache_write_task["task_binding_digest"] = service._canonical_digest(cache_write_task)
-        self.assertTrue(
-            service._candidate_cache_replacement_ready(
-                cache_packet,
-                worker_packet,
-                cache_write_task,
-            )
-        )
-
-        cache_packet["candidate_rows"][0]["score"] = 92
         self.assertFalse(
             service._candidate_cache_replacement_ready(
                 cache_packet,
@@ -571,6 +633,110 @@ class FullMarketWorkerProductionTests(unittest.TestCase):
                 cache_write_task,
             )
         )
+
+        with tempfile.TemporaryDirectory() as directory:
+            evidence_root = Path(directory)
+            cache_packet["global_candidate_cache_overwritten"] = True
+            cache_packet_digest = service._canonical_digest(cache_packet)
+            cache_write_task_digest = service._canonical_digest(cache_write_task)
+            with patch.object(
+                service,
+                "_official_orchestrator_state",
+                return_value={"transport_event_persisted": True},
+            ):
+                rejected = service._persist_official_production_lineage_event(
+                    evidence_root,
+                    capability=object(),
+                    run_id=acceptance_run_id,
+                    event_kind=service.RADAR_LINEAGE_EVENT_KIND,
+                    worker_packet_digest=service._canonical_digest(worker_packet),
+                    output_binding_digest=output_binding_digest,
+                    candidate_cache_packet_digest=cache_packet_digest,
+                    candidate_cache_write_task_digest=cache_write_task_digest,
+                    deep_scan_execution_evidence=deep_scan_evidence,
+                    browser_visual_evidence=browser_visual_evidence,
+                    browser_performance_evidence={
+                        **browser_performance_evidence,
+                        "p95_ms": 121.0,
+                    },
+                    legacy_retirement_evidence=legacy_retirement_evidence,
+                    global_candidate_cache_overwritten=True,
+                    deep_scan_worker_execution_verified=True,
+                    browser_visual_qa_verified=True,
+                    browser_performance_verified=True,
+                    legacy_fallback_retired=True,
+                )
+                self.assertEqual(rejected, {})
+                event = service._persist_official_production_lineage_event(
+                    evidence_root,
+                    capability=object(),
+                    run_id=acceptance_run_id,
+                    event_kind=service.RADAR_LINEAGE_EVENT_KIND,
+                    worker_packet_digest=service._canonical_digest(worker_packet),
+                    output_binding_digest=output_binding_digest,
+                    candidate_cache_packet_digest=cache_packet_digest,
+                    candidate_cache_write_task_digest=cache_write_task_digest,
+                    deep_scan_execution_evidence=deep_scan_evidence,
+                    browser_visual_evidence=browser_visual_evidence,
+                    browser_performance_evidence=browser_performance_evidence,
+                    legacy_retirement_evidence=legacy_retirement_evidence,
+                    global_candidate_cache_overwritten=True,
+                    deep_scan_worker_execution_verified=True,
+                    browser_visual_qa_verified=True,
+                    browser_performance_verified=True,
+                    legacy_fallback_retired=True,
+                )
+            self.assertTrue(event)
+            self.assertTrue(
+                service._candidate_cache_replacement_ready(
+                    cache_packet,
+                    worker_packet,
+                    cache_write_task,
+                    evidence_root=evidence_root,
+                )
+            )
+            with patch.object(service, "_current_head_full", return_value="f" * 40):
+                self.assertFalse(
+                    service._candidate_cache_replacement_ready(
+                        cache_packet,
+                        worker_packet,
+                        cache_write_task,
+                        evidence_root=evidence_root,
+                    )
+                )
+            cache_packet["global_candidate_cache_overwritten"] = False
+            self.assertFalse(
+                service._candidate_cache_replacement_ready(
+                    cache_packet,
+                    worker_packet,
+                    cache_write_task,
+                    evidence_root=evidence_root,
+                )
+            )
+            cache_packet["global_candidate_cache_overwritten"] = True
+            cache_packet["candidate_rows"][0]["score"] = 92
+            self.assertFalse(
+                service._candidate_cache_replacement_ready(
+                    cache_packet,
+                    worker_packet,
+                    cache_write_task,
+                    evidence_root=evidence_root,
+                )
+            )
+            connection = sqlite3.connect(evidence_root / "meta.sqlite")
+            try:
+                with self.assertRaises(sqlite3.IntegrityError):
+                    connection.execute(
+                        f"UPDATE {service.PRODUCTION_LINEAGE_EVENT_TABLE} SET event_kind = ?",
+                        ("forged",),
+                    )
+                connection.rollback()
+                with self.assertRaises(sqlite3.IntegrityError):
+                    connection.execute(
+                        f"DELETE FROM {service.PRODUCTION_LINEAGE_EVENT_TABLE}"
+                    )
+            finally:
+                connection.close()
 
     def test_candidate_worker_packet_cannot_satisfy_factor_full_market_contract(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -595,6 +761,155 @@ class FullMarketWorkerProductionTests(unittest.TestCase):
             self.assertFalse(fact["full_market_factor_research"])
             self.assertFalse(fact["candidate_radar_output_accepted_as_factor"])
             self.assertIn("factor_worker_packet_direct_binding", fact["blockers"])
+
+    def test_factor_metric_and_runner_owned_lineage_contract_is_satisfiable(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            symbols = ["000001.SZ", "000002.SZ", "600000.SH", "600001.SH"]
+            universe_digest = service._canonical_digest(symbols)
+            rows = [
+                {
+                    "ts_code": symbol,
+                    "cross_sectional_rank": index + 1,
+                    "cross_sectional_zscore": (-1.0, 1.0, -1.0, 1.0)[index],
+                    "industry_neutral_score": (-1.0, 1.0, -1.0, 1.0)[index],
+                    "size_neutral_score": (1.0, -1.0, -1.0, 1.0)[index],
+                    "combined_factor_score": (0.5, -0.5, -0.5, 0.5)[index],
+                    "industry_code": ("bank", "bank", "tech", "tech")[index],
+                    "market_cap": (1.0, 4.0, 2.0, 8.0)[index],
+                    "does_not_execute_trades": True,
+                }
+                for index, symbol in enumerate(symbols)
+            ]
+            result_output_hash = service._canonical_digest(rows)
+            metric_audit = service._factor_metric_validation_audit(
+                rows,
+                universe_digest=universe_digest,
+                result_output_hash=result_output_hash,
+            )
+            self.assertTrue(metric_audit["ready"], metric_audit["blockers"])
+            run_id = uuid.uuid4().hex
+            packet = {
+                "schema_version": service.FACTOR_SCHEMA_VERSION,
+                "status": "factor_full_market_worker_production_complete",
+                "acceptance_run_id": run_id,
+                "output_kind": "factor_full_market_cross_sectional_research",
+                "factor_output_contract": service.FACTOR_OUTPUT_CONTRACT,
+                "factor_output_contract_digest": service.FACTOR_OUTPUT_CONTRACT_DIGEST,
+                "full_market_factor_research": True,
+                "full_market_worker_runtime": True,
+                "candidate_radar_production_replacement": False,
+                "provider_scope_hash": "a" * 64,
+                "provider_version_digest": "b" * 64,
+                "universe_digest": universe_digest,
+                "universe_count": len(symbols),
+                "result_version_id": f"factor-{run_id}",
+                "result_artifact_sha256": "c" * 64,
+                "result_output_hash": result_output_hash,
+                "metric_validation_audit": metric_audit,
+                "neutralization_audit_digest": metric_audit["audit_digest"],
+                "synthetic_fixture": False,
+                "does_not_execute_trades": True,
+                "does_not_modify_strategy_action": True,
+                "contains_secret": False,
+            }
+            packet["production_binding_digest"] = service._canonical_digest(packet)
+            store = SQLiteMetaStore(root / "meta.sqlite")
+            store.write_packet(service.FACTOR_PACKET_KEY, packet)
+            store.write_packet(service.FACTOR_LAST_GOOD_PACKET_KEY, packet)
+            artifact_path = root / "factor.parquet"
+            artifact_path.write_bytes(b"verified-by-mocked-pointer-reader")
+            pointer = {
+                "status": "ready",
+                "version_id": packet["result_version_id"],
+                "artifact_path": str(artifact_path),
+                "artifact_sha256_matches": True,
+                "artifact_sha256": packet["result_artifact_sha256"],
+                "lineage": {
+                    "factor_output_contract_digest": service.FACTOR_OUTPUT_CONTRACT_DIGEST,
+                    "universe_digest": universe_digest,
+                    "provider_version_digest": packet["provider_version_digest"],
+                    "neutralization_audit_digest": metric_audit["audit_digest"],
+                },
+            }
+            universe = {
+                "ready": True,
+                "symbols": symbols,
+                "universe_count": len(symbols),
+                "scope_hash": packet["provider_scope_hash"],
+                "version_digest": packet["provider_version_digest"],
+                "universe_digest": universe_digest,
+                "blockers": [],
+            }
+            with patch.object(
+                service,
+                "_official_orchestrator_state",
+                return_value={"transport_event_persisted": True},
+            ):
+                event = service._persist_official_production_lineage_event(
+                    root,
+                    capability=object(),
+                    run_id=run_id,
+                    event_kind=service.FACTOR_LINEAGE_EVENT_KIND,
+                    worker_packet_digest=service._canonical_digest(packet),
+                    output_binding_digest=service._factor_output_binding_digest(packet),
+                    factor_output_contract_digest=service.FACTOR_OUTPUT_CONTRACT_DIGEST,
+                    neutralization_audit_digest=metric_audit["audit_digest"],
+                )
+            self.assertTrue(event)
+            with patch.object(
+                service,
+                "_authoritative_provider_universe",
+                return_value=universe,
+            ), patch.object(
+                service.parquet_store,
+                "versioned_dataset_pointer",
+                return_value=pointer,
+            ), patch.object(pd, "read_parquet", return_value=pd.DataFrame(rows)):
+                fact = service.validate_factor_full_market_research_fact(root)
+            self.assertTrue(fact["ready"], fact["blockers"])
+            self.assertTrue(fact["trusted_lineage_event_observed"])
+
+    def test_production_lineage_event_rejects_unowned_capability(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            event = service._persist_official_production_lineage_event(
+                root,
+                capability=object(),
+                run_id=uuid.uuid4().hex,
+                event_kind=service.FACTOR_LINEAGE_EVENT_KIND,
+                worker_packet_digest="a" * 64,
+                output_binding_digest="b" * 64,
+                factor_output_contract_digest=service.FACTOR_OUTPUT_CONTRACT_DIGEST,
+                neutralization_audit_digest="c" * 64,
+            )
+            self.assertEqual(event, {})
+            self.assertFalse((root / "meta.sqlite").exists())
+            self.assertFalse(service._lineage_key_path(root).exists())
+
+    def test_factor_metric_audit_rejects_nonfinite_and_false_neutralization(self) -> None:
+        rows = [
+            {
+                "ts_code": f"{index + 1:06d}.SZ",
+                "cross_sectional_rank": index + 1,
+                "cross_sectional_zscore": float("nan") if index == 0 else float(index),
+                "industry_neutral_score": 2.0,
+                "size_neutral_score": float(index),
+                "combined_factor_score": float(index),
+                "industry_code": "same-industry",
+                "market_cap": float(index + 1),
+                "does_not_execute_trades": True,
+            }
+            for index in range(4)
+        ]
+        audit = service._factor_metric_validation_audit(
+            rows,
+            universe_digest="a" * 64,
+            result_output_hash="b" * 64,
+        )
+        self.assertFalse(audit["ready"])
+        self.assertIn("metric_numeric_finite_complete", audit["blockers"])
+        self.assertIn("neutralization_input_coverage", audit["blockers"])
 
     def test_fake_eager_and_patched_inspector_transport_fail(self) -> None:
         self.assertFalse(service._transport_probe(object(), acceptance_run_id="runtime123")["ready"])
