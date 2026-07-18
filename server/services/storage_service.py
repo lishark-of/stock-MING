@@ -12,7 +12,7 @@ from typing import Any, Mapping
 from storage import duckdb_store, parquet_store
 from storage.sqlite_meta import SQLiteMetaStore
 
-from . import task_service
+from . import production_evidence_journal, task_service
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 PARQUET_ROOT = PROJECT_ROOT / ".stock_ming_3" / "parquet"
@@ -28,6 +28,8 @@ PARTITION_MIGRATION_EXECUTION_PACKET_KEY = "command_center_3_storage_partition_m
 COMPACTION_EXECUTION_PACKET_KEY = "command_center_3_storage_compaction_execution_packet"
 COMPACTION_DRY_RUN_PACKET_KEY = "command_center_3_storage_compaction_dry_run_packet"
 CACHE_TTL_DRY_RUN_PACKET_KEY = "command_center_3_storage_cache_ttl_dry_run_packet"
+CACHE_TTL_REFRESH_EVIDENCE_PACKET_KEY = "command_center_3_storage_cache_ttl_refresh_evidence_packet"
+CACHE_TTL_REFRESH_EVIDENCE_SCHEMA_VERSION = "command_center_3_storage_cache_ttl_refresh_evidence.v1"
 DATASET_VERSION_MANIFEST_DRY_RUN_PACKET_KEY = "command_center_3_storage_dataset_version_manifest_dry_run_packet"
 DATASET_VERSION_MANIFEST_REVIEW_PACKET_KEY = "command_center_3_storage_dataset_version_manifest_review_packet"
 DATASET_VERSION_MANIFEST_WRITE_PACKET_KEY = "command_center_3_storage_dataset_version_manifest_write_packet"
@@ -714,6 +716,142 @@ def storage_schema_migration_preflight() -> dict[str, Any]:
     }
 
 
+def _storage_cache_ttl_resolution_material(row: Mapping[str, Any], head_full: str) -> dict[str, Any]:
+    return {
+        "schema_version": CACHE_TTL_REFRESH_EVIDENCE_SCHEMA_VERSION,
+        "head_full": head_full,
+        "dataset": str(row.get("dataset") or ""),
+        "resolution": str(row.get("resolution") or ""),
+        "refresh_task_id": str(row.get("refresh_task_id") or ""),
+        "refresh_scope_hash": str(row.get("refresh_scope_hash") or ""),
+        "artifact_sha256": str(row.get("artifact_sha256") or ""),
+        "before_ttl_state": str(row.get("before_ttl_state") or ""),
+        "after_ttl_state": str(row.get("after_ttl_state") or ""),
+        "refresh_executed": row.get("refresh_executed") is True,
+        "provider_call_count": int(row.get("provider_call_count") or 0),
+        "fetched_at": str(row.get("fetched_at") or ""),
+        "external_calls_triggered": row.get("external_calls_triggered") is True,
+        "does_not_execute_trades": row.get("does_not_execute_trades") is True,
+    }
+
+
+def storage_cache_ttl_refresh_evidence() -> dict[str, Any]:
+    """Validate a future explicit TTL maintenance run without writing or refreshing.
+
+    One trusted current-HEAD journal event is required for every canonical
+    dataset.  A single refreshed dataset can therefore never clear LTG-05.
+    """
+
+    packet, read_status = _read_storage_meta_packet_no_init(CACHE_TTL_REFRESH_EVIDENCE_PACKET_KEY)
+    head_full = production_evidence_journal.current_head_full()
+    source = dict(packet) if isinstance(packet, Mapping) else {}
+    source_rows = source.get("rows") if isinstance(source.get("rows"), list) else []
+    rows_by_dataset = {
+        str(row.get("dataset") or ""): dict(row)
+        for row in source_rows
+        if isinstance(row, Mapping) and str(row.get("dataset") or "") in CANONICAL_PARQUET_DATASETS
+    }
+    duplicate_or_unknown = bool(
+        len(source_rows) != len(rows_by_dataset)
+        or any(
+            not isinstance(row, Mapping)
+            or str(row.get("dataset") or "") not in CANONICAL_PARQUET_DATASETS
+            for row in source_rows
+        )
+    )
+    packet_head = str(source.get("head_full") or "")
+    head_matches = bool(head_full and packet_head == head_full)
+    validated_rows: list[dict[str, Any]] = []
+    for dataset in CANONICAL_PARQUET_DATASETS:
+        row = rows_by_dataset.get(dataset, {})
+        material = _storage_cache_ttl_resolution_material(row, packet_head)
+        payload_digest = _json_sha256(material)
+        resolution = material["resolution"]
+        scope_hash = material["refresh_scope_hash"]
+        artifact_sha256 = material["artifact_sha256"]
+        fresh_noop = bool(
+            resolution == "fresh_no_refresh_required"
+            and material["before_ttl_state"] == "fresh"
+            and material["after_ttl_state"] == "fresh"
+            and material["refresh_executed"] is False
+            and material["provider_call_count"] == 0
+            and material["external_calls_triggered"] is False
+        )
+        refreshed = bool(
+            resolution == "refreshed"
+            and material["before_ttl_state"] in {"stale", "missing"}
+            and material["after_ttl_state"] == "fresh"
+            and material["refresh_executed"] is True
+            and material["provider_call_count"] > 0
+            and material["external_calls_triggered"] is True
+            and bool(material["fetched_at"])
+        )
+        shape_ready = bool(
+            material["dataset"] == dataset
+            and material["refresh_task_id"]
+            and len(scope_hash) == 64
+            and all(char in "0123456789abcdef" for char in scope_hash.lower())
+            and len(artifact_sha256) == 64
+            and all(char in "0123456789abcdef" for char in artifact_sha256.lower())
+            and material["does_not_execute_trades"] is True
+            and (fresh_noop or refreshed)
+            and str(row.get("payload_digest") or "") == payload_digest
+        )
+        journal = production_evidence_journal.validate_event(
+            str(row.get("journal_event_id") or ""),
+            event_type="storage_ttl_dataset_resolution",
+            head_full=packet_head,
+            subject=dataset,
+            scope_hash=scope_hash,
+            payload_digest=payload_digest,
+        )
+        verified = bool(head_matches and shape_ready and journal.get("ready") is True)
+        validated_rows.append(
+            {
+                "dataset": dataset,
+                "status": "ttl_dataset_resolution_verified" if verified else "ttl_dataset_resolution_blocked",
+                "resolution": resolution or "missing",
+                "verified": verified,
+                "head_matches": head_matches,
+                "shape_ready": shape_ready,
+                "journal_verified": journal.get("ready") is True,
+                "refresh_executed": material["refresh_executed"],
+                "provider_call_count": material["provider_call_count"],
+                "does_not_execute_trades": True,
+            }
+        )
+    verified_count = sum(1 for row in validated_rows if row["verified"])
+    ready = bool(
+        source.get("schema_version") == CACHE_TTL_REFRESH_EVIDENCE_SCHEMA_VERSION
+        and read_status == "packet_present"
+        and head_matches
+        and not duplicate_or_unknown
+        and verified_count == len(CANONICAL_PARQUET_DATASETS)
+    )
+    return {
+        "schema_version": CACHE_TTL_REFRESH_EVIDENCE_SCHEMA_VERSION,
+        "packet_key": CACHE_TTL_REFRESH_EVIDENCE_PACKET_KEY,
+        "status": "storage_cache_ttl_refresh_evidence_verified" if ready else "storage_cache_ttl_refresh_evidence_blocked",
+        "read_status": read_status,
+        "head_full": packet_head,
+        "current_head_full": head_full,
+        "head_matches_current": head_matches,
+        "dataset_count": len(CANONICAL_PARQUET_DATASETS),
+        "verified_dataset_count": verified_count,
+        "unresolved_datasets": [row["dataset"] for row in validated_rows if not row["verified"]],
+        "duplicate_or_unknown_dataset_rows": duplicate_or_unknown,
+        "per_dataset_resolution_required": True,
+        "single_dataset_refresh_cannot_promote": True,
+        "trusted_current_head_journal_required": True,
+        "production_ttl_evidence_ready": ready,
+        "production_storage_complete": False,
+        "cache_get_writes_files": False,
+        "refresh_executed_by_validator": False,
+        "external_calls_triggered_by_validator": False,
+        "does_not_execute_trades": True,
+        "contains_secret": False,
+        "rows": validated_rows,
+    }
 def _dataset_version_manifest_path() -> Path:
     return PARQUET_ROOT / DATASET_VERSION_MANIFEST_NAME
 
@@ -4550,6 +4688,7 @@ def storage_production_readiness(sqlite_meta: Mapping[str, Any] | None = None) -
     dataset_version_manifest_evidence = storage_dataset_version_manifest_evidence_audit()
     partition_migration_execution = storage_partition_migration_execution_evidence()
     compaction_execution = storage_compaction_execution_evidence()
+    ttl_refresh_evidence = storage_cache_ttl_refresh_evidence()
     duckdb_query_service = duckdb_query_service_policy()
     partition_execution_count = int(
         partition_migration_execution.get("partition_migration_executed_count") or 0
@@ -4876,7 +5015,10 @@ def storage_production_readiness(sqlite_meta: Mapping[str, Any] | None = None) -
         "cache_ttl_dry_run_button_gated": True,
         "cache_ttl_dry_run_writes_parquet": False,
         "cache_ttl_dry_run_reads_row_payloads": False,
-        "cache_ttl_refresh_executed_count": 0,
+        "cache_ttl_refresh_executed_count": int(ttl_refresh_evidence.get("verified_dataset_count") or 0),
+        "cache_ttl_refresh_required_dataset_count": len(CANONICAL_PARQUET_DATASETS),
+        "cache_ttl_refresh_per_dataset_evidence": ttl_refresh_evidence,
+        "cache_ttl_refresh_per_dataset_ready": ttl_refresh_evidence.get("production_ttl_evidence_ready") is True,
         "compaction_policy": "confirm_gated_local_partition_rewrite_no_external_call",
         "compaction_dry_run_route": "POST /api/storage/compaction/dry-run",
         "compaction_dry_run_button_gated": True,
@@ -4948,6 +5090,11 @@ def storage_production_blocker_audit(production_readiness: Mapping[str, Any] | N
     manifest_evidence_count = int(readiness.get("dataset_version_manifest_evidence_validated_count") or 0)
     compaction_executed = int(readiness.get("compaction_executed_count") or 0)
     ttl_refresh_executed = int(readiness.get("cache_ttl_refresh_executed_count") or 0)
+    ttl_refresh_evidence = (
+        dict(readiness.get("cache_ttl_refresh_per_dataset_evidence") or {})
+        if isinstance(readiness.get("cache_ttl_refresh_per_dataset_evidence"), Mapping)
+        else {}
+    )
     partition_executed = int(readiness.get("partition_migration_executed_count") or 0)
     cleanup_review_ready = str(readiness.get("artifact_cleanup_review_status") or "").startswith("manual_review_ready")
     dependency_ready = str(readiness.get("status")) == "foundation_ready"
@@ -5022,11 +5169,15 @@ def storage_production_blocker_audit(production_readiness: Mapping[str, Any] | N
         ),
         _storage_production_blocker_row(
             "cache_ttl_refresh_pipeline_executed",
-            ttl_refresh_executed > 0,
-            current_status=ttl_refresh_executed,
-            evidence="cache TTL dry-run records stale/fresh recommendations, but does not refresh providers or write Parquet.",
-            next_action="Add explicit provider refresh tasks after Tushare interface acceptance is complete.",
-            classification="dry_run_only_no_provider_refresh",
+            ttl_refresh_executed >= dataset_count
+            and ttl_refresh_evidence.get("production_ttl_evidence_ready") is True,
+            current_status=f"{ttl_refresh_executed}/{dataset_count}",
+            evidence=(
+                "TTL production evidence must resolve every canonical dataset on the current HEAD through a trusted journal; "
+                f"unresolved={ttl_refresh_evidence.get('unresolved_datasets') or list(CANONICAL_PARQUET_DATASETS)}."
+            ),
+            next_action="Run one explicitly approved maintenance scope that resolves every stale/missing dataset and journals fresh no-op rows for the rest.",
+            classification="per_dataset_current_head_trusted_evidence_required",
         ),
         _storage_production_blocker_row(
             "duckdb_query_service_dependency_ready",
@@ -5785,6 +5936,7 @@ def storage_physical_durable_evidence_recipe(
     cache_ttl_packet, _cache_ttl_read_status = _read_storage_meta_packet_no_init(CACHE_TTL_DRY_RUN_PACKET_KEY)
     partition_execution = storage_partition_migration_execution_evidence()
     compaction_execution = storage_compaction_execution_evidence()
+    ttl_refresh_evidence = storage_cache_ttl_refresh_evidence()
     partition_migration_metadata = dict(partition_packet) if isinstance(partition_packet, Mapping) else {}
     compaction_metadata = dict(compaction_packet) if isinstance(compaction_packet, Mapping) else {}
     cache_ttl_metadata = dict(cache_ttl_packet) if isinstance(cache_ttl_packet, Mapping) else {}
@@ -6277,21 +6429,24 @@ def storage_physical_durable_evidence_recipe(
         ),
         _storage_physical_durable_evidence_recipe_row(
             "cache_ttl_refresh_evidence_required",
-            passed=cache_ttl_refresh_metadata_validation_done,
+            passed=ttl_refresh_evidence.get("production_ttl_evidence_ready") is True,
             source_contract="cache_ttl_refresh_execution",
-            status="passed_ttl_metadata_validation_refresh_execution_pending"
+            status="passed_per_dataset_current_head_ttl_evidence"
+            if ttl_refresh_evidence.get("production_ttl_evidence_ready") is True
+            else "passed_ttl_metadata_validation_refresh_execution_pending"
             if cache_ttl_refresh_metadata_validation_done
             else "blocked",
             evidence=(
                 f"refresh_recommended_count={cache_ttl_metadata.get('refresh_recommended_count')}; "
                 f"dataset_count={cache_ttl_metadata.get('dataset_count')}; "
-                f"refresh_executed_count={cache_ttl_metadata.get('refresh_executed_count')}"
+                f"verified_dataset_count={ttl_refresh_evidence.get('verified_dataset_count')}; "
+                f"unresolved={ttl_refresh_evidence.get('unresolved_datasets')}"
             ),
-            required_evidence="explicit provider refresh task ledger and local fetched-at/date evidence",
+            required_evidence="per-dataset current-HEAD trusted journal evidence resolving all canonical TTL states",
             next_step=(
-                "Keep TTL metadata validation as local direct evidence; provider refresh execution remains explicit and never runs from GET cache."
-                if cache_ttl_refresh_metadata_validation_done
-                else "bind refresh evidence to provider acceptance tasks; never refresh from GET cache"
+                "Retain the verified per-dataset journal and continue separate production promotion review."
+                if ttl_refresh_evidence.get("production_ttl_evidence_ready") is True
+                else "Run one explicit maintenance scope for all unresolved datasets; never refresh from GET cache."
             ),
         ),
         _storage_physical_durable_evidence_recipe_row(
@@ -6425,11 +6580,15 @@ def storage_physical_durable_evidence_recipe(
         ),
         "physical_compaction_not_needed_count": int(compaction_metadata.get("compaction_not_needed_count") or 0),
         "physical_compaction_dataset_count": int(compaction_metadata.get("dataset_count") or 0),
-        "cache_ttl_refresh_executed": False,
+        "cache_ttl_refresh_executed": ttl_refresh_evidence.get("production_ttl_evidence_ready") is True,
         "cache_ttl_refresh_metadata_validation_done": cache_ttl_refresh_metadata_validation_done,
         "cache_ttl_refresh_metadata_validation_status": cache_ttl_metadata.get("status"),
         "cache_ttl_refresh_recommended_count": int(cache_ttl_metadata.get("refresh_recommended_count") or 0),
-        "cache_ttl_refresh_executed_count": int(cache_ttl_metadata.get("refresh_executed_count") or 0),
+        "cache_ttl_refresh_executed_count": int(ttl_refresh_evidence.get("verified_dataset_count") or 0),
+        "cache_ttl_refresh_verified_dataset_count": int(ttl_refresh_evidence.get("verified_dataset_count") or 0),
+        "cache_ttl_refresh_unresolved_datasets": list(ttl_refresh_evidence.get("unresolved_datasets") or []),
+        "cache_ttl_refresh_current_head_bound": ttl_refresh_evidence.get("head_matches_current") is True,
+        "cache_ttl_refresh_trusted_journal_required": True,
         "cache_ttl_dataset_count": int(cache_ttl_metadata.get("dataset_count") or 0),
         "artifact_cleanup_review_done": artifact_cleanup_review_done,
         "artifact_cleanup_review_status": cleanup_review.get("status"),
