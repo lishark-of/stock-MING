@@ -3273,7 +3273,26 @@ TASK_CONTROL_PLANE_POST_ROUTES = [
         "call_ledger_required": True,
         "does_not_execute_trades": True,
         "does_not_modify_strategy_action": True,
-    }
+    },
+    {
+        "route": "POST /api/next-session/production-replacement",
+        "label": "确认并审查次日图谱 current-head 生产替代证据",
+        "route_type": "local_production_replacement_control_plane",
+        "button_gated": True,
+        "current_backend": "local_fail_closed_next_session_replacement_journal",
+        "external_call_policy": "explicit_post_local_qa_review_only_no_external_call",
+        "possible_external_sources": [],
+        "requires_user_confirmation": True,
+        "creates_task": False,
+        "production_eligible": False,
+        "structural_production_blockers": [
+            "external_trusted_approval_capability_unavailable",
+            "rollback_resistant_high_water_unavailable",
+        ],
+        "call_ledger_required": True,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+    },
 ]
 
 TASK_RETRY_POLICY_VERSION = "task_retry_policy.audit.v1"
