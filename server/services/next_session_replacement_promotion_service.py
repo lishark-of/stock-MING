@@ -1,10 +1,8 @@
-"""Fail-closed LTG-08 replacement evidence and future promotion contract.
+"""Fail-closed LTG-08 replacement evidence and promotion contract.
 
 The local read path audits fixed-disk prerequisites without writes or external
-calls.  Same-UID keys, approval tickets, journals, and high-water files cannot
-provide out-of-band authority or rollback resistance, so the public recorder,
-validator, and writer remain production-ineligible until an external trusted
-approval capability and rollback-resistant high-water service exist.
+calls. Same-UID seals remain production-ineligible; promotion is delegated to
+the verify-only external approval/high-water journal service.
 """
 
 from __future__ import annotations
