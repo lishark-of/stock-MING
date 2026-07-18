@@ -1140,10 +1140,8 @@ def _read_remote_ci_review_receipt() -> dict[str, Any]:
     current_head_short = str(current_head.get("head") or "")
     head_matches_current = bool(
         current_head_full
-        and (
-            receipt_head_full == current_head_full
-            or (receipt_head and current_head_short and receipt_head == current_head_short)
-        )
+        and receipt_head_full == current_head_full
+        and receipt_head == current_head_short
     )
     schema_ok = raw_receipt.get("schema_version") == REMOTE_CI_REVIEW_RECEIPT_SCHEMA_VERSION
     raw_status = str(raw_receipt.get("status") or "")
@@ -1171,11 +1169,35 @@ def _read_remote_ci_review_receipt() -> dict[str, Any]:
     }
     workflow_ok = str(raw_receipt.get("workflow_name") or "") == "Command Center 3 Push Gate"
     event_ok = str(raw_receipt.get("event") or "") == "push"
-    artifact_ok = str(raw_receipt.get("artifact_name") or "").startswith("command-center-3-push-gate-evidence-")
+    run_id = raw_receipt.get("run_id")
+    formal_run_id = bool(type(run_id) is int and run_id > 0)
+    expected_run_url = (
+        f"https://github.com/lishark-of/stock-MING/actions/runs/{run_id}"
+        if formal_run_id
+        else ""
+    )
+    expected_artifact_name = (
+        f"command-center-3-push-gate-evidence-{run_id}"
+        if formal_run_id
+        else ""
+    )
+    artifact_ok = str(raw_receipt.get("artifact_name") or "") == expected_artifact_name
     artifact_digest = str(raw_receipt.get("artifact_digest") or "")
-    artifact_digest_ok = artifact_digest.startswith("sha256:") and len(artifact_digest) >= len("sha256:") + 32
+    digest_hex = artifact_digest.removeprefix("sha256:")
+    artifact_digest_ok = bool(
+        artifact_digest == artifact_digest.lower()
+        and artifact_digest.startswith("sha256:")
+        and len(digest_hex) == 64
+        and all(char in "0123456789abcdef" for char in digest_hex)
+    )
     run_url = str(raw_receipt.get("run_url") or "")
-    run_url_ok = run_url.startswith("https://github.com/lishark-of/stock-MING/actions/runs/")
+    run_url_ok = bool(formal_run_id and run_url == expected_run_url)
+    formal_recorder_ok = bool(
+        raw_receipt.get("scope")
+        == "ignored_manual_remote_ci_review_receipt_no_cache_github_api"
+        and raw_receipt.get("receipt_writer")
+        == "scripts/record_remote_ci_review_receipt.py"
+    )
     review_authorized = raw_receipt.get("explicit_user_actions_review_authorized") is True
     artifact_download_status = str(raw_receipt.get("remote_ci_failure_artifact_download_status") or "")
     artifact_download_blocked = artifact_download_status in {
@@ -1197,6 +1219,8 @@ def _read_remote_ci_review_receipt() -> dict[str, Any]:
     missing_evidence: list[str] = []
     if not schema_ok:
         missing_evidence.append("remote CI review receipt schema")
+    if not formal_recorder_ok:
+        missing_evidence.append("formal remote CI receipt recorder identity")
     no_matching_run_for_current_head = bool(
         schema_ok
         and head_matches_current
@@ -1209,6 +1233,7 @@ def _read_remote_ci_review_receipt() -> dict[str, Any]:
     )
     remote_status_known = bool(
         schema_ok
+        and formal_recorder_ok
         and head_matches_current
         and run_status_ok
         and (conclusion_ok or conclusion_failed)
@@ -1220,6 +1245,7 @@ def _read_remote_ci_review_receipt() -> dict[str, Any]:
     )
     remote_run_observed_for_current_head = bool(
         schema_ok
+        and formal_recorder_ok
         and head_matches_current
         and workflow_ok
         and event_ok
@@ -1449,22 +1475,26 @@ def _read_secret_artifact_allowlist_review_receipt() -> dict[str, Any]:
     current_head_short = str(current_head.get("head") or "")
     head_matches_current = bool(
         current_head_full
-        and (
-            receipt_head_full == current_head_full
-            or (receipt_head and current_head_short and receipt_head == current_head_short)
-        )
+        and receipt_head_full == current_head_full
+        and receipt_head == current_head_short
     )
     schema_ok = raw_receipt.get("schema_version") == SECRET_ARTIFACT_ALLOWLIST_REVIEW_RECEIPT_SCHEMA_VERSION
+    formal_recorder_ok = bool(
+        raw_receipt.get("scope")
+        == "ignored_manual_secret_artifact_allowlist_review_no_cache_github_api"
+        and raw_receipt.get("receipt_writer")
+        == "scripts/record_secret_artifact_allowlist_review_receipt.py"
+    )
     review_authorized = raw_receipt.get("explicit_user_allowlist_review_authorized") is True
     status_ok = str(raw_receipt.get("status") or "") == "secret_artifact_allowlist_review_ready"
     high_risk_ok = str(raw_receipt.get("high_risk_secret_scan_status") or "") in {
         "clean",
         "passed_no_high_risk_values",
     }
-    keyword_ok = str(raw_receipt.get("secret_keyword_review_status") or "") in {
-        "reviewed_no_high_risk_values",
-        "secret_keyword_review_contract_ready_manual_review_pending",
-    }
+    keyword_ok = (
+        str(raw_receipt.get("secret_keyword_review_status") or "")
+        == "reviewed_no_high_risk_values"
+    )
     artifact_ok = str(raw_receipt.get("generated_artifact_scan_status") or "") in {
         "clean",
         "clean_or_allowed_assets_only",
@@ -1484,6 +1514,8 @@ def _read_secret_artifact_allowlist_review_receipt() -> dict[str, Any]:
     missing_evidence: list[str] = []
     if not schema_ok:
         missing_evidence.append("secret/artifact allowlist review receipt schema")
+    if not formal_recorder_ok:
+        missing_evidence.append("formal secret/artifact allowlist receipt recorder identity")
     if not status_ok:
         missing_evidence.append("secret/artifact allowlist review ready status")
     if not head_matches_current:
@@ -1500,6 +1532,7 @@ def _read_secret_artifact_allowlist_review_receipt() -> dict[str, Any]:
         missing_evidence.append("cache read no-external/no-provider/no-trade boundary flags")
     ready = bool(
         schema_ok
+        and formal_recorder_ok
         and status_ok
         and head_matches_current
         and review_authorized
@@ -1644,12 +1677,16 @@ def _read_release_gate_review_receipt(
     current_head_short = str(current_head.get("head") or "")
     head_matches_current = bool(
         current_head_full
-        and (
-            receipt_head_full == current_head_full
-            or (receipt_head and current_head_short and receipt_head == current_head_short)
-        )
+        and receipt_head_full == current_head_full
+        and receipt_head == current_head_short
     )
     schema_ok = raw_receipt.get("schema_version") == RELEASE_GATE_REVIEW_RECEIPT_SCHEMA_VERSION
+    formal_recorder_ok = bool(
+        raw_receipt.get("scope")
+        == "ignored_manual_release_gate_review_no_cache_github_api"
+        and raw_receipt.get("receipt_writer")
+        == "scripts/record_release_gate_review_receipt.py"
+    )
     status_ok = str(raw_receipt.get("status") or "") == "release_gate_review_ready"
     review_authorized = raw_receipt.get("explicit_user_release_review_authorized") is True
     decision_ok = str(raw_receipt.get("decision") or "") == "release_review_complete_strict_closeout_blocked"
@@ -1681,6 +1718,8 @@ def _read_release_gate_review_receipt(
     missing_evidence: list[str] = []
     if not schema_ok:
         missing_evidence.append("release review receipt schema")
+    if not formal_recorder_ok:
+        missing_evidence.append("formal release review receipt recorder identity")
     if not status_ok:
         missing_evidence.append("release review ready status")
     if not head_matches_current:
@@ -1701,6 +1740,7 @@ def _read_release_gate_review_receipt(
         missing_evidence.append("cache read no-external/no-provider/no-trade boundary flags")
     ready = bool(
         schema_ok
+        and formal_recorder_ok
         and status_ok
         and head_matches_current
         and review_authorized

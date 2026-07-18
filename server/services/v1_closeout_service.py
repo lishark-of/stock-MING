@@ -1252,6 +1252,15 @@ def _build_version_rows(
         evidence_root,
         expected_head_full=expected_head_full,
     )
+    release_prerequisites = release_promotion_service.validate_release_prerequisites(
+        evidence_root,
+        expected_head_full=expected_head_full,
+    )
+    release_prerequisite_rows = {
+        str(row.get("evidence_key") or ""): row
+        for row in release_prerequisites.get("rows", [])
+        if isinstance(row, Mapping)
+    }
     streamlit_primary_retirement = (
         streamlit_retirement_evidence_service.validate_streamlit_primary_retirement(
             evidence_root,
@@ -1303,12 +1312,7 @@ def _build_version_rows(
             motion_validation.get("motion_current_head_pair_verified") is True
         ),
         "remote_ci_current_head": bool(
-            isinstance(remote_receipt, Mapping)
-            and expected_head_full
-            and _normalize_head_full(remote_receipt.get("head_full")) == expected_head_full
-            and remote_receipt.get("latest_remote_run_verified_green") is True
-            and remote_receipt.get("remote_ci_run_observed_for_current_head") is True
-            and remote_receipt.get("artifact_digest_verified") is True
+            release_prerequisite_rows.get("remote_ci", {}).get("ready") is True
         ),
         "release_promotion_current_head": bool(
             release_promotion.get("release_promotion_current_head") is True

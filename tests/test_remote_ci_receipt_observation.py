@@ -148,6 +148,43 @@ class RemoteCiReceiptObservationTests(unittest.TestCase):
                 self.assertFalse(evaluation["github_called"])
                 self.assertFalse(evaluation["external_calls_triggered"])
 
+    def test_v1_remote_ci_fact_rejects_forged_flags_and_mismatched_artifact_identity(self) -> None:
+        cases = (
+            ("wrong_artifact_run", {"artifact_name": "command-center-3-push-gate-evidence-9002"}),
+            ("wrong_run_url", {"run_url": "https://github.com/lishark-of/stock-MING/actions/runs/9002"}),
+            ("short_digest", {"artifact_digest": "sha256:" + "a" * 32}),
+            ("wrong_writer", {"receipt_writer": "manual.json"}),
+            ("unknown_field", {"caller_asserted_green": True}),
+        )
+        for name, changes in cases:
+            with self.subTest(name=name), tempfile.TemporaryDirectory() as directory:
+                evidence_root = Path(directory)
+                release_gate = evidence_root / "release_gate"
+                release_gate.mkdir(parents=True)
+                receipt = _build_remote_receipt()
+                receipt.update(changes)
+                (release_gate / "remote_ci_review_receipt.json").write_text(
+                    json.dumps(receipt), encoding="utf-8"
+                )
+
+                evaluation = v1_closeout_service.build_v1_closeout_evaluation(
+                    evidence_root=evidence_root,
+                    expected_head_full=HEAD_FULL,
+                )
+
+                self.assertFalse(_fact(evaluation, "remote_ci_current_head"))
+                self.assertFalse(evaluation["github_called"])
+                self.assertFalse(evaluation["external_calls_triggered"])
+
+    def test_formal_remote_ci_validation_accepts_reviewed_local_artifact_download(self) -> None:
+        receipt = _build_remote_receipt()
+        validation = v1_closeout_service.release_promotion_service._validate_remote_ci(
+            receipt,
+            HEAD_FULL,
+        )
+        self.assertTrue(validation["ready"])
+        self.assertEqual(validation["blockers"], [])
+
     def test_authoritative_head_reader_supports_linked_worktree_gitfile(self) -> None:
         def run_git(cwd: Path, *args: str) -> str:
             result = subprocess.run(

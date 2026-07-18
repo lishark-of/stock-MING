@@ -530,7 +530,8 @@ def _validate_remote_ci(receipt: Mapping[str, Any], head_full: str) -> dict[str,
         receipt.get("artifact_digest_review_status") == "sha256_digest_recorded"
         and receipt.get("failed_step_or_green_status") == "green"
         and receipt.get("remote_ci_lookup_source") == ""
-        and receipt.get("remote_ci_failure_artifact_download_status") == ""
+        and receipt.get("remote_ci_failure_artifact_download_status")
+        in ("", "downloaded_to_local_temp_for_manual_review")
         and receipt.get("release_claim_decision") == "remote_ci_green_release_review_pending"
     ):
         blockers.append("remote_ci_attestation_status_inconsistent")
