@@ -96,6 +96,25 @@ def _read_packet(path: Path, key: str) -> dict[str, Any]:
     return dict(packet) if isinstance(packet, Mapping) else {}
 
 
+def _read_task(path: Path, task_id: str) -> dict[str, Any]:
+    if not task_id:
+        return {}
+    connection = immutable_evidence_connection(path)
+    if connection is None:
+        return {}
+    try:
+        row = connection.execute(
+            "SELECT payload_json FROM task_status WHERE task_id = ?",
+            (str(task_id),),
+        ).fetchone()
+        task = json.loads(str(row[0])) if row else {}
+    except Exception:
+        return {}
+    finally:
+        connection.close()
+    return dict(task) if isinstance(task, Mapping) else {}
+
+
 def _read_json(path: Path) -> dict[str, Any]:
     try:
         value = json.loads(path.read_text(encoding="utf-8"))
@@ -199,6 +218,21 @@ def _source_binding(consumer: str, *, evidence_root: Path | None = None) -> dict
     current_packet = _read_packet(db_path, config["current_key"])
     last_good_packet = _read_packet(db_path, config["source_last_good_key"])
     identity = _source_identity(consumer, current_packet)
+    radar_task = (
+        _read_task(db_path, str(identity.get("task_id") or ""))
+        if consumer == "radar"
+        else {}
+    )
+    if consumer == "radar":
+        claims = (
+            dict(identity.get("claims"))
+            if isinstance(identity.get("claims"), Mapping)
+            else {}
+        )
+        claims["candidate_cache_write_task_digest"] = (
+            _digest(radar_task) if radar_task else ""
+        )
+        identity["claims"] = claims
     current_pointer = parquet_store.versioned_dataset_pointer(
         root=parquet_root, name=config["dataset"], pointer="current"
     )
@@ -266,6 +300,22 @@ def _source_binding(consumer: str, *, evidence_root: Path | None = None) -> dict
             and last_good_expected_artifact
         )
     else:
+        expected_task_binding_digest = (
+            _digest(
+                {
+                    key: value
+                    for key, value in radar_task.items()
+                    if key != "task_binding_digest"
+                }
+            )
+            if radar_task
+            else ""
+        )
+        payload_safe = (
+            dict(radar_task.get("payload_safe"))
+            if isinstance(radar_task.get("payload_safe"), Mapping)
+            else {}
+        )
         consumer_shape_ready = bool(
             current_packet.get("packet_key") == "command_center_3_candidate_radar_cache"
             and binding.get("source_result_dataset") == config["dataset"]
@@ -274,6 +324,35 @@ def _source_binding(consumer: str, *, evidence_root: Path | None = None) -> dict
             and _safe_int(binding.get("candidate_row_count")) > 0
             and binding.get("binding_digest")
             == _digest({key: value for key, value in binding.items() if key != "binding_digest"})
+            and radar_task.get("task_id") == binding.get("cache_write_task_id")
+            and radar_task.get("task_type")
+            == "publish_candidate_radar_full_market_cache"
+            and radar_task.get("status") == "success"
+            and type(radar_task.get("progress")) is float
+            and radar_task.get("progress") == 1.0
+            and radar_task.get("output_packet_key")
+            == "command_center_3_candidate_radar_cache"
+            and radar_task.get("acceptance_run_id")
+            == binding.get("acceptance_run_id")
+            and radar_task.get("source_result_version_id")
+            == binding.get("source_result_version_id")
+            and radar_task.get("source_result_output_hash")
+            == binding.get("source_result_output_hash")
+            and radar_task.get("candidate_rows_digest")
+            == binding.get("candidate_rows_digest")
+            and payload_safe.get("request_bundle_id")
+            == current_packet.get("request_bundle_id")
+            and payload_safe.get("bundle_digest") == current_packet.get("bundle_digest")
+            and payload_safe.get("head_full") == current_packet.get("head_full")
+            and payload_safe.get("source_result_version_id")
+            == binding.get("source_result_version_id")
+            and radar_task.get("global_candidate_cache_overwritten") is True
+            and radar_task.get("external_calls_triggered") is False
+            and radar_task.get("does_not_execute_trades") is True
+            and radar_task.get("does_not_modify_strategy_action") is True
+            and radar_task.get("contains_secret") is False
+            and radar_task.get("task_binding_digest")
+            == expected_task_binding_digest
         )
         last_good_shape_ready = bool(
             last_good_packet.get("packet_key") == "command_center_3_candidate_radar_cache"

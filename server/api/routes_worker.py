@@ -105,3 +105,19 @@ def run_full_market_factor_execution(
         call_ledger=packet.get("call_ledger"),
         warnings=packet.get("warnings"),
     )
+
+
+@router.post("/candidate-radar-authoritative-cache-publish")
+def publish_candidate_radar_authoritative_cache(
+    payload: dict[str, Any] | None = None,
+) -> dict:
+    from server.services import full_market_worker_service
+
+    packet = full_market_worker_service.publish_candidate_radar_authoritative_cache(
+        payload or {}
+    )
+    return envelope(
+        packet,
+        call_ledger=packet.get("call_ledger"),
+        warnings=packet.get("warnings"),
+    )

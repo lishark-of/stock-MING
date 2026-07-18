@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import datetime as _dt
+import fcntl
 import hashlib
 import hmac
 import inspect
@@ -10,14 +11,17 @@ import os
 import re
 import sqlite3
 import subprocess
+import threading
 import time
 import uuid
 from collections.abc import Mapping
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit
 
 from server.services.sqlite_evidence_reader import immutable_evidence_connection
+from server.services import external_production_consumer_service
 from server.services.full_market_industry_service import (
     INDUSTRY_BINDING_DIGEST_KEYS,
     validate_full_market_industry_membership,
@@ -55,6 +59,9 @@ FACTOR_PACKET_KEY = "command_center_3_factor_full_market_worker_production_accep
 FACTOR_LAST_GOOD_PACKET_KEY = f"{FACTOR_PACKET_KEY}_last_good"
 FACTOR_SCHEMA_VERSION = "factor_full_market_worker_production_acceptance.v2"
 CANDIDATE_CACHE_PACKET_KEY = "command_center_3_candidate_radar_cache"
+CANDIDATE_CACHE_LAST_GOOD_PACKET_KEY = (
+    "command_center_3_candidate_radar_v05_last_good_packet"
+)
 CANDIDATE_CACHE_SCHEMA_VERSION = "candidate_radar_cache.v1"
 CANDIDATE_CACHE_REPLACEMENT_SCHEMA_VERSION = (
     "candidate_radar_full_market_cache_replacement_binding.v1"
@@ -70,6 +77,9 @@ PRODUCTION_LINEAGE_EXTERNAL_RUNNER_BLOCKER = (
 )
 FACTOR_LINEAGE_EVENT_KIND = "factor_full_market_research"
 RADAR_LINEAGE_EVENT_KIND = "candidate_radar_authoritative_cache_replacement"
+RADAR_CACHE_WRITE_TASK_TYPE = "publish_candidate_radar_full_market_cache"
+WORKER_RADAR_PUBLICATION_LOCK_NAME = ".worker_radar_publication.lock"
+_WORKER_RADAR_PUBLICATION_THREAD_LOCK = threading.Lock()
 
 DEFAULT_MINIMUM_UNIVERSE_SIZE = 3000
 MAXIMUM_MINIMUM_UNIVERSE_SIZE = 7000
@@ -285,16 +295,190 @@ def _matching_production_lineage_event(
     worker_packet_digest: str,
     output_binding_digest: str,
 ) -> dict[str, Any]:
-    """Fail closed until production lineage comes from an external trust root."""
+    """Resolve a same-HEAD lineage event through the external trust consumer.
 
-    del (
-        evidence_root,
-        event_kind,
-        run_id,
-        worker_packet_digest,
-        output_binding_digest,
+    The former local HMAC path was intentionally disabled because module callers
+    could self-seal it.  This reader accepts only the independently provisioned
+    Ed25519 registry/high-water chain already enforced by
+    :mod:`external_production_consumer_service` and then recomputes the exact
+    packet/output bindings used by this worker verifier.
+    """
+
+    root = Path(evidence_root)
+    db_path = root / "meta.sqlite"
+    if (
+        root.is_symlink()
+        or db_path.is_symlink()
+        or (root / "parquet").is_symlink()
+        or event_kind not in {FACTOR_LINEAGE_EVENT_KIND, RADAR_LINEAGE_EVENT_KIND}
+        or _normalize_uuid4(run_id) != run_id
+        or not _HEX_64_RE.fullmatch(str(worker_packet_digest or ""))
+        or not _HEX_64_RE.fullmatch(str(output_binding_digest or ""))
+    ):
+        return {}
+    consumer_name = "factor" if event_kind == FACTOR_LINEAGE_EVENT_KIND else "radar"
+    verified = external_production_consumer_service.validate_consumer(
+        consumer_name,
+        evidence_root=root,
     )
-    return {}
+    current = (
+        dict(verified.get("current_pointer"))
+        if type(verified.get("current_pointer")) is dict
+        else {}
+    )
+    consumer_packet = current.get("consumer_packet")
+    consumer_packet = dict(consumer_packet) if type(consumer_packet) is dict else {}
+    source = consumer_packet.get("source_binding")
+    source = dict(source) if type(source) is dict else {}
+    claims = consumer_packet.get("claims")
+    claims = dict(claims) if type(claims) is dict else {}
+    current_head = _current_head_full()
+    if not (
+        verified.get("ready") is True
+        and verified.get("production_trusted") is True
+        and verified.get("snapshot_rollback_resistant") is True
+        and verified.get("head_full") == current_head
+        and source.get("head_full") == current_head
+        and current.get("attestation_id") == consumer_packet.get("attestation_id")
+        and _HEX_64_RE.fullmatch(str(source.get("artifact_digest") or ""))
+        and _HEX_64_RE.fullmatch(str(source.get("current_artifact_file_digest") or ""))
+    ):
+        return {}
+
+    if event_kind == FACTOR_LINEAGE_EVENT_KIND:
+        packet = _read_packet_no_init(db_path, FACTOR_PACKET_KEY)
+        if not (
+            packet
+            and packet.get("acceptance_run_id") == run_id
+            and _canonical_digest(packet) == worker_packet_digest
+            and _factor_output_binding_digest(packet) == output_binding_digest
+            and source.get("dataset") == FACTOR_RESULT_DATASET
+            and source.get("generation") == packet.get("result_version_id")
+            and source.get("scope_hash") == packet.get("provider_scope_hash")
+            and source.get("source_current_packet_digest") == _canonical_digest(packet)
+            and source.get("current_artifact_file_digest")
+            == packet.get("result_artifact_sha256")
+            and claims.get("result_dataset") == FACTOR_RESULT_DATASET
+            and claims.get("result_version_id") == packet.get("result_version_id")
+            and claims.get("universe_digest") == packet.get("universe_digest")
+            and type(claims.get("universe_count")) is int
+            and claims.get("universe_count") == packet.get("universe_count")
+            and claims.get("metric_validation_digest")
+            == packet.get("neutralization_audit_digest")
+            and claims.get("full_market_factor_research") is True
+            and claims.get("does_not_execute_trades") is True
+        ):
+            return {}
+        return {
+            "event_kind": FACTOR_LINEAGE_EVENT_KIND,
+            "acceptance_run_id": run_id,
+            "head_full": current_head,
+            "attestation_id": current.get("attestation_id"),
+            "worker_packet_digest": worker_packet_digest,
+            "output_binding_digest": output_binding_digest,
+            "factor_output_contract_digest": packet.get(
+                "factor_output_contract_digest"
+            ),
+            "neutralization_audit_digest": packet.get(
+                "neutralization_audit_digest"
+            ),
+            "candidate_cache_packet_digest": "",
+            "candidate_cache_write_task_digest": "",
+            "deep_scan_execution_evidence_digest": "",
+            "browser_visual_evidence_digest": "",
+            "browser_performance_evidence_digest": "",
+            "legacy_retirement_evidence_digest": "",
+            "global_candidate_cache_overwritten": False,
+            "deep_scan_worker_execution_verified": False,
+            "browser_visual_qa_verified": False,
+            "browser_performance_verified": False,
+            "legacy_fallback_retired": False,
+            "external_trust_verified": True,
+            "snapshot_rollback_resistant": True,
+        }
+
+    worker_packet = _read_packet_no_init(db_path, PACKET_KEY)
+    cache_packet = _read_packet_no_init(db_path, CANDIDATE_CACHE_PACKET_KEY)
+    binding = cache_packet.get("full_market_worker_replacement")
+    binding = dict(binding) if type(binding) is dict else {}
+    task_id = str(binding.get("cache_write_task_id") or "")
+    cache_task = _read_task_no_init(db_path, task_id)
+    expected_output_binding = _canonical_digest(
+        {
+            "event_kind": RADAR_LINEAGE_EVENT_KIND,
+            "acceptance_run_id": worker_packet.get("acceptance_run_id"),
+            "source_result_dataset": RESULT_DATASET,
+            "source_result_version_id": worker_packet.get("result_version_id"),
+            "source_result_artifact_sha256": worker_packet.get(
+                "result_artifact_sha256"
+            ),
+            "source_result_output_hash": worker_packet.get("result_output_hash"),
+            "provider_version_digest": worker_packet.get("provider_version_digest"),
+            "universe_digest": worker_packet.get("universe_digest"),
+        }
+    )
+    cache_digest = _canonical_digest(cache_packet) if cache_packet else ""
+    task_digest = _canonical_digest(cache_task) if cache_task else ""
+    if not (
+        worker_packet
+        and cache_packet
+        and cache_task
+        and worker_packet.get("acceptance_run_id") == run_id
+        and _canonical_digest(worker_packet) == worker_packet_digest
+        and expected_output_binding == output_binding_digest
+        and source.get("dataset") == RESULT_DATASET
+        and source.get("generation") == worker_packet.get("result_version_id")
+        and source.get("scope_hash") == binding.get("binding_digest")
+        and source.get("source_current_packet_digest") == cache_digest
+        and source.get("current_artifact_file_digest")
+        == worker_packet.get("result_artifact_sha256")
+        and claims.get("candidate_cache_packet_key")
+        == CANDIDATE_CACHE_PACKET_KEY
+        and claims.get("cache_write_task_id") == task_id
+        and claims.get("candidate_cache_write_task_digest") == task_digest
+        and claims.get("universe_digest") == worker_packet.get("universe_digest")
+        and type(claims.get("candidate_row_count")) is int
+        and claims.get("candidate_row_count") == binding.get("candidate_row_count")
+        and claims.get("browser_evidence_digest")
+        == binding.get("browser_visual_evidence_digest")
+        and claims.get("performance_evidence_digest")
+        == binding.get("browser_performance_evidence_digest")
+        and claims.get("legacy_retirement_evidence_digest")
+        == binding.get("legacy_retirement_evidence_digest")
+        and claims.get("candidate_radar_production_replacement") is True
+        and claims.get("candidate_is_not_buy_instruction") is True
+        and claims.get("does_not_execute_trades") is True
+    ):
+        return {}
+    return {
+        "event_kind": RADAR_LINEAGE_EVENT_KIND,
+        "acceptance_run_id": run_id,
+        "head_full": current_head,
+        "attestation_id": current.get("attestation_id"),
+        "worker_packet_digest": worker_packet_digest,
+        "output_binding_digest": output_binding_digest,
+        "candidate_cache_packet_digest": cache_digest,
+        "candidate_cache_write_task_digest": task_digest,
+        "deep_scan_execution_evidence_digest": binding.get(
+            "deep_scan_execution_evidence_digest"
+        ),
+        "browser_visual_evidence_digest": binding.get(
+            "browser_visual_evidence_digest"
+        ),
+        "browser_performance_evidence_digest": binding.get(
+            "browser_performance_evidence_digest"
+        ),
+        "legacy_retirement_evidence_digest": binding.get(
+            "legacy_retirement_evidence_digest"
+        ),
+        "global_candidate_cache_overwritten": True,
+        "deep_scan_worker_execution_verified": True,
+        "browser_visual_qa_verified": True,
+        "browser_performance_verified": True,
+        "legacy_fallback_retired": True,
+        "external_trust_verified": True,
+        "snapshot_rollback_resistant": True,
+    }
 
 
 def _candidate_radar_replacement_claim_fields(
@@ -309,6 +493,696 @@ def _candidate_radar_replacement_claim_fields(
     return {
         "candidate_radar_production_replacement": replacement_ready,
         "global_candidate_cache_overwritten": replacement_ready,
+    }
+
+
+def _strict_runtime_root(root: Path) -> bool:
+    return bool(
+        root.exists()
+        and root.is_dir()
+        and not root.is_symlink()
+        and not (root / "meta.sqlite").is_symlink()
+        and not (root / "parquet").is_symlink()
+    )
+
+
+def _regular_file_under(path: Path, *, root: Path) -> bool:
+    try:
+        root_absolute = root.absolute()
+        relative = path.absolute().relative_to(root_absolute)
+        cursor = root_absolute
+        if root_absolute.is_symlink():
+            return False
+        for part in relative.parts:
+            cursor = cursor / part
+            if cursor.is_symlink():
+                return False
+        resolved_root = root.resolve(strict=True)
+        resolved_path = path.resolve(strict=True)
+        return resolved_path.is_relative_to(resolved_root) and resolved_path.is_file()
+    except Exception:
+        return False
+
+
+def _repository_clean_at_head(expected_head: str) -> bool:
+    if _current_head_full() != expected_head:
+        return False
+    try:
+        result = subprocess.run(
+            ["git", "-C", str(PROJECT_ROOT), "status", "--porcelain", "--untracked-files=no"],
+            check=False,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            text=True,
+            timeout=5,
+        )
+    except Exception:
+        return False
+    return result.returncode == 0 and not result.stdout.strip()
+
+
+@contextmanager
+def _worker_radar_publication_lock(root: Path):
+    """Serialize worker Parquet promotion with authoritative Radar publication."""
+
+    lock_dir = Path(root) / "full_market_worker"
+    if Path(root).is_symlink() or lock_dir.is_symlink():
+        raise RuntimeError("worker_radar_publication_lock_root_unsafe")
+    lock_dir.mkdir(parents=True, exist_ok=True)
+    lock_path = lock_dir / WORKER_RADAR_PUBLICATION_LOCK_NAME
+    flags = os.O_CREAT | os.O_RDWR
+    if hasattr(os, "O_NOFOLLOW"):
+        flags |= os.O_NOFOLLOW
+    with _WORKER_RADAR_PUBLICATION_THREAD_LOCK:
+        descriptor = os.open(lock_path, flags, 0o600)
+        try:
+            fcntl.flock(descriptor, fcntl.LOCK_EX)
+            yield
+        finally:
+            try:
+                fcntl.flock(descriptor, fcntl.LOCK_UN)
+            finally:
+                os.close(descriptor)
+
+
+def _trusted_worker_consumer_binding(
+    root: Path,
+    *,
+    head_full: str,
+    attestation_id: str,
+    run_id: str,
+    worker_packet: Mapping[str, Any],
+) -> dict[str, Any]:
+    verified = external_production_consumer_service.validate_consumer(
+        "worker", evidence_root=root
+    )
+    current = (
+        dict(verified.get("current_pointer"))
+        if type(verified.get("current_pointer")) is dict
+        else {}
+    )
+    packet = current.get("consumer_packet")
+    packet = dict(packet) if type(packet) is dict else {}
+    source = packet.get("source_binding")
+    source = dict(source) if type(source) is dict else {}
+    claims = packet.get("claims")
+    claims = dict(claims) if type(claims) is dict else {}
+    ready = bool(
+        verified.get("ready") is True
+        and verified.get("production_trusted") is True
+        and verified.get("snapshot_rollback_resistant") is True
+        and verified.get("head_full") == head_full
+        and current.get("attestation_id") == attestation_id
+        and packet.get("attestation_id") == attestation_id
+        and source.get("head_full") == head_full
+        and source.get("dataset") == RESULT_DATASET
+        and source.get("generation") == worker_packet.get("result_version_id")
+        and source.get("scope_hash") == worker_packet.get("provider_scope_hash")
+        and source.get("source_current_packet_digest")
+        == _canonical_digest(dict(worker_packet))
+        and source.get("current_artifact_file_digest")
+        == worker_packet.get("result_artifact_sha256")
+        and claims.get("worker_run_id") == run_id
+        and claims.get("provider_version_digest")
+        == worker_packet.get("provider_version_digest")
+        and claims.get("universe_digest") == worker_packet.get("universe_digest")
+        and claims.get("validated_trade_date")
+        == worker_packet.get("validated_trade_date")
+        and type(claims.get("row_count")) is int
+        and claims.get("row_count") == worker_packet.get("result_row_count")
+        and claims.get("row_count") >= DEFAULT_MINIMUM_UNIVERSE_SIZE
+        and claims.get("does_not_execute_trades") is True
+        and _HEX_64_RE.fullmatch(str(source.get("artifact_digest") or ""))
+        and _HEX_64_RE.fullmatch(str(source.get("current_artifact_file_digest") or ""))
+    )
+    return {
+        "ready": ready,
+        "attestation_id": attestation_id if ready else "",
+        "artifact_digest": source.get("artifact_digest") if ready else "",
+        "generation": source.get("generation") if ready else "",
+        "artifact_file_digest": source.get("current_artifact_file_digest") if ready else "",
+        "scope_hash": source.get("scope_hash") if ready else "",
+        "claims": claims if ready else {},
+    }
+
+
+def _authoritative_radar_candidate_rows(
+    worker_rows: list[dict[str, Any]],
+    *,
+    validated_trade_date: str,
+) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for source in worker_rows:
+        symbol = str(source.get("ts_code") or "").upper()
+        trigger_raw = source.get("trigger_conditions_json")
+        invalid_raw = source.get("invalid_conditions_json")
+        try:
+            trigger_values = json.loads(str(trigger_raw or "[]"))
+            invalid_values = json.loads(str(invalid_raw or "[]"))
+        except Exception:
+            return []
+        integer_fields = (
+            source.get("score"),
+            source.get("rough_score"),
+            source.get("risk_score"),
+            source.get("full_market_rank"),
+        )
+        if not (
+            _valid_a_share_symbol(symbol)
+            and type(trigger_values) is list
+            and type(invalid_values) is list
+            and all(type(item) is str for item in trigger_values + invalid_values)
+            and source.get("candidate_is_not_buy_instruction") is True
+            and source.get("does_not_execute_trades") is True
+            and all(type(value) is int for value in integer_fields)
+            and 1 <= integer_fields[3] <= len(worker_rows)
+        ):
+            return []
+        data_date = str(source.get("data_date") or "")
+        if data_date != validated_trade_date:
+            return []
+        rows.append(
+            {
+                "ts_code": symbol,
+                "ticker": symbol,
+                "symbol": symbol,
+                "data_date": data_date,
+                "score": _integer(source.get("score")),
+                "rough_score": _integer(source.get("rough_score")),
+                "risk_score": _integer(source.get("risk_score")),
+                "full_market_rank": _integer(source.get("full_market_rank")),
+                "trigger_condition": "；".join(trigger_values),
+                "invalidation_condition": "；".join(invalid_values),
+                "source": "authoritative_full_market_worker_result",
+                "research_only": True,
+                "candidate_is_not_buy_instruction": True,
+                "does_not_execute_trades": True,
+            }
+        )
+    normalized, duplicates, invalid = _normalize_symbols(
+        [row.get("ts_code") for row in rows]
+    )
+    if duplicates or invalid or len(normalized) != len(rows):
+        return []
+    if sorted(_integer(row.get("full_market_rank")) for row in rows) != list(
+        range(1, len(rows) + 1)
+    ):
+        return []
+    return sorted(
+        rows,
+        key=lambda row: (-_integer(row.get("score")), str(row.get("ts_code"))),
+    )
+
+
+def _radar_cache_task_reusable(
+    task: Mapping[str, Any],
+    *,
+    task_id: str,
+    head_full: str,
+    acceptance_run_id: str,
+    request_bundle_id: str,
+    bundle_digest: str,
+    source_result_version_id: str,
+    source_result_output_hash: str,
+    candidate_rows_digest: str,
+    binding: Mapping[str, Any],
+) -> bool:
+    task_map = dict(task) if type(task) is dict else {}
+    expected_digest = _canonical_digest(
+        {
+            key: value
+            for key, value in task_map.items()
+            if key != "task_binding_digest"
+        }
+    )
+    return bool(
+        task_map.get("schema_version")
+        == "candidate_radar_full_market_cache_write_task.v1"
+        and task_map.get("task_id") == task_id
+        and task_map.get("task_type") == RADAR_CACHE_WRITE_TASK_TYPE
+        and task_map.get("status") == "success"
+        and type(task_map.get("progress")) is float
+        and task_map.get("progress") == 1.0
+        and task_map.get("output_packet_key") == CANDIDATE_CACHE_PACKET_KEY
+        and task_map.get("acceptance_run_id") == acceptance_run_id
+        and task_map.get("source_result_version_id") == source_result_version_id
+        and task_map.get("source_result_output_hash") == source_result_output_hash
+        and task_map.get("candidate_rows_digest") == candidate_rows_digest
+        and task_map.get("payload_safe")
+        == {
+            "request_bundle_id": request_bundle_id,
+            "bundle_digest": bundle_digest,
+            "head_full": head_full,
+            "source_result_version_id": source_result_version_id,
+        }
+        and all(
+            task_map.get(key) == binding.get(key)
+            for key in (
+                "deep_scan_execution_evidence_digest",
+                "browser_visual_evidence_digest",
+                "browser_performance_evidence_digest",
+                "legacy_retirement_evidence_digest",
+            )
+        )
+        and task_map.get("global_candidate_cache_overwritten") is True
+        and task_map.get("external_calls_triggered") is False
+        and task_map.get("does_not_execute_trades") is True
+        and task_map.get("does_not_modify_strategy_action") is True
+        and task_map.get("contains_secret") is False
+        and task_map.get("task_binding_digest") == expected_digest
+    )
+
+
+def publish_candidate_radar_authoritative_cache(
+    payload: Any,
+    *,
+    evidence_root: Path | None = None,
+    meta_path: Path | None = None,
+) -> dict[str, Any]:
+    """Write the authoritative Radar cache from the trusted worker artifact.
+
+    The write is POST-only and local.  It stages an exact cache/task binding;
+    production replacement remains false until an external Radar consumer
+    signature for this same HEAD and artifact is imported and verified.
+    """
+
+    payload_map = dict(payload) if type(payload) is dict else {}
+    allowed = {
+        "approved_by_user",
+        "head_full",
+        "cache_write_task_id",
+        "worker_attestation_id",
+        "worker_run_id",
+        "browser_visual_evidence_digest",
+        "browser_performance_evidence_digest",
+        "legacy_retirement_evidence_digest",
+    }
+    root = Path(evidence_root or EVIDENCE_ROOT)
+    db_path = Path(meta_path or (root / "meta.sqlite"))
+    head_full = str(payload_map.get("head_full") or "").lower()
+    task_id = str(payload_map.get("cache_write_task_id") or "").lower()
+    run_id = str(payload_map.get("worker_run_id") or "").lower()
+    blockers: list[str] = []
+    if set(payload_map) != allowed:
+        blockers.append("candidate_cache_writer_payload_schema_not_exact")
+    if payload_map.get("approved_by_user") is not True:
+        blockers.append("candidate_cache_writer_explicit_approval_missing")
+    if (
+        not _strict_runtime_root(root)
+        or db_path.is_symlink()
+        or db_path.resolve(strict=False)
+        != (root / "meta.sqlite").resolve(strict=False)
+    ):
+        blockers.append("candidate_cache_writer_evidence_root_unsafe")
+    if not re.fullmatch(r"[0-9a-f]{40}", head_full) or not _repository_clean_at_head(head_full):
+        blockers.append("candidate_cache_writer_head_or_clean_state_invalid")
+    if _normalize_uuid4(task_id) != task_id:
+        blockers.append("candidate_cache_writer_task_id_invalid")
+    if _normalize_uuid4(run_id) != run_id:
+        blockers.append("candidate_cache_writer_worker_run_id_invalid")
+    for key in (
+        "worker_attestation_id",
+        "browser_visual_evidence_digest",
+        "browser_performance_evidence_digest",
+        "legacy_retirement_evidence_digest",
+    ):
+        if not _HEX_64_RE.fullmatch(str(payload_map.get(key) or "")):
+            blockers.append(f"candidate_cache_writer_{key}_invalid")
+    if blockers:
+        return {
+            "ready": False,
+            "status": "candidate_radar_authoritative_cache_write_blocked",
+            "blockers": blockers,
+            "writes_storage": False,
+            "external_calls_triggered": False,
+            "does_not_execute_trades": True,
+        }
+
+    worker_packet = _read_packet_no_init(db_path, PACKET_KEY)
+    worker_trust = _trusted_worker_consumer_binding(
+        root,
+        head_full=head_full,
+        attestation_id=str(payload_map["worker_attestation_id"]),
+        run_id=run_id,
+        worker_packet=worker_packet,
+    )
+    pointer = parquet_store.versioned_dataset_pointer(
+        root=root / "parquet", name=RESULT_DATASET, pointer="current"
+    )
+    result_path = Path(str(pointer.get("artifact_path") or ""))
+    worker_rows: list[dict[str, Any]] = []
+    if _regular_file_under(result_path, root=root / "parquet"):
+        try:
+            resolved = result_path.resolve(strict=True)
+            if not resolved.is_relative_to((root / "parquet").resolve(strict=True)):
+                raise ValueError("candidate_worker_artifact_outside_root")
+            import pandas as pd
+
+            worker_rows = [
+                dict(row) for row in pd.read_parquet(resolved).to_dict(orient="records")
+            ]
+        except Exception:
+            worker_rows = []
+    candidate_rows = _authoritative_radar_candidate_rows(
+        worker_rows,
+        validated_trade_date=str(worker_packet.get("validated_trade_date") or ""),
+    )
+    if not (
+        worker_trust.get("ready") is True
+        and worker_trust.get("generation") == worker_packet.get("result_version_id")
+        and worker_trust.get("scope_hash") == worker_packet.get("provider_scope_hash")
+        and worker_trust.get("claims", {}).get("row_count") == len(worker_rows)
+        and worker_packet.get("schema_version") == SCHEMA_VERSION
+        and worker_packet.get("status") == "full_market_worker_production_complete"
+        and worker_packet.get("acceptance_run_id") == run_id
+        and worker_packet.get("head_full") == head_full
+        and worker_packet.get("result_dataset") == RESULT_DATASET
+        and worker_packet.get("result_version_id") == pointer.get("version_id")
+        and worker_packet.get("result_artifact_sha256") == pointer.get("artifact_sha256")
+        and worker_packet.get("result_artifact_sha256")
+        == worker_trust.get("artifact_file_digest")
+        and pointer.get("artifact_sha256_matches") is True
+        and _canonical_digest(worker_rows) == worker_packet.get("result_output_hash")
+        and len(worker_rows) == _integer(worker_packet.get("result_row_count"))
+        and len(candidate_rows) == len(worker_rows) >= DEFAULT_MINIMUM_UNIVERSE_SIZE
+    ):
+        return {
+            "ready": False,
+            "status": "candidate_radar_authoritative_cache_write_blocked",
+            "blockers": ["candidate_cache_writer_worker_artifact_or_external_trust_invalid"],
+            "writes_storage": False,
+            "external_calls_triggered": False,
+            "does_not_execute_trades": True,
+        }
+    state_after_read = _repository_clean_at_head(head_full)
+    if not state_after_read:
+        return {
+            "ready": False,
+            "status": "candidate_radar_authoritative_cache_write_blocked",
+            "blockers": ["candidate_cache_writer_head_changed_during_read"],
+            "writes_storage": False,
+            "external_calls_triggered": False,
+            "does_not_execute_trades": True,
+        }
+
+    deep_scan_digest = _canonical_digest(
+        {
+            "head_full": head_full,
+            "worker_attestation_id": worker_trust.get("attestation_id"),
+            "worker_artifact_digest": worker_trust.get("artifact_digest"),
+            "result_version_id": worker_packet.get("result_version_id"),
+            "result_artifact_sha256": worker_packet.get("result_artifact_sha256"),
+            "result_output_hash": worker_packet.get("result_output_hash"),
+            "result_row_count": len(worker_rows),
+        }
+    )
+    candidate_rows_digest = _canonical_digest(candidate_rows)
+    binding = {
+        "schema_version": CANDIDATE_CACHE_REPLACEMENT_SCHEMA_VERSION,
+        "status": "authoritative_candidate_cache_replaced",
+        "head_full": head_full,
+        "cache_write_task_id": task_id,
+        "acceptance_run_id": run_id,
+        "source_result_dataset": RESULT_DATASET,
+        "source_result_version_id": worker_packet.get("result_version_id"),
+        "source_result_artifact_sha256": worker_packet.get("result_artifact_sha256"),
+        "source_result_output_hash": worker_packet.get("result_output_hash"),
+        "source_result_row_count": len(worker_rows),
+        "provider_version_digest": worker_packet.get("provider_version_digest"),
+        "universe_digest": worker_packet.get("universe_digest"),
+        "candidate_row_count": len(candidate_rows),
+        "candidate_rows_digest": candidate_rows_digest,
+        "deep_scan_execution_evidence_digest": deep_scan_digest,
+        "browser_visual_evidence_digest": payload_map[
+            "browser_visual_evidence_digest"
+        ],
+        "browser_performance_evidence_digest": payload_map[
+            "browser_performance_evidence_digest"
+        ],
+        "legacy_retirement_evidence_digest": payload_map[
+            "legacy_retirement_evidence_digest"
+        ],
+        "external_worker_attestation_id": worker_trust.get("attestation_id"),
+        "external_worker_artifact_digest": worker_trust.get("artifact_digest"),
+        "global_candidate_cache_overwritten": True,
+        "contains_secret": False,
+        "does_not_execute_trades": True,
+    }
+    binding["binding_digest"] = _canonical_digest(binding)
+    request_bundle_id = _canonical_digest(
+        {"head_full": head_full, "task_id": task_id, "binding_digest": binding["binding_digest"]}
+    )
+    bundle_digest = _canonical_digest(
+        {"request_bundle_id": request_bundle_id, "candidate_rows_digest": candidate_rows_digest}
+    )
+    cache_packet = {
+        "packet_key": CANDIDATE_CACHE_PACKET_KEY,
+        "schema_version": CANDIDATE_CACHE_SCHEMA_VERSION,
+        "status": "candidate_radar_full_market_replacement_ready",
+        "head_full": head_full,
+        "request_bundle_id": request_bundle_id,
+        "bundle_digest": bundle_digest,
+        "cache_only": True,
+        "read_only": True,
+        "generated_at": str(pointer.get("promoted_at") or ""),
+        "trade_date": worker_packet.get("validated_trade_date"),
+        "candidate_rows": candidate_rows,
+        "total_count": len(candidate_rows),
+        "full_market_worker_replacement": binding,
+        "global_candidate_cache_overwritten": True,
+        "candidate_is_not_buy_instruction": True,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "contains_secret": False,
+        "external_calls_triggered": False,
+    }
+    existing_packet = _read_packet_no_init(db_path, CANDIDATE_CACHE_PACKET_KEY)
+    existing_last_good = _read_packet_no_init(
+        db_path, CANDIDATE_CACHE_LAST_GOOD_PACKET_KEY
+    )
+    existing_task = _read_task_no_init(db_path, task_id)
+    last_good_binding = (
+        dict(existing_last_good.get("full_market_worker_replacement"))
+        if type(existing_last_good.get("full_market_worker_replacement")) is dict
+        else {}
+    )
+    last_good_integrity_valid = bool(
+        existing_last_good
+        and existing_last_good.get("packet_key") == CANDIDATE_CACHE_PACKET_KEY
+        and existing_last_good.get("schema_version") == CANDIDATE_CACHE_SCHEMA_VERSION
+        and existing_last_good.get("candidate_is_not_buy_instruction") is True
+        and existing_last_good.get("does_not_execute_trades") is True
+        and last_good_binding.get("binding_digest")
+        == _canonical_digest(
+            {
+                key: value
+                for key, value in last_good_binding.items()
+                if key != "binding_digest"
+            }
+        )
+    )
+    if existing_packet == cache_packet and last_good_integrity_valid and _radar_cache_task_reusable(
+        existing_task,
+        task_id=task_id,
+        head_full=head_full,
+        acceptance_run_id=run_id,
+        request_bundle_id=request_bundle_id,
+        bundle_digest=bundle_digest,
+        source_result_version_id=str(worker_packet.get("result_version_id") or ""),
+        source_result_output_hash=str(worker_packet.get("result_output_hash") or ""),
+        candidate_rows_digest=candidate_rows_digest,
+        binding=binding,
+    ):
+        return {
+            **cache_packet,
+            "ready": True,
+            "status": "candidate_radar_authoritative_cache_write_reused",
+            "idempotent_reuse": True,
+            "external_radar_attestation_pending": True,
+            "candidate_radar_production_replacement": False,
+            "production_complete": False,
+            "writes_storage": False,
+        }
+
+    prior_radar = external_production_consumer_service.validate_consumer(
+        "radar", evidence_root=root
+    )
+    prior_pointer = (
+        dict(prior_radar.get("current_pointer"))
+        if type(prior_radar.get("current_pointer")) is dict
+        else {}
+    )
+    prior_consumer_packet = prior_pointer.get("consumer_packet")
+    prior_consumer_packet = (
+        dict(prior_consumer_packet)
+        if type(prior_consumer_packet) is dict
+        else {}
+    )
+    prior_source = prior_consumer_packet.get("source_binding")
+    prior_source = dict(prior_source) if type(prior_source) is dict else {}
+    preserve_previous_current = bool(
+        existing_packet
+        and prior_radar.get("ready") is True
+        and prior_radar.get("production_trusted") is True
+        and prior_radar.get("snapshot_rollback_resistant") is True
+        and prior_source.get("source_current_packet_digest")
+        == _canonical_digest(existing_packet)
+    )
+    last_good_packet = existing_packet if preserve_previous_current else cache_packet
+    from . import task_service
+
+    task = task_service.build_task_record(
+        RADAR_CACHE_WRITE_TASK_TYPE,
+        task_id=task_id,
+        output_packet_key=CANDIDATE_CACHE_PACKET_KEY,
+        payload={
+            "request_bundle_id": request_bundle_id,
+            "bundle_digest": bundle_digest,
+            "head_full": head_full,
+            "source_result_version_id": worker_packet.get("result_version_id"),
+        },
+        status="success",
+        progress=1.0,
+        current_step="candidate_radar_authoritative_cache_written_external_attestation_pending",
+        warnings=["candidate_is_not_buy_instruction_no_provider_model_trade"],
+        call_ledger=[
+            {
+                "api": "local_authoritative_candidate_cache_writer",
+                "call_status": "success",
+                "row_count": len(candidate_rows),
+                "external": False,
+                "external_calls_triggered": False,
+                "does_not_execute_trades": True,
+                "contains_secret": False,
+            }
+        ],
+    )
+    task.update(
+        {
+            "schema_version": "candidate_radar_full_market_cache_write_task.v1",
+            "acceptance_run_id": run_id,
+            "source_result_version_id": worker_packet.get("result_version_id"),
+            "source_result_output_hash": worker_packet.get("result_output_hash"),
+            "candidate_rows_digest": candidate_rows_digest,
+            "deep_scan_execution_evidence_digest": deep_scan_digest,
+            "browser_visual_evidence_digest": payload_map[
+                "browser_visual_evidence_digest"
+            ],
+            "browser_performance_evidence_digest": payload_map[
+                "browser_performance_evidence_digest"
+            ],
+            "legacy_retirement_evidence_digest": payload_map[
+                "legacy_retirement_evidence_digest"
+            ],
+            "global_candidate_cache_overwritten": True,
+            "contains_secret": False,
+            "does_not_execute_trades": True,
+        }
+    )
+    task["task_binding_digest"] = _canonical_digest(task)
+    try:
+        with _worker_radar_publication_lock(root):
+            upstream_packet_now = _read_packet_no_init(db_path, PACKET_KEY)
+            upstream_pointer_now = parquet_store.versioned_dataset_pointer(
+                root=root / "parquet", name=RESULT_DATASET, pointer="current"
+            )
+            if not (
+                upstream_packet_now == worker_packet
+                and upstream_pointer_now.get("status") == pointer.get("status") == "ready"
+                and upstream_pointer_now.get("version_id") == pointer.get("version_id")
+                and upstream_pointer_now.get("artifact_path") == pointer.get("artifact_path")
+                and upstream_pointer_now.get("artifact_sha256")
+                == pointer.get("artifact_sha256")
+                and upstream_pointer_now.get("artifact_sha256_actual")
+                == pointer.get("artifact_sha256_actual")
+                and upstream_pointer_now.get("artifact_sha256_matches") is True
+            ):
+                return {
+                    "ready": False,
+                    "status": "candidate_radar_authoritative_cache_write_blocked",
+                    "blockers": ["candidate_cache_writer_upstream_changed_before_commit"],
+                    "writes_storage": False,
+                    "external_calls_triggered": False,
+                    "does_not_execute_trades": True,
+                }
+            write_result = SQLiteMetaStore(
+                db_path
+            ).promote_packet_pair_task_bundle_atomic(
+                current_key=CANDIDATE_CACHE_PACKET_KEY,
+                current_packet=cache_packet,
+                last_good_key=CANDIDATE_CACHE_LAST_GOOD_PACKET_KEY,
+                last_good_packet=last_good_packet,
+                task=task,
+                expected_current_packet=existing_packet or None,
+                upstream_packet_key=PACKET_KEY,
+                expected_upstream_packet=worker_packet,
+                request_bundle_id=request_bundle_id,
+                bundle_digest=bundle_digest,
+            )
+    except Exception:
+        committed_packet = _read_packet_no_init(db_path, CANDIDATE_CACHE_PACKET_KEY)
+        committed_task = _read_task_no_init(db_path, task_id)
+        committed_last_good = _read_packet_no_init(
+            db_path, CANDIDATE_CACHE_LAST_GOOD_PACKET_KEY
+        )
+        committed_last_good_binding = (
+            dict(committed_last_good.get("full_market_worker_replacement"))
+            if type(committed_last_good.get("full_market_worker_replacement")) is dict
+            else {}
+        )
+        committed_last_good_valid = bool(
+            committed_last_good
+            and committed_last_good.get("packet_key") == CANDIDATE_CACHE_PACKET_KEY
+            and committed_last_good.get("schema_version")
+            == CANDIDATE_CACHE_SCHEMA_VERSION
+            and committed_last_good_binding.get("binding_digest")
+            == _canonical_digest(
+                {
+                    key: value
+                    for key, value in committed_last_good_binding.items()
+                    if key != "binding_digest"
+                }
+            )
+        )
+        if committed_packet == cache_packet and committed_last_good_valid and _radar_cache_task_reusable(
+            committed_task,
+            task_id=task_id,
+            head_full=head_full,
+            acceptance_run_id=run_id,
+            request_bundle_id=request_bundle_id,
+            bundle_digest=bundle_digest,
+            source_result_version_id=str(worker_packet.get("result_version_id") or ""),
+            source_result_output_hash=str(worker_packet.get("result_output_hash") or ""),
+            candidate_rows_digest=candidate_rows_digest,
+            binding=binding,
+        ):
+            return {
+                **cache_packet,
+                "ready": True,
+                "status": "candidate_radar_authoritative_cache_write_reused",
+                "idempotent_reuse": True,
+                "external_radar_attestation_pending": True,
+                "candidate_radar_production_replacement": False,
+                "production_complete": False,
+                "writes_storage": False,
+            }
+        return {
+            "ready": False,
+            "status": "candidate_radar_authoritative_cache_atomic_write_failed",
+            "blockers": ["candidate_cache_packet_task_atomic_write_failed"],
+            "writes_storage": False,
+            "external_calls_triggered": False,
+            "does_not_execute_trades": True,
+        }
+    return {
+        **cache_packet,
+        "ready": True,
+        "status": "candidate_radar_authoritative_cache_written_external_attestation_pending",
+        "write_result": write_result,
+        "external_radar_attestation_pending": True,
+        "candidate_radar_production_replacement": False,
+        "production_complete": False,
+        "writes_storage": True,
     }
 
 
@@ -2449,6 +3323,32 @@ def _promote_official_candidate_results(
     result_rows: list[dict[str, Any]],
     capability: Any,
 ) -> dict[str, Any]:
+    try:
+        with _worker_radar_publication_lock(EVIDENCE_ROOT):
+            return _promote_official_candidate_results_locked(
+                run_id=run_id,
+                universe=universe,
+                transport=transport,
+                checkpoint=checkpoint,
+                result_rows=result_rows,
+                capability=capability,
+            )
+    except Exception:
+        return _blocked_attempt(
+            "full_market_worker_publication_lock_failed",
+            run_id=run_id,
+        )
+
+
+def _promote_official_candidate_results_locked(
+    *,
+    run_id: str,
+    universe: Mapping[str, Any],
+    transport: Mapping[str, Any],
+    checkpoint: Mapping[str, Any],
+    result_rows: list[dict[str, Any]],
+    capability: Any,
+) -> dict[str, Any]:
     import pandas as pd
 
     state = _official_orchestrator_state(capability, run_id)
@@ -2759,6 +3659,11 @@ def _candidate_cache_replacement_ready(
     binding = cache_packet.get("full_market_worker_replacement")
     binding_map = dict(binding) if isinstance(binding, Mapping) else {}
     task_map = dict(cache_write_task) if isinstance(cache_write_task, Mapping) else {}
+    task_payload_safe = (
+        dict(task_map.get("payload_safe"))
+        if isinstance(task_map.get("payload_safe"), Mapping)
+        else {}
+    )
     candidate_rows = [
         dict(row)
         for row in cache_packet.get("candidate_rows") or []
@@ -2789,10 +3694,43 @@ def _candidate_cache_replacement_ready(
         if task_map
         else ""
     )
+    source_pointer: dict[str, Any] = {}
+    expected_candidate_rows: list[dict[str, Any]] = []
+    if evidence_root is not None:
+        source_pointer = parquet_store.versioned_dataset_pointer(
+            root=Path(evidence_root) / "parquet",
+            name=RESULT_DATASET,
+            pointer="current",
+        )
+        source_path = Path(str(source_pointer.get("artifact_path") or ""))
+        source_rows: list[dict[str, Any]] = []
+        try:
+            source_root = (Path(evidence_root) / "parquet").resolve(strict=True)
+            resolved_source = source_path.resolve(strict=True)
+            if (
+                not _regular_file_under(
+                    source_path, root=Path(evidence_root) / "parquet"
+                )
+                or not resolved_source.is_relative_to(source_root)
+            ):
+                raise ValueError("candidate_source_artifact_path_untrusted")
+            import pandas as pd
+
+            source_rows = [
+                dict(row)
+                for row in pd.read_parquet(resolved_source).to_dict(orient="records")
+            ]
+        except Exception:
+            source_rows = []
+        expected_candidate_rows = _authoritative_radar_candidate_rows(
+            source_rows,
+            validated_trade_date=str(worker_packet.get("validated_trade_date") or ""),
+        )
     structural_ready = bool(
         cache_packet.get("packet_key") == CANDIDATE_CACHE_PACKET_KEY
         and cache_packet.get("schema_version") == CANDIDATE_CACHE_SCHEMA_VERSION
         and cache_packet.get("status") == "candidate_radar_full_market_replacement_ready"
+        and cache_packet.get("head_full") == _current_head_full()
         and cache_packet.get("cache_only") is True
         and cache_packet.get("global_candidate_cache_overwritten") is True
         and cache_packet.get("candidate_is_not_buy_instruction") is True
@@ -2806,6 +3744,7 @@ def _candidate_cache_replacement_ready(
         and binding_map.get("schema_version")
         == CANDIDATE_CACHE_REPLACEMENT_SCHEMA_VERSION
         and binding_map.get("status") == "authoritative_candidate_cache_replaced"
+        and binding_map.get("head_full") == _current_head_full()
         and binding_map.get("global_candidate_cache_overwritten") is True
         and _normalize_uuid4(binding_map.get("cache_write_task_id"))
         == binding_map.get("cache_write_task_id")
@@ -2818,11 +3757,19 @@ def _candidate_cache_replacement_ready(
         == worker_packet.get("result_artifact_sha256")
         and binding_map.get("source_result_output_hash")
         == worker_packet.get("result_output_hash")
+        and _integer(binding_map.get("source_result_row_count"))
+        == _integer(worker_packet.get("result_row_count"))
         and binding_map.get("provider_version_digest")
         == worker_packet.get("provider_version_digest")
         and binding_map.get("universe_digest") == worker_packet.get("universe_digest")
         and _integer(binding_map.get("candidate_row_count")) == len(candidate_rows)
         and binding_map.get("candidate_rows_digest") == _canonical_digest(candidate_rows)
+        and candidate_rows == expected_candidate_rows
+        and source_pointer.get("status") == "ready"
+        and source_pointer.get("version_id") == worker_packet.get("result_version_id")
+        and source_pointer.get("artifact_sha256")
+        == worker_packet.get("result_artifact_sha256")
+        and source_pointer.get("artifact_sha256_matches") is True
         and all(
             _HEX_64_RE.fullmatch(str(binding_map.get(key) or ""))
             for key in (
@@ -2835,12 +3782,26 @@ def _candidate_cache_replacement_ready(
         and binding_map.get("binding_digest") == expected_binding_digest
         and binding_map.get("contains_secret") is False
         and binding_map.get("does_not_execute_trades") is True
+        and _HEX_64_RE.fullmatch(
+            str(binding_map.get("external_worker_attestation_id") or "")
+        )
+        and _HEX_64_RE.fullmatch(
+            str(binding_map.get("external_worker_artifact_digest") or "")
+        )
         and task_map.get("schema_version")
         == "candidate_radar_full_market_cache_write_task.v1"
         and task_map.get("task_id") == binding_map.get("cache_write_task_id")
         and task_map.get("task_type") == "publish_candidate_radar_full_market_cache"
         and task_map.get("status") == "success"
+        and type(task_map.get("progress")) is float
+        and task_map.get("progress") == 1.0
         and task_map.get("output_packet_key") == CANDIDATE_CACHE_PACKET_KEY
+        and task_payload_safe.get("request_bundle_id")
+        == cache_packet.get("request_bundle_id")
+        and task_payload_safe.get("bundle_digest") == cache_packet.get("bundle_digest")
+        and task_payload_safe.get("head_full") == cache_packet.get("head_full")
+        and task_payload_safe.get("source_result_version_id")
+        == worker_packet.get("result_version_id")
         and task_map.get("acceptance_run_id") == worker_packet.get("acceptance_run_id")
         and task_map.get("source_result_version_id")
         == worker_packet.get("result_version_id")
@@ -2860,6 +3821,7 @@ def _candidate_cache_replacement_ready(
         and task_map.get("task_binding_digest") == expected_task_digest
         and task_map.get("external_calls_triggered") is False
         and task_map.get("does_not_execute_trades") is True
+        and task_map.get("does_not_modify_strategy_action") is True
         and task_map.get("contains_secret") is False
     )
     if not structural_ready or evidence_root is None:

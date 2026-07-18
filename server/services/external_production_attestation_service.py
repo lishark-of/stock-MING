@@ -156,6 +156,7 @@ _CLAIM_DIGEST_FIELDS = frozenset(
         "browser_evidence_digest",
         "performance_evidence_digest",
         "legacy_retirement_evidence_digest",
+        "candidate_cache_write_task_digest",
         "phase_a_packet_digest",
         "approval_scope_hash",
         "execution_recipe_scope_hash",
@@ -203,6 +204,7 @@ _CLAIM_SCHEMAS: dict[str, dict[str, type | tuple[type, ...]]] = {
     "candidate_radar_lineage": {
         "candidate_cache_packet_key": str,
         "cache_write_task_id": str,
+        "candidate_cache_write_task_digest": str,
         "universe_digest": str,
         "candidate_row_count": int,
         "browser_evidence_digest": str,
@@ -729,6 +731,9 @@ def _claims_ready(
         return bool(
             subject == CANDIDATE_RADAR_PACKET_KEY
             and claims.get("candidate_cache_packet_key") == subject
+            and _HEX_64.fullmatch(
+                str(claims.get("candidate_cache_write_task_digest") or "")
+            )
             and claims.get("candidate_row_count", 0) > 0
             and claims.get("candidate_radar_production_replacement") is True
             and claims.get("candidate_is_not_buy_instruction") is True

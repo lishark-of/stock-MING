@@ -513,6 +513,241 @@ class SQLiteMetaStore:
             "idempotent_reuse": False,
         }
 
+    def promote_packet_pair_task_bundle_atomic(
+        self,
+        *,
+        current_key: str,
+        current_packet: Mapping[str, Any],
+        last_good_key: str,
+        last_good_packet: Mapping[str, Any],
+        task: Mapping[str, Any],
+        expected_current_packet: Mapping[str, Any] | None,
+        upstream_packet_key: str,
+        expected_upstream_packet: Mapping[str, Any],
+        request_bundle_id: str,
+        bundle_digest: str,
+    ) -> dict[str, Any]:
+        """CAS-promote a current/last-good packet pair and one terminal task.
+
+        Unlike :meth:`write_packet_task_bundle_atomic`, this operation is for a
+        genuine cache replacement: an existing current packet is allowed, but
+        it must still equal the caller's preflight snapshot once the SQLite
+        write lock is held.  That compare-and-swap boundary prevents concurrent
+        publishers from silently overwriting one another.
+        """
+
+        if self.read_only:
+            raise RuntimeError("read_only_store_cannot_promote_bundle")
+        current_key = str(current_key or "")
+        last_good_key = str(last_good_key or "")
+        task_map = dict(task) if isinstance(task, Mapping) else {}
+        current_map = dict(current_packet) if isinstance(current_packet, Mapping) else {}
+        last_good_map = (
+            dict(last_good_packet) if isinstance(last_good_packet, Mapping) else {}
+        )
+        expected_map = (
+            dict(expected_current_packet)
+            if isinstance(expected_current_packet, Mapping)
+            else None
+        )
+        upstream_packet_key = str(upstream_packet_key or "")
+        expected_upstream_map = (
+            dict(expected_upstream_packet)
+            if isinstance(expected_upstream_packet, Mapping)
+            else {}
+        )
+        task_id = str(task_map.get("task_id") or "")
+        task_type = str(task_map.get("task_type") or "")
+        request_bundle_id = str(request_bundle_id or "").lower()
+        bundle_digest = str(bundle_digest or "").lower()
+
+        def sha256_text(value: str) -> bool:
+            return len(value) == 64 and all(
+                character in "0123456789abcdef" for character in value
+            )
+
+        payload_safe = (
+            dict(task_map.get("payload_safe"))
+            if isinstance(task_map.get("payload_safe"), Mapping)
+            else {}
+        )
+        expected_task_digest = hashlib.sha256(
+            json.dumps(
+                {
+                    key: value
+                    for key, value in task_map.items()
+                    if key != "task_binding_digest"
+                },
+                ensure_ascii=True,
+                sort_keys=True,
+                separators=(",", ":"),
+                default=str,
+            ).encode("utf-8")
+        ).hexdigest()
+        if not (
+            current_key
+            and last_good_key
+            and current_key != last_good_key
+            and upstream_packet_key
+            and upstream_packet_key not in {current_key, last_good_key}
+            and expected_upstream_map
+            and task_id
+            and task_type
+            and sha256_text(request_bundle_id)
+            and sha256_text(bundle_digest)
+            and current_map.get("request_bundle_id") == request_bundle_id
+            and current_map.get("bundle_digest") == bundle_digest
+            and payload_safe.get("request_bundle_id") == request_bundle_id
+            and payload_safe.get("bundle_digest") == bundle_digest
+            and task_map.get("status") == "success"
+            and task_map.get("progress") == 1.0
+            and task_map.get("external_calls_triggered") is False
+            and task_map.get("does_not_execute_trades") is True
+            and task_map.get("does_not_modify_strategy_action") is True
+            and task_map.get("contains_secret") is False
+            and task_map.get("task_binding_digest") == expected_task_digest
+        ):
+            raise ValueError("promoted_packet_task_bundle_binding_invalid")
+
+        current_payload = json.dumps(
+            current_map,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+            default=str,
+        )
+        last_good_payload = json.dumps(
+            last_good_map,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+            default=str,
+        )
+        task_payload = json.dumps(
+            task_map,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+            default=str,
+        )
+        expected_current_payload = (
+            json.dumps(
+                expected_map,
+                ensure_ascii=False,
+                sort_keys=True,
+                separators=(",", ":"),
+                default=str,
+            )
+            if expected_map is not None
+            else None
+        )
+        expected_upstream_payload = json.dumps(
+            expected_upstream_map,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+            default=str,
+        )
+        task_payload_digest = hashlib.sha256(task_payload.encode("utf-8")).hexdigest()
+        now = _dt.datetime.now().isoformat(timespec="microseconds")
+        with closing(self._connect()) as conn:
+            try:
+                conn.execute("BEGIN IMMEDIATE")
+                row = conn.execute(
+                    "SELECT payload_json FROM packets WHERE packet_key = ?",
+                    (current_key,),
+                ).fetchone()
+                if row:
+                    try:
+                        actual_current_payload = json.dumps(
+                            json.loads(str(row[0])),
+                            ensure_ascii=False,
+                            sort_keys=True,
+                            separators=(",", ":"),
+                            default=str,
+                        )
+                    except Exception as exc:
+                        raise RuntimeError(
+                            "promoted_packet_current_json_invalid"
+                        ) from exc
+                else:
+                    actual_current_payload = None
+                if actual_current_payload != expected_current_payload:
+                    raise RuntimeError("promoted_packet_current_compare_and_swap_failed")
+                upstream_row = conn.execute(
+                    "SELECT payload_json FROM packets WHERE packet_key = ?",
+                    (upstream_packet_key,),
+                ).fetchone()
+                try:
+                    actual_upstream_payload = json.dumps(
+                        json.loads(str(upstream_row[0])) if upstream_row else {},
+                        ensure_ascii=False,
+                        sort_keys=True,
+                        separators=(",", ":"),
+                        default=str,
+                    )
+                except Exception as exc:
+                    raise RuntimeError(
+                        "promoted_packet_upstream_json_invalid"
+                    ) from exc
+                if actual_upstream_payload != expected_upstream_payload:
+                    raise RuntimeError("promoted_packet_upstream_compare_and_swap_failed")
+                if conn.execute(
+                    "SELECT 1 FROM task_status WHERE task_id = ?", (task_id,)
+                ).fetchone() or conn.execute(
+                    "SELECT 1 FROM task_status_history WHERE task_id = ? LIMIT 1",
+                    (task_id,),
+                ).fetchone():
+                    raise RuntimeError("promoted_packet_task_identity_conflict")
+
+                for packet_key, payload in (
+                    (current_key, current_payload),
+                    (last_good_key, last_good_payload),
+                ):
+                    conn.execute(
+                        "INSERT OR REPLACE INTO packets(packet_key, payload_json, updated_at) VALUES (?, ?, ?)",
+                        (packet_key, payload, now),
+                    )
+                    readback = conn.execute(
+                        "SELECT payload_json FROM packets WHERE packet_key = ?",
+                        (packet_key,),
+                    ).fetchone()
+                    if readback is None or str(readback[0]) != payload:
+                        raise RuntimeError("promoted_packet_pair_readback_mismatch")
+                conn.execute(
+                    "INSERT INTO task_status(task_id, payload_json, updated_at) VALUES (?, ?, ?)",
+                    (task_id, task_payload, now),
+                )
+                conn.execute(
+                    """
+                    INSERT INTO task_status_history(
+                        task_id, task_type, payload_json, updated_at, payload_digest
+                    ) VALUES (?, ?, ?, ?, ?)
+                    """,
+                    (task_id, task_type, task_payload, now, task_payload_digest),
+                )
+                task_readback = conn.execute(
+                    "SELECT payload_json FROM task_status WHERE task_id = ?",
+                    (task_id,),
+                ).fetchone()
+                if task_readback is None or str(task_readback[0]) != task_payload:
+                    raise RuntimeError("promoted_packet_task_readback_mismatch")
+                conn.commit()
+            except Exception:
+                conn.rollback()
+                raise
+        return {
+            "status": "packet_pair_task_bundle_promoted",
+            "request_bundle_id": request_bundle_id,
+            "bundle_digest": bundle_digest,
+            "current_key": current_key,
+            "last_good_key": last_good_key,
+            "task_id": task_id,
+            "transaction_committed": True,
+            "readback_verified_before_commit": True,
+            "idempotent_reuse": False,
+        }
+
     def restore_packet_pair_and_delete_event_atomic(
         self,
         current_key: str,

@@ -275,13 +275,28 @@ class ExternalProductionAttestationTests(unittest.TestCase):
                 "full_market_factor_research": True,
             }
         else:
+            request_bundle_id = hashlib.sha256(
+                f"radar-request:{generation}".encode()
+            ).hexdigest()
+            bundle_digest = hashlib.sha256(
+                f"radar-bundle:{generation}".encode()
+            ).hexdigest()
+            source_output_hash = hashlib.sha256(
+                f"radar-output:{generation}".encode()
+            ).hexdigest()
+            candidate_rows_digest = hashlib.sha256(
+                f"radar-rows:{generation}".encode()
+            ).hexdigest()
             binding = {
                 "cache_write_task_id": "radar-cache-write-1",
+                "acceptance_run_id": run_id,
                 "source_result_dataset": "wrong_dataset" if wrong_dataset else dataset,
                 "source_result_version_id": generation,
                 "source_result_artifact_sha256": artifact_digest,
+                "source_result_output_hash": source_output_hash,
                 "universe_digest": "4" * 64,
                 "candidate_row_count": 8,
+                "candidate_rows_digest": candidate_rows_digest,
                 "browser_visual_evidence_digest": "5" * 64,
                 "browser_performance_evidence_digest": "6" * 64,
                 "legacy_retirement_evidence_digest": "7" * 64,
@@ -289,8 +304,35 @@ class ExternalProductionAttestationTests(unittest.TestCase):
             binding["binding_digest"] = phase2_consumers._digest(binding)
             packet = {
                 "packet_key": "command_center_3_candidate_radar_cache",
+                "head_full": external._current_head_full(),
+                "request_bundle_id": request_bundle_id,
+                "bundle_digest": bundle_digest,
                 "full_market_worker_replacement": binding,
             }
+            task = {
+                "task_id": binding["cache_write_task_id"],
+                "task_type": "publish_candidate_radar_full_market_cache",
+                "status": "success",
+                "progress": 1.0,
+                "output_packet_key": "command_center_3_candidate_radar_cache",
+                "acceptance_run_id": run_id,
+                "source_result_version_id": generation,
+                "source_result_output_hash": source_output_hash,
+                "candidate_rows_digest": candidate_rows_digest,
+                "payload_safe": {
+                    "request_bundle_id": request_bundle_id,
+                    "bundle_digest": bundle_digest,
+                    "head_full": external._current_head_full(),
+                    "source_result_version_id": generation,
+                },
+                "global_candidate_cache_overwritten": True,
+                "external_calls_triggered": False,
+                "does_not_execute_trades": True,
+                "does_not_modify_strategy_action": True,
+                "contains_secret": False,
+            }
+            task["task_binding_digest"] = phase2_consumers._digest(task)
+            store.write_task_status(task)
         store.write_packet(config["current_key"], packet)
         store.write_packet(
             config["source_last_good_key"],
@@ -458,6 +500,7 @@ class ExternalProductionAttestationTests(unittest.TestCase):
         return {
             "candidate_cache_packet_key": "command_center_3_candidate_radar_cache",
             "cache_write_task_id": "candidate-cache-write-1",
+            "candidate_cache_write_task_digest": "9" * 64,
             "universe_digest": "5" * 64,
             "candidate_row_count": 120,
             "browser_evidence_digest": "6" * 64,
