@@ -19,6 +19,8 @@ from fastapi.testclient import TestClient
 
 from server.main import app
 from server.services import external_production_attestation_service as external
+from server.services import external_production_consumer_service as phase2_consumers
+from server.services import full_market_worker_service
 from server.services import storage_service
 from server.services import tushare_task_service
 from storage.sqlite_meta import SQLiteMetaStore
@@ -55,6 +57,14 @@ class ExternalProductionAttestationTests(unittest.TestCase):
         )
         self.stack.enter_context(patch.object(storage_service, "SQLITE_META_PATH", self.db_path))
         self.stack.enter_context(patch.object(storage_service, "PARQUET_ROOT", self.root / "parquet"))
+        self.stack.enter_context(
+            patch.multiple(
+                phase2_consumers,
+                EVIDENCE_ROOT=self.root,
+                SQLITE_META_PATH=self.db_path,
+                PARQUET_ROOT=self.root / "parquet",
+            )
+        )
 
     def tearDown(self) -> None:
         self.stack.close()
@@ -166,6 +176,125 @@ class ExternalProductionAttestationTests(unittest.TestCase):
                 "signature_sha256": hashlib.sha256(signature).hexdigest(),
             }
         )
+
+    def _install_phase2_source(
+        self,
+        consumer: str,
+        *,
+        wrong_dataset: bool = False,
+        generation_number: int = 1,
+    ) -> dict:
+        generation = (
+            f"worker-generation-{generation_number}"
+            if consumer == "radar"
+            else f"{consumer}-generation-{generation_number}"
+        )
+        dataset = (
+            full_market_worker_service.FACTOR_RESULT_DATASET
+            if consumer == "factor"
+            else full_market_worker_service.RESULT_DATASET
+        )
+        artifact = self.root / "parquet" / dataset / "versions" / f"{generation}.parquet"
+        artifact.parent.mkdir(parents=True, exist_ok=True)
+        artifact.write_bytes(
+            f"{'worker' if consumer == 'radar' else consumer}:{generation}:immutable-artifact".encode(
+                "utf-8"
+            )
+        )
+        artifact_digest = hashlib.sha256(artifact.read_bytes()).hexdigest()
+        pointer = {
+            "schema_version": "stock_ming_versioned_parquet_pointer.v1",
+            "dataset": dataset,
+            "version_id": generation,
+            "artifact_relpath": str(artifact.relative_to(self.root / "parquet")),
+            "artifact_sha256": artifact_digest,
+            "row_count": 3000 if consumer == "factor" else 8,
+            "columns": ["ts_code"],
+            "lineage": {"generation": generation},
+            "contains_secret": False,
+        }
+        pointer_root = self.root / "parquet" / dataset
+        (pointer_root / "current.json").write_text(json.dumps(pointer), encoding="utf-8")
+        (pointer_root / "last_good.json").write_text(
+            json.dumps({**pointer, "pointer_kind": "last_good"}),
+            encoding="utf-8",
+        )
+        scope_hash = hashlib.sha256(f"scope:{consumer}".encode()).hexdigest()
+        run_id = f"{consumer}-run-{generation_number}"
+        if consumer == "worker":
+            packet = {
+                "acceptance_run_id": run_id,
+                "provider_scope_hash": scope_hash,
+                "result_dataset": "wrong_dataset" if wrong_dataset else dataset,
+                "result_version_id": generation,
+                "result_artifact_sha256": artifact_digest,
+                "result_row_count": 8,
+                "transport_attestation_digest": "1" * 64,
+                "celery_task_ids": ["celery-1", "celery-2"],
+                "worker_task_ids": ["worker-1", "worker-2"],
+                "batch_count": 2,
+                "production_worker_complete": True,
+            }
+        elif consumer == "factor":
+            packet = {
+                "acceptance_run_id": run_id,
+                "provider_scope_hash": scope_hash,
+                "result_dataset": "wrong_dataset" if wrong_dataset else dataset,
+                "result_version_id": generation,
+                "result_artifact_sha256": artifact_digest,
+                "universe_digest": "2" * 64,
+                "universe_count": 3000,
+                "neutralization_audit_digest": "3" * 64,
+                "full_market_factor_research": True,
+            }
+        else:
+            binding = {
+                "cache_write_task_id": "radar-cache-write-1",
+                "source_result_dataset": "wrong_dataset" if wrong_dataset else dataset,
+                "source_result_version_id": generation,
+                "source_result_artifact_sha256": artifact_digest,
+                "universe_digest": "4" * 64,
+                "candidate_row_count": 8,
+                "browser_visual_evidence_digest": "5" * 64,
+                "browser_performance_evidence_digest": "6" * 64,
+                "legacy_retirement_evidence_digest": "7" * 64,
+            }
+            binding["binding_digest"] = phase2_consumers._digest(binding)
+            packet = {
+                "packet_key": "command_center_3_candidate_radar_cache",
+                "full_market_worker_replacement": binding,
+            }
+        config = phase2_consumers._CONFIG[consumer]
+        store = SQLiteMetaStore(self.db_path)
+        store.write_packet(config["current_key"], packet)
+        store.write_packet(config["source_last_good_key"], dict(packet))
+        return phase2_consumers.build_consumer_attestation_material(consumer)
+
+    def _phase2_envelope(
+        self,
+        consumer: str,
+        counter: int,
+        previous: str,
+        *,
+        head_full: str | None = None,
+    ) -> dict:
+        material = phase2_consumers.build_consumer_attestation_material(consumer)
+        envelope = self._envelope(
+            str(material["attestation_kind"]),
+            str(material["subject"]),
+            counter,
+            previous,
+            claims=dict(material["claims"]),
+            head_full=head_full,
+        )
+        envelope["statement"].update(
+            {
+                "task_id": material["task_id"],
+                "scope_hash": material["scope_hash"],
+                "artifact_digest": material["artifact_digest"],
+            }
+        )
+        return self._resign(envelope)
 
     def _install_external_proof(
         self,
@@ -1178,6 +1307,206 @@ class ExternalProductionAttestationTests(unittest.TestCase):
         self.assertFalse(accepted.json()["data"]["ready"])
         self.assertTrue(accepted.json()["data"]["local_integrity_ready"])
         self.assertFalse(accepted.json()["data"]["production_trusted"])
+
+    def test_phase2_consumers_bind_exact_sources_and_gets_are_zero_write(self) -> None:
+        previous = ""
+        promoted: dict[str, dict] = {}
+        for counter, consumer in enumerate(("worker", "factor", "radar"), start=1):
+            material = self._install_phase2_source(consumer)
+            self.assertTrue(material["ready"])
+            self.assertFalse(phase2_consumers.validate_consumer(consumer)["ready"])
+            envelope = self._phase2_envelope(consumer, counter, previous)
+            self._install_external_proof(envelope)
+            result = phase2_consumers.import_and_promote_consumer(
+                consumer, {"signed_envelope": envelope}
+            )
+            self.assertTrue(result["ready"], result)
+            self.assertTrue(result["promotion_written"])
+            self.assertTrue(result["snapshot_rollback_resistant"])
+            self.assertTrue(result["current_pointer"]["immutable"])
+            self.assertTrue(result["last_good_pointer"]["immutable"])
+            self.assertEqual(
+                result["last_good_pointer"]["consumer_packet_digest"],
+                phase2_consumers._digest(
+                    result["last_good_pointer"]["consumer_packet"]
+                ),
+            )
+            promoted[consumer] = result
+            previous = str(result["current_pointer"]["attestation_id"])
+
+        status = phase2_consumers.read_phase2_status()
+        self.assertTrue(status["ready"])
+        self.assertEqual(status["ready_count"], 3)
+        before = self.db_path.read_bytes()
+        client = TestClient(app)
+        self.assertEqual(
+            client.get("/api/audit/external-production-consumers").status_code,
+            200,
+        )
+        self.assertEqual(
+            client.get(
+                "/api/audit/external-production-consumers/worker/attestation-material"
+            ).status_code,
+            200,
+        )
+        self.assertEqual(before, self.db_path.read_bytes())
+
+        local_worker = {
+            "ready": True,
+            "status": "local_worker_verified",
+            "full_market_worker_runtime": True,
+            "celery_redis_runtime": True,
+            "authoritative_candidate_cache_replacement": True,
+            "blockers": [],
+            "candidate_radar_replacement_blockers": [],
+        }
+        with patch.object(
+            full_market_worker_service,
+            "_validate_full_market_worker_local_fact",
+            return_value=local_worker,
+        ), patch.object(
+            phase2_consumers,
+            "validate_consumer",
+            side_effect=lambda consumer, **_: promoted[consumer],
+        ):
+            worker = full_market_worker_service.validate_full_market_worker_production_fact(
+                self.root
+            )
+        self.assertTrue(worker["ready"], worker)
+        self.assertTrue(worker["candidate_radar_production_replacement"])
+        self.assertTrue(worker["local_runtime_fact_ready"])
+        self.assertTrue(worker["production_trusted"])
+
+        with patch.object(
+            full_market_worker_service,
+            "_validate_factor_full_market_local_fact",
+            return_value={"ready": True, "status": "local_factor_verified", "blockers": []},
+        ), patch.object(
+            phase2_consumers,
+            "validate_consumer",
+            return_value=promoted["factor"],
+        ):
+            factor = full_market_worker_service.validate_factor_full_market_research_fact(
+                self.root
+            )
+        self.assertTrue(factor["ready"])
+        self.assertTrue(factor["local_full_market_factor_research"])
+        self.assertTrue(factor["production_trusted"])
+
+    def test_phase2_atomic_failure_partial_state_and_missing_anchor_fail_closed(self) -> None:
+        self._install_phase2_source("worker")
+        envelope = self._phase2_envelope("worker", 1, "")
+        self._install_external_proof(envelope)
+        with patch.object(
+            phase2_consumers,
+            "_write_packets_atomic",
+            side_effect=RuntimeError("injected-before-commit"),
+        ):
+            failed = phase2_consumers.import_and_promote_consumer(
+                "worker", {"signed_envelope": envelope}
+            )
+        self.assertFalse(failed["ready"])
+        self.assertFalse(failed["writes_performed"])
+        store = SQLiteMetaStore(self.db_path, read_only=True)
+        consumer_key, current_key, _ = phase2_consumers._consumer_keys("worker")
+        self.assertIsNone(store.read_packet(external.REGISTRY_PACKET_KEY))
+        self.assertIsNone(store.read_packet(consumer_key))
+
+        promoted = phase2_consumers.import_and_promote_consumer(
+            "worker", {"signed_envelope": envelope}
+        )
+        self.assertTrue(promoted["ready"], promoted)
+        with sqlite3.connect(self.db_path) as connection:
+            connection.execute("DELETE FROM packets WHERE packet_key = ?", (current_key,))
+        partial = phase2_consumers.validate_consumer("worker")
+        self.assertFalse(partial["ready"])
+        self.assertIn("external_consumer_atomic_current_last_good_missing", partial["blockers"])
+
+        repaired = phase2_consumers.import_and_promote_consumer(
+            "worker", {"signed_envelope": envelope}
+        )
+        self.assertTrue(repaired["ready"], repaired)
+        self.trust_root.chmod(0o755)
+        self.anchor_path.unlink()
+        self.trust_root.chmod(0o555)
+        missing_anchor = phase2_consumers.validate_consumer("worker")
+        self.assertFalse(missing_anchor["ready"])
+        self.assertFalse(missing_anchor["production_trusted"])
+
+    def test_phase2_wrong_dataset_and_old_head_never_write(self) -> None:
+        wrong_factor = self._install_phase2_source("factor", wrong_dataset=True)
+        self.assertFalse(wrong_factor["ready"])
+        blocked = phase2_consumers.import_and_promote_consumer("factor", {})
+        self.assertFalse(blocked["ready"])
+        self.assertFalse(blocked["writes_performed"])
+
+        self._install_phase2_source("worker")
+        old_head = "a" * 40
+        envelope = self._phase2_envelope("worker", 1, "", head_full=old_head)
+        self._install_external_proof(envelope, epoch_head=old_head)
+        rejected = phase2_consumers.import_and_promote_consumer(
+            "worker", {"signed_envelope": envelope}
+        )
+        self.assertFalse(rejected["ready"])
+        self.assertFalse(rejected["writes_performed"])
+        consumer_key, _, _ = phase2_consumers._consumer_keys("worker")
+        self.assertIsNone(SQLiteMetaStore(self.db_path, read_only=True).read_packet(consumer_key))
+
+    def test_phase2_registry_rollback_never_validates(self) -> None:
+        self._install_phase2_source("worker")
+        first_envelope = self._phase2_envelope("worker", 1, "")
+        self._install_external_proof(first_envelope)
+        first = phase2_consumers.import_and_promote_consumer(
+            "worker", {"signed_envelope": first_envelope}
+        )
+        self.assertTrue(first["ready"], first)
+        store = SQLiteMetaStore(self.db_path)
+        registry_snapshot = store.read_packet(external.REGISTRY_PACKET_KEY)
+
+        self._install_phase2_source("factor")
+        second_envelope = self._phase2_envelope(
+            "factor", 2, str(first["current_pointer"]["attestation_id"])
+        )
+        self._install_external_proof(second_envelope)
+        second = phase2_consumers.import_and_promote_consumer(
+            "factor", {"signed_envelope": second_envelope}
+        )
+        self.assertTrue(second["ready"], second)
+        store.write_packet(external.REGISTRY_PACKET_KEY, registry_snapshot)
+        rollback = phase2_consumers.validate_consumer("factor")
+        self.assertFalse(rollback["ready"])
+        self.assertFalse(rollback["snapshot_rollback_resistant"])
+        self.assertFalse(rollback["production_trusted"])
+
+    def test_phase2_same_consumer_promotion_preserves_immutable_last_good(self) -> None:
+        self._install_phase2_source("worker", generation_number=1)
+        first_envelope = self._phase2_envelope("worker", 1, "")
+        self._install_external_proof(first_envelope)
+        first = phase2_consumers.import_and_promote_consumer(
+            "worker", {"signed_envelope": first_envelope}
+        )
+        self.assertTrue(first["ready"], first)
+
+        self._install_phase2_source("worker", generation_number=2)
+        second_envelope = self._phase2_envelope(
+            "worker", 2, str(first["current_pointer"]["attestation_id"])
+        )
+        self._install_external_proof(second_envelope)
+        second = phase2_consumers.import_and_promote_consumer(
+            "worker", {"signed_envelope": second_envelope}
+        )
+        self.assertTrue(second["ready"], second)
+        self.assertEqual(second["current_pointer"]["generation"], "worker-generation-2")
+        self.assertEqual(
+            second["last_good_pointer"]["attestation_id"],
+            first["current_pointer"]["attestation_id"],
+        )
+        self.assertEqual(
+            second["last_good_pointer"]["consumer_packet_digest"],
+            phase2_consumers._digest(
+                second["last_good_pointer"]["consumer_packet"]
+            ),
+        )
 
 
 if __name__ == "__main__":

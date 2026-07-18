@@ -2672,7 +2672,7 @@ def _promote_official_candidate_results(
         journal = _update_promotion_journal(journal, "pending_packet_written")
     except Exception:
         return _rollback_response("full_market_worker_pending_packet_journal_update_failed_rolled_back")
-    candidate_fact = validate_full_market_worker_production_fact(
+    candidate_fact = _validate_full_market_worker_local_fact(
         EVIDENCE_ROOT,
         _candidate_packet=pending_packet,
     )
@@ -2711,7 +2711,7 @@ def _promote_official_candidate_results(
         journal = _update_promotion_journal(journal, "completed")
     except Exception:
         return _rollback_response("full_market_worker_promotion_journal_finalize_failed_rolled_back")
-    fact = validate_full_market_worker_production_fact(EVIDENCE_ROOT)
+    fact = _validate_full_market_worker_local_fact(EVIDENCE_ROOT)
     if not (
         persisted.get("production_binding_digest") == final_packet["production_binding_digest"]
         and persisted_good.get("production_binding_digest") == final_packet["production_binding_digest"]
@@ -3043,7 +3043,7 @@ def _factor_output_binding_digest(packet: Mapping[str, Any]) -> str:
     )
 
 
-def validate_factor_full_market_research_fact(evidence_root: Path) -> dict[str, Any]:
+def _validate_factor_full_market_local_fact(evidence_root: Path) -> dict[str, Any]:
     """Validate the independent LTG-04 Factor worker output, fail closed.
 
     Candidate Radar scoring rows intentionally cannot satisfy this contract.  A
@@ -3248,7 +3248,7 @@ def validate_factor_full_market_research_fact(evidence_root: Path) -> dict[str, 
     }
 
 
-def validate_full_market_worker_production_fact(
+def _validate_full_market_worker_local_fact(
     evidence_root: Path,
     *,
     _candidate_packet: Mapping[str, Any] | None = None,
@@ -3625,6 +3625,97 @@ def validate_full_market_worker_production_fact(
         "external_calls_triggered": False,
         "does_not_execute_trades": True,
         "contains_secret": False,
+    }
+
+
+def validate_factor_full_market_research_fact(evidence_root: Path) -> dict[str, Any]:
+    """Expose local Factor facts separately; production requires Phase-2 trust."""
+
+    from . import external_production_consumer_service
+
+    local = _validate_factor_full_market_local_fact(evidence_root)
+    consumer = external_production_consumer_service.validate_consumer(
+        "factor",
+        evidence_root=evidence_root,
+    )
+    ready = bool(local.get("ready") is True and consumer.get("ready") is True)
+    blockers = list(local.get("blockers") or [])
+    if local.get("ready") is True and consumer.get("ready") is not True:
+        blockers.append("external_factor_production_consumer_missing_or_mismatch")
+    return {
+        **local,
+        "ready": ready,
+        "status": "factor_full_market_research_fact_verified"
+        if ready
+        else "factor_full_market_research_fact_blocked",
+        "full_market_factor_research": ready,
+        "local_full_market_factor_research": local.get("ready") is True,
+        "local_fact": local,
+        "external_production_consumer": consumer,
+        "production_trusted": ready,
+        "snapshot_rollback_resistant": ready,
+        "blockers": list(dict.fromkeys(blockers)),
+    }
+
+
+def validate_full_market_worker_production_fact(
+    evidence_root: Path,
+    *,
+    _candidate_packet: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Keep runtime facts visible but never promote old booleans without trust."""
+
+    if isinstance(_candidate_packet, Mapping):
+        return _validate_full_market_worker_local_fact(
+            evidence_root,
+            _candidate_packet=_candidate_packet,
+        )
+    from . import external_production_consumer_service
+
+    local = _validate_full_market_worker_local_fact(evidence_root)
+    worker_consumer = external_production_consumer_service.validate_consumer(
+        "worker",
+        evidence_root=evidence_root,
+    )
+    radar_consumer = external_production_consumer_service.validate_consumer(
+        "radar",
+        evidence_root=evidence_root,
+    )
+    ready = bool(local.get("ready") is True and worker_consumer.get("ready") is True)
+    radar_ready = bool(
+        ready
+        and local.get("authoritative_candidate_cache_replacement") is True
+        and radar_consumer.get("ready") is True
+    )
+    blockers = list(local.get("blockers") or [])
+    if local.get("ready") is True and worker_consumer.get("ready") is not True:
+        blockers.append("external_worker_production_consumer_missing_or_mismatch")
+    radar_blockers = list(local.get("candidate_radar_replacement_blockers") or [])
+    if (
+        local.get("authoritative_candidate_cache_replacement") is True
+        and radar_consumer.get("ready") is not True
+    ):
+        radar_blockers.append("external_radar_production_consumer_missing_or_mismatch")
+    return {
+        **local,
+        "ready": ready,
+        "status": "full_market_worker_production_fact_verified"
+        if ready
+        else "full_market_worker_production_fact_blocked",
+        "production_worker_complete": ready,
+        "full_market_worker_runtime": ready,
+        "celery_redis_runtime": ready,
+        "local_runtime_fact_ready": local.get("ready") is True,
+        "local_full_market_worker_runtime": local.get("full_market_worker_runtime") is True,
+        "local_celery_redis_runtime": local.get("celery_redis_runtime") is True,
+        "local_fact": local,
+        "external_production_consumer": worker_consumer,
+        "production_trusted": ready,
+        "snapshot_rollback_resistant": ready,
+        "candidate_radar_production_replacement": radar_ready,
+        "candidate_radar_external_production_consumer": radar_consumer,
+        "candidate_radar_replacement_blockers": list(dict.fromkeys(radar_blockers)),
+        "blockers": list(dict.fromkeys(blockers)),
     }
 
 

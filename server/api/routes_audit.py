@@ -3,7 +3,12 @@ from __future__ import annotations
 from fastapi import APIRouter
 
 from server.schemas.packets import cache_read_call_ledger, cache_read_packet, envelope
-from server.services import audit_service, external_production_attestation_service, release_promotion_service
+from server.services import (
+    audit_service,
+    external_production_attestation_service,
+    external_production_consumer_service,
+    release_promotion_service,
+)
 
 
 router = APIRouter(prefix="/api/audit")
@@ -69,6 +74,27 @@ def get_external_production_attestation() -> dict:
 @router.post("/external-production-attestation")
 def import_external_production_attestation(payload: dict | None = None) -> dict:
     packet = external_production_attestation_service.import_signed_attestation(payload)
+    return envelope(packet, call_ledger=[], warnings=[] if packet.get("ready") else [packet.get("status")])
+
+
+@router.get("/external-production-consumers")
+def get_external_production_consumers() -> dict:
+    packet = external_production_consumer_service.read_phase2_status()
+    return envelope(packet, call_ledger=[], warnings=[] if packet.get("ready") else [packet.get("status")])
+
+
+@router.get("/external-production-consumers/{consumer}/attestation-material")
+def get_external_production_consumer_attestation_material(consumer: str) -> dict:
+    packet = external_production_consumer_service.build_consumer_attestation_material(consumer)
+    return envelope(packet, call_ledger=[], warnings=[] if packet.get("ready") else [packet.get("status")])
+
+
+@router.post("/external-production-consumers/{consumer}/promote")
+def promote_external_production_consumer(consumer: str, payload: dict | None = None) -> dict:
+    packet = external_production_consumer_service.import_and_promote_consumer(
+        consumer,
+        payload,
+    )
     return envelope(packet, call_ledger=[], warnings=[] if packet.get("ready") else [packet.get("status")])
 
 
