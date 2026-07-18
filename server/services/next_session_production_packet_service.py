@@ -13,9 +13,10 @@ import math
 import re
 import sqlite3
 from collections.abc import Mapping
-from datetime import datetime
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from storage.sqlite_meta import SQLiteMetaStore
 
@@ -34,6 +35,9 @@ SCOPE = "ltg08_next_session_current_head_production_packet"
 _HEAD = re.compile(r"^[0-9a-f]{40}$")
 _SAFE_TASK_ID = re.compile(r"^[A-Za-z0-9_.:-]{1,160}$")
 _MIN_CLOSE_ROWS = 60
+_MAX_SOURCE_TASK_AGE = timedelta(hours=24)
+_MAX_TASK_RECEIPT_LAG = timedelta(minutes=5)
+_MAX_RECEIPT_WINDOW = timedelta(hours=6)
 _REQUIRED_COVERAGE_KEYS = {
     "latest_close_anchor",
     "scenario_paths",
@@ -72,6 +76,25 @@ def _date_text(value: object) -> str:
     except ValueError:
         return ""
     return text
+
+
+def _current_shanghai_date() -> date:
+    return datetime.now(ZoneInfo("Asia/Shanghai")).date()
+
+
+def _timestamp(value: object, *, assume_shanghai: bool = False) -> datetime | None:
+    text = str(value or "").strip()
+    if not text:
+        return None
+    try:
+        parsed = datetime.fromisoformat(text.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        if not assume_shanghai:
+            return None
+        parsed = parsed.replace(tzinfo=ZoneInfo("Asia/Shanghai"))
+    return parsed.astimezone(timezone.utc)
 
 
 def _read_packet_read_only(db_path: Path) -> dict[str, Any]:
@@ -179,6 +202,8 @@ def _authoritative_rows(
     trade_cal = frames.get("trade_cal")
     normalized_daily: list[dict[str, Any]] = []
     normalized_calendar: list[dict[str, Any]] = []
+    calendar_as_of_date = _current_shanghai_date().strftime("%Y%m%d")
+    authoritative_current_trade_date = ""
     try:
         selected = daily.loc[
             daily["ts_code"].astype(str).str.upper() == symbol,
@@ -210,6 +235,22 @@ def _authoritative_rows(
             ),
             key=lambda row: row["cal_date"],
         )
+        full_calendar = [
+            {
+                "cal_date": _date_text(row["cal_date"]),
+                "is_open": int(row["is_open"]),
+            }
+            for row in trade_cal[["cal_date", "is_open"]].to_dict("records")
+        ]
+        calendar_dates = [row["cal_date"] for row in full_calendar if row["cal_date"]]
+        open_dates = [
+            row["cal_date"]
+            for row in full_calendar
+            if row["cal_date"] <= calendar_as_of_date and row["is_open"] == 1
+        ]
+        if not calendar_dates or max(calendar_dates) < calendar_as_of_date:
+            blockers.append("next_session_production_calendar_not_current")
+        authoritative_current_trade_date = max(open_dates) if open_dates else ""
     except Exception:
         blockers.append("next_session_production_dataset_frames_invalid")
         normalized_daily = []
@@ -221,6 +262,24 @@ def _authoritative_rows(
         blockers.append("next_session_production_trade_calendar_binding_invalid")
     if not dates or dates[-1] != str(verified.get("validated_trade_date") or ""):
         blockers.append("next_session_production_data_date_not_current")
+    if authoritative_current_trade_date != str(verified.get("validated_trade_date") or ""):
+        blockers.append("next_session_production_validated_trade_date_stale")
+    task_finished_at = str(source_task.get("finished_at") or "")
+    receipt_observed_at = str(verified.get("official_receipt_observed_at_utc") or "")
+    receipt_completed_at = str(verified.get("official_receipt_completed_at_utc") or "")
+    finished_time = _timestamp(task_finished_at, assume_shanghai=True)
+    observed_time = _timestamp(receipt_observed_at)
+    completed_time = _timestamp(receipt_completed_at)
+    now = datetime.now(timezone.utc)
+    if not (finished_time and observed_time and completed_time):
+        blockers.append("next_session_production_freshness_timestamps_missing")
+    elif not (
+        observed_time <= completed_time <= finished_time <= now + timedelta(minutes=1)
+        and completed_time - observed_time <= _MAX_RECEIPT_WINDOW
+        and finished_time - completed_time <= _MAX_TASK_RECEIPT_LAG
+        and now - finished_time <= _MAX_SOURCE_TASK_AGE
+    ):
+        blockers.append("next_session_production_source_task_or_receipt_stale")
     authoritative = {
         "symbol": symbol,
         "data_date": dates[-1] if dates else "",
@@ -232,6 +291,11 @@ def _authoritative_rows(
         "official_execution_event_digest": str(
             verified.get("official_execution_event_digest") or ""
         ),
+        "source_task_finished_at": task_finished_at,
+        "provider_receipt_observed_at_utc": receipt_observed_at,
+        "provider_receipt_completed_at_utc": receipt_completed_at,
+        "authoritative_calendar_as_of_date": calendar_as_of_date,
+        "authoritative_current_trade_date": authoritative_current_trade_date,
     }
     source_call_ledger_digest = _digest(source_task.get("call_ledger") or [])
     if not authoritative["source_task_call_ledger_digest"]:
@@ -409,25 +473,38 @@ def produce_next_session_production_packet(
     try:
         receipt = SQLiteMetaStore(db_path).promote_packet_atomic(PACKET_KEY, produced)
     except Exception:
-        return _blocked(head_full, ["next_session_production_packet_atomic_write_failed"])
+        receipt = {}
+        if _read_packet_read_only(db_path) != produced:
+            return _blocked(
+                head_full,
+                ["next_session_production_packet_atomic_write_failed_readback_mismatch"],
+            )
+        postcommit_reconciled = True
+    else:
+        postcommit_reconciled = False
+    expected_atomic_digest = hashlib.sha256(
+        json.dumps(
+            produced,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+            default=str,
+        ).encode("utf-8")
+    ).hexdigest()
     if not (
-        receipt.get("transaction_committed") is True
-        and receipt.get("readback_verified_before_commit") is True
-        and receipt.get("payload_digest")
-        == hashlib.sha256(
-            json.dumps(
-                produced,
-                ensure_ascii=False,
-                sort_keys=True,
-                separators=(",", ":"),
-                default=str,
-            ).encode("utf-8")
-        ).hexdigest()
+        postcommit_reconciled
+        or (
+            receipt.get("transaction_committed") is True
+            and receipt.get("readback_verified_before_commit") is True
+            and receipt.get("payload_digest") == expected_atomic_digest
+        )
     ):
-        return {
-            **_blocked(head_full, ["next_session_production_packet_commit_receipt_invalid"]),
-            "packet_written": True,
-        }
+        if _read_packet_read_only(db_path) != produced:
+            return _blocked(
+                head_full,
+                ["next_session_production_packet_commit_receipt_invalid_readback_mismatch"],
+            )
+        postcommit_reconciled = True
     return {
         "schema_version": PRODUCER_SCHEMA,
         "status": "next_session_production_packet_written_current_head",
@@ -442,7 +519,8 @@ def produce_next_session_production_packet(
         "dataset_version_digest": authoritative["dataset_version_digest"],
         "daily_rows_digest": authoritative["daily_rows_digest"],
         "trade_calendar_digest": authoritative["trade_calendar_digest"],
-        "atomic_payload_digest": receipt.get("payload_digest") or "",
+        "atomic_payload_digest": receipt.get("payload_digest") or expected_atomic_digest,
+        "postcommit_reconciled": postcommit_reconciled,
         "blockers": [],
         "explicit_post_required": True,
         "external_calls_triggered": False,

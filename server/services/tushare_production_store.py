@@ -686,6 +686,22 @@ def validate_tushare_full_market_production_version(
             ).get("execution_event_digest")
             or ""
         ),
+        "official_receipt_observed_at_utc": str(
+            (
+                result.get("manifest", {}).get("official_run_receipt", {})
+                if isinstance(result.get("manifest"), Mapping)
+                else {}
+            ).get("observed_at_utc")
+            or ""
+        ),
+        "official_receipt_completed_at_utc": str(
+            (
+                result.get("manifest", {}).get("official_run_receipt", {})
+                if isinstance(result.get("manifest"), Mapping)
+                else {}
+            ).get("completed_at_utc")
+            or ""
+        ),
     }
     if include_frames and shared["ready"]:
         import pyarrow.parquet as pq

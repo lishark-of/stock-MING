@@ -136,6 +136,10 @@ def _dataset_and_task() -> tuple[dict, dict]:
             "does_not_modify_strategy_action": True,
         }
     ]
+    now = datetime.now(timezone.utc).replace(microsecond=0)
+    receipt_observed = (now - timedelta(minutes=2)).isoformat().replace("+00:00", "Z")
+    receipt_completed = (now - timedelta(minutes=1)).isoformat().replace("+00:00", "Z")
+    task_finished = now.isoformat().replace("+00:00", "Z")
     verified = {
         "ready": True,
         "blockers": [],
@@ -144,6 +148,8 @@ def _dataset_and_task() -> tuple[dict, dict]:
         "validated_trade_date": dates[-1],
         "official_call_ledger_digest": producer._digest(call_ledger),
         "official_execution_event_digest": "d" * 64,
+        "official_receipt_observed_at_utc": receipt_observed,
+        "official_receipt_completed_at_utc": receipt_completed,
         "symbols": ["000001.SZ"],
         "frames": {
             "daily": pd.DataFrame(daily_rows),
@@ -158,6 +164,7 @@ def _dataset_and_task() -> tuple[dict, dict]:
         "output_packet_key": "command_center_tushare_refresh_packet",
         "payload_safe": {"acceptance_mode": "full_interface_provider_production"},
         "call_ledger": call_ledger,
+        "finished_at": task_finished,
         "external_calls_triggered": True,
         "tushare_called": True,
         "does_not_execute_trades": True,
@@ -183,6 +190,13 @@ class NextSessionProductionPacketProducerTests(unittest.TestCase):
     def test_explicit_post_producer_binds_current_history_dataset_and_coverage(self) -> None:
         with (
             patch.object(replacement, "_current_head", return_value=HEAD),
+            patch.object(
+                producer,
+                "_current_shanghai_date",
+                return_value=datetime.strptime(
+                    self.verified["validated_trade_date"], "%Y%m%d"
+                ).date(),
+            ),
             patch.object(
                 producer.tushare_production_store,
                 "validate_tushare_full_market_production_version",
@@ -217,6 +231,19 @@ class NextSessionProductionPacketProducerTests(unittest.TestCase):
             "trade_calendar_digest": provenance["trade_calendar_digest"],
             "source_task_call_ledger_digest": provenance["source_task_call_ledger_digest"],
             "official_execution_event_digest": provenance["official_execution_event_digest"],
+            "source_task_finished_at": provenance["source_task_finished_at"],
+            "provider_receipt_observed_at_utc": provenance[
+                "provider_receipt_observed_at_utc"
+            ],
+            "provider_receipt_completed_at_utc": provenance[
+                "provider_receipt_completed_at_utc"
+            ],
+            "authoritative_calendar_as_of_date": provenance[
+                "authoritative_calendar_as_of_date"
+            ],
+            "authoritative_current_trade_date": provenance[
+                "authoritative_current_trade_date"
+            ],
             "validated_trade_date": provenance["data_date"],
             "row_count": 60,
         }
@@ -256,6 +283,13 @@ class NextSessionProductionPacketProducerTests(unittest.TestCase):
         with (
             patch.object(replacement, "_current_head", return_value=HEAD),
             patch.object(
+                producer,
+                "_current_shanghai_date",
+                return_value=datetime.strptime(
+                    self.verified["validated_trade_date"], "%Y%m%d"
+                ).date(),
+            ),
+            patch.object(
                 producer.tushare_production_store,
                 "validate_tushare_full_market_production_version",
                 return_value=self.verified,
@@ -273,6 +307,140 @@ class NextSessionProductionPacketProducerTests(unittest.TestCase):
             SQLiteMetaStore(self.db, read_only=True).read_packet(producer.PACKET_KEY),
             before,
         )
+
+    def test_packet_postcommit_exception_reconciles_exact_readback(self) -> None:
+        original = SQLiteMetaStore.promote_packet_atomic
+
+        def commit_then_raise(store: SQLiteMetaStore, packet_key: str, packet: dict) -> dict:
+            original(store, packet_key, packet)
+            raise OSError("injected_postcommit_response_loss")
+
+        with (
+            patch.object(replacement, "_current_head", return_value=HEAD),
+            patch.object(
+                producer,
+                "_current_shanghai_date",
+                return_value=datetime.strptime(
+                    self.verified["validated_trade_date"], "%Y%m%d"
+                ).date(),
+            ),
+            patch.object(
+                producer.tushare_production_store,
+                "validate_tushare_full_market_production_version",
+                return_value=self.verified,
+            ),
+            patch.object(SQLiteMetaStore, "promote_packet_atomic", new=commit_then_raise),
+        ):
+            result = producer.produce_next_session_production_packet(
+                {"source_task_id": self.task["task_id"]},
+                evidence_root=self.root,
+                project_root=self.base,
+                sqlite_path=self.db,
+            )
+        self.assertTrue(result["packet_written"], result["blockers"])
+        self.assertTrue(result["postcommit_reconciled"])
+
+    def test_packet_postcommit_mismatch_fails_closed(self) -> None:
+        original = SQLiteMetaStore.promote_packet_atomic
+
+        def mismatch_then_raise(store: SQLiteMetaStore, packet_key: str, packet: dict) -> dict:
+            original(store, packet_key, {**packet, "result_version": "forged-postcommit"})
+            raise OSError("injected_partial_or_mismatched_commit")
+
+        with (
+            patch.object(replacement, "_current_head", return_value=HEAD),
+            patch.object(
+                producer,
+                "_current_shanghai_date",
+                return_value=datetime.strptime(
+                    self.verified["validated_trade_date"], "%Y%m%d"
+                ).date(),
+            ),
+            patch.object(
+                producer.tushare_production_store,
+                "validate_tushare_full_market_production_version",
+                return_value=self.verified,
+            ),
+            patch.object(SQLiteMetaStore, "promote_packet_atomic", new=mismatch_then_raise),
+        ):
+            result = producer.produce_next_session_production_packet(
+                {"source_task_id": self.task["task_id"]},
+                evidence_root=self.root,
+                project_root=self.base,
+                sqlite_path=self.db,
+            )
+        self.assertFalse(result["packet_written"])
+        self.assertIn(
+            "next_session_production_packet_atomic_write_failed_readback_mismatch",
+            result["blockers"],
+        )
+
+    def test_stale_or_missing_task_receipt_freshness_fails_closed(self) -> None:
+        stale = datetime.now(timezone.utc).replace(microsecond=0) - timedelta(days=30)
+        for missing in (False, True):
+            with self.subTest(missing=missing):
+                task = dict(self.task)
+                task["finished_at"] = "" if missing else stale.isoformat().replace("+00:00", "Z")
+                self.store.write_task_status(task)
+                verified = dict(self.verified)
+                verified["official_receipt_observed_at_utc"] = (
+                    "" if missing else (stale - timedelta(minutes=2)).isoformat().replace("+00:00", "Z")
+                )
+                verified["official_receipt_completed_at_utc"] = (
+                    "" if missing else (stale - timedelta(minutes=1)).isoformat().replace("+00:00", "Z")
+                )
+                with (
+                    patch.object(replacement, "_current_head", return_value=HEAD),
+                    patch.object(
+                        producer,
+                        "_current_shanghai_date",
+                        return_value=datetime.strptime(
+                            verified["validated_trade_date"], "%Y%m%d"
+                        ).date(),
+                    ),
+                    patch.object(
+                        producer.tushare_production_store,
+                        "validate_tushare_full_market_production_version",
+                        return_value=verified,
+                    ),
+                ):
+                    result = producer.produce_next_session_production_packet(
+                        {"source_task_id": task["task_id"]},
+                        evidence_root=self.root,
+                        project_root=self.base,
+                        sqlite_path=self.db,
+                    )
+                self.assertFalse(result["packet_written"])
+                expected = (
+                    "next_session_production_freshness_timestamps_missing"
+                    if missing
+                    else "next_session_production_source_task_or_receipt_stale"
+                )
+                self.assertIn(expected, result["blockers"])
+
+    def test_months_old_dataset_cannot_be_current_production_packet(self) -> None:
+        data_date = datetime.strptime(self.verified["validated_trade_date"], "%Y%m%d").date()
+        with (
+            patch.object(replacement, "_current_head", return_value=HEAD),
+            patch.object(
+                producer,
+                "_current_shanghai_date",
+                return_value=data_date + timedelta(days=90),
+            ),
+            patch.object(
+                producer.tushare_production_store,
+                "validate_tushare_full_market_production_version",
+                return_value=self.verified,
+            ),
+        ):
+            result = producer.produce_next_session_production_packet(
+                {"source_task_id": self.task["task_id"]},
+                evidence_root=self.root,
+                project_root=self.base,
+                sqlite_path=self.db,
+            )
+        self.assertFalse(result["packet_written"])
+        self.assertIn("next_session_production_calendar_not_current", result["blockers"])
 
 
 class NextSessionExternalPromotionTests(unittest.TestCase):
@@ -343,9 +511,16 @@ class NextSessionExternalPromotionTests(unittest.TestCase):
             "signature_base64": base64.b64encode(signature).decode("ascii"),
         }
 
-    def _write_external_pair(self, *, nonce: str, sequence_no: int = 1, previous: str = "") -> tuple[dict, dict]:
+    def _write_external_pair(
+        self,
+        *,
+        nonce: str,
+        sequence_no: int = 1,
+        previous: str = "",
+        issued: datetime | None = None,
+    ) -> tuple[dict, dict]:
         proposal = external_promotion.build_proposal(self.prerequisites, self.evidence)
-        issued = datetime.now(timezone.utc).replace(microsecond=0)
+        issued = issued or datetime.now(timezone.utc).replace(microsecond=0)
         approval = {
             "schema_version": external_promotion.APPROVAL_STATEMENT_SCHEMA,
             "status": "next_session_replacement_approved",
@@ -474,6 +649,61 @@ class NextSessionExternalPromotionTests(unittest.TestCase):
         )
         self.assertFalse(result["promotion_written"])
         self.assertFalse(self.evidence.exists())
+
+    def test_wrong_key_old_head_and_expired_authority_fail_closed(self) -> None:
+        trusted_private_key = self.private_key
+        self.private_key = Ed25519PrivateKey.generate()
+        self._write_external_pair(nonce="9" * 64)
+        wrong_key = external_promotion.append_promotion_event(
+            {"approved_by_user": True}, self.prerequisites, evidence_root=self.evidence
+        )
+        self.assertFalse(wrong_key["promotion_written"])
+        self.assertIn("external_envelope_signature_invalid", wrong_key["blockers"])
+
+        self.private_key = trusted_private_key
+        self._write_external_pair(nonce="a" * 64)
+        new_prerequisites = json.loads(json.dumps(self.prerequisites))
+        new_prerequisites["head_full"] = "b" * 40
+        new_prerequisites["material"]["head_full"] = "b" * 40
+        new_prerequisites["semantic_digest"] = external_promotion._digest(
+            new_prerequisites["material"]
+        )
+        old_head = external_promotion.append_promotion_event(
+            {"approved_by_user": True}, new_prerequisites, evidence_root=self.evidence
+        )
+        self.assertFalse(old_head["promotion_written"])
+        self.assertIn("external_next_session_approval_contract_invalid", old_head["blockers"])
+
+        self._write_external_pair(
+            nonce="b" * 64,
+            issued=datetime.now(timezone.utc).replace(microsecond=0) - timedelta(minutes=30),
+        )
+        expired = external_promotion.append_promotion_event(
+            {"approved_by_user": True}, self.prerequisites, evidence_root=self.evidence
+        )
+        self.assertFalse(expired["promotion_written"])
+        self.assertIn("external_next_session_approval_expired_or_not_yet_valid", expired["blockers"])
+
+    def test_link_commit_cleanup_exception_reconciles_truthfully(self) -> None:
+        self._write_external_pair(nonce="c" * 64)
+        original_unlink = Path.unlink
+
+        def fail_temp_cleanup(path: Path, *args: object, **kwargs: object) -> None:
+            if path.name.startswith(".00000001.json.") and path.name.endswith(".tmp"):
+                raise OSError("injected_cleanup_failure")
+            original_unlink(path, *args, **kwargs)
+
+        with patch.object(Path, "unlink", new=fail_temp_cleanup):
+            written = external_promotion.append_promotion_event(
+                {"approved_by_user": True}, self.prerequisites, evidence_root=self.evidence
+            )
+        self.assertTrue(written["promotion_written"], written["blockers"])
+        self.assertTrue(written["ready"])
+        self.assertTrue(written["postcommit_reconciled"])
+        validated = external_promotion.validate_current_promotion(
+            self.prerequisites, evidence_root=self.evidence
+        )
+        self.assertTrue(validated["ready"], validated["blockers"])
 
 
 if __name__ == "__main__":

@@ -560,6 +560,103 @@ def validate_current_promotion(
     }
 
 
+def _reconcile_event_commit(
+    event_path: Path,
+    event: Mapping[str, Any],
+    prerequisites: Mapping[str, Any],
+    *,
+    evidence_root: Path,
+    write_error: bool,
+) -> dict[str, Any]:
+    """Return success only when the exact committed event is current and valid."""
+
+    readback, _metadata = _read_local_event(event_path)
+    if readback != dict(event):
+        # A hard-link commit can succeed before temporary-link cleanup fails.
+        # Verify those exact bytes without trusting the extra link, then replace
+        # only the formal path with a fresh single-link inode containing the
+        # same canonical event.  The orphan remains outside the event set.
+        try:
+            metadata = event_path.lstat()
+            descriptor = os.open(
+                event_path,
+                os.O_RDONLY
+                | int(getattr(os, "O_CLOEXEC", 0))
+                | int(getattr(os, "O_NOFOLLOW", 0)),
+            )
+            try:
+                raw = os.read(descriptor, metadata.st_size + 1)
+            finally:
+                os.close(descriptor)
+            raw_value = json.loads(raw)
+            if not (
+                stat.S_ISREG(metadata.st_mode)
+                and not stat.S_ISLNK(metadata.st_mode)
+                and stat.S_IMODE(metadata.st_mode) == 0o600
+                and metadata.st_uid == os.getuid()
+                and metadata.st_nlink > 1
+                and raw_value == dict(event)
+            ):
+                raise OSError("postcommit_event_not_exact")
+            repair = event_path.parent.parent / f".reconcile.{uuid.uuid4().hex}.tmp"
+            repair_descriptor = os.open(
+                repair,
+                os.O_WRONLY
+                | os.O_CREAT
+                | os.O_EXCL
+                | int(getattr(os, "O_CLOEXEC", 0))
+                | int(getattr(os, "O_NOFOLLOW", 0)),
+                0o600,
+            )
+            try:
+                data = _canonical_bytes(event) + b"\n"
+                offset = 0
+                while offset < len(data):
+                    offset += os.write(repair_descriptor, data[offset:])
+                os.fsync(repair_descriptor)
+            finally:
+                os.close(repair_descriptor)
+            os.replace(repair, event_path)
+            readback, _metadata = _read_local_event(event_path)
+        except (OSError, ValueError, json.JSONDecodeError):
+            readback = {}
+    if readback != dict(event):
+        return {
+            "ready": False,
+            "status": "next_session_production_replacement_event_write_failed",
+            "promotion_written": False,
+            "blockers": [
+                "next_session_promotion_event_postcommit_readback_mismatch"
+                if event_path.exists()
+                else "next_session_promotion_event_exclusive_write_failed"
+            ],
+        }
+    validated = validate_current_promotion(prerequisites, evidence_root=evidence_root)
+    if not (
+        validated.get("ready") is True
+        and validated.get("event", {}).get("event_id") == event.get("event_id")
+    ):
+        return {
+            **validated,
+            "ready": False,
+            "promotion_written": False,
+            "blockers": sorted(
+                set(
+                    [
+                        *(validated.get("blockers") or []),
+                        "next_session_promotion_event_postcommit_validation_failed",
+                    ]
+                )
+            ),
+        }
+    return {
+        **validated,
+        "promotion_written": True,
+        "event_id": str(event.get("event_id") or ""),
+        "postcommit_reconciled": write_error,
+    }
+
+
 def append_promotion_event(
     payload: Any,
     prerequisites: Mapping[str, Any],
@@ -700,7 +797,7 @@ def append_promotion_event(
             "high_water_envelope": external_pair["high_water_envelope"],
         }
         event_path = events_root / f"{proposal['sequence_no']:08d}.json"
-        temporary = events_root / f".{event_path.name}.{uuid.uuid4().hex}.tmp"
+        temporary = journal_root / f".{event_path.name}.{uuid.uuid4().hex}.tmp"
         descriptor = -1
         try:
             descriptor = os.open(
@@ -720,19 +817,24 @@ def append_promotion_event(
         except OSError:
             if descriptor >= 0:
                 os.close(descriptor)
-            temporary.unlink(missing_ok=True)
-            return {
-                "ready": False,
-                "status": "next_session_production_replacement_event_write_failed",
-                "promotion_written": False,
-                "blockers": ["next_session_promotion_event_exclusive_write_failed"],
-            }
-    validated = validate_current_promotion(prerequisites, evidence_root=root)
-    return {
-        **validated,
-        "promotion_written": validated.get("ready") is True,
-        "event_id": event.get("event_id") if validated.get("ready") is True else "",
-    }
+            try:
+                temporary.unlink(missing_ok=True)
+            except OSError:
+                pass
+            return _reconcile_event_commit(
+                event_path,
+                event,
+                prerequisites,
+                evidence_root=root,
+                write_error=True,
+            )
+    return _reconcile_event_commit(
+        event_path,
+        event,
+        prerequisites,
+        evidence_root=root,
+        write_error=False,
+    )
 
 
 __all__ = ["append_promotion_event", "build_proposal", "validate_current_promotion"]

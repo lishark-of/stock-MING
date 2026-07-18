@@ -7848,6 +7848,12 @@ def run_tushare_refresh_task(
             as_of: str,
             call_ledger: list[Mapping[str, Any]],
         ) -> dict[str, Any]:
+            receipt_observed_at = (
+                _dt.datetime.now(_dt.timezone.utc)
+                .replace(microsecond=0)
+                .isoformat()
+                .replace("+00:00", "Z")
+            )
             validation = tushare_production_store.validate_datasets(
                 datasets,
                 start_date=start_date,
@@ -7875,6 +7881,12 @@ def run_tushare_refresh_task(
                     + ["official_runtime_accumulator_incomplete"],
                     "artifacts": {},
                 }
+            receipt_completed_at = (
+                _dt.datetime.now(_dt.timezone.utc)
+                .replace(microsecond=0)
+                .isoformat()
+                .replace("+00:00", "Z")
+            )
             receipt = {
                 "schema_version": tushare_production_store.EXECUTION_EVENT_SCHEMA,
                 "source": "public_non_injected_tushare_executor",
@@ -7912,6 +7924,8 @@ def run_tushare_refresh_task(
                 "sanitized_call_ledger_digest": _canonical_sha256(
                     [dict(row) for row in call_ledger]
                 ),
+                "observed_at_utc": receipt_observed_at,
+                "completed_at_utc": receipt_completed_at,
                 "contains_secret": False,
                 "external_calls_triggered": True,
                 "tushare_called_this_attempt": True,

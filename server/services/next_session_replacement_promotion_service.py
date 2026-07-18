@@ -18,9 +18,10 @@ import stat
 import subprocess
 import uuid
 from collections.abc import Mapping
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from . import (
     motion_evidence_service,
@@ -80,6 +81,11 @@ _PROVENANCE_FIELDS = {
     "source_task_payload_digest",
     "source_task_call_ledger_digest",
     "official_execution_event_digest",
+    "source_task_finished_at",
+    "provider_receipt_observed_at_utc",
+    "provider_receipt_completed_at_utc",
+    "authoritative_calendar_as_of_date",
+    "authoritative_current_trade_date",
     "result_version",
     "packet_scope_hash",
     "coverage_rows_digest",
@@ -172,6 +178,25 @@ def _mac(secret: bytes, value: Any) -> str:
 
 def _now_iso() -> str:
     return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+
+
+def _current_shanghai_date() -> date:
+    return datetime.now(ZoneInfo("Asia/Shanghai")).date()
+
+
+def _production_timestamp(value: object, *, assume_shanghai: bool = False) -> datetime | None:
+    text = str(value or "").strip()
+    if not text:
+        return None
+    try:
+        parsed = datetime.fromisoformat(text.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        if not assume_shanghai:
+            return None
+        parsed = parsed.replace(tzinfo=ZoneInfo("Asia/Shanghai"))
+    return parsed.astimezone(timezone.utc)
 
 
 def _valid_timestamp(value: object) -> bool:
@@ -673,6 +698,8 @@ def _authoritative_provider_daily_evidence(
         blockers.append("next_session_authoritative_close_dates_invalid")
     normalized_daily: list[dict[str, Any]] = []
     normalized_calendar: list[dict[str, Any]] = []
+    calendar_as_of_date = _current_shanghai_date().strftime("%Y%m%d")
+    authoritative_current_trade_date = ""
     try:
         daily_rows = daily.loc[
             (daily["ts_code"].astype(str).str.upper() == symbol)
@@ -700,6 +727,22 @@ def _authoritative_provider_daily_evidence(
             ),
             key=lambda row: row["cal_date"],
         )
+        full_calendar = [
+            {
+                "cal_date": _date_text(row["cal_date"]),
+                "is_open": int(row["is_open"]),
+            }
+            for row in trade_cal[["cal_date", "is_open"]].to_dict("records")
+        ]
+        calendar_dates = [row["cal_date"] for row in full_calendar if row["cal_date"]]
+        open_dates = [
+            row["cal_date"]
+            for row in full_calendar
+            if row["cal_date"] <= calendar_as_of_date and row["is_open"] == 1
+        ]
+        if not calendar_dates or max(calendar_dates) < calendar_as_of_date:
+            blockers.append("next_session_authoritative_calendar_not_current")
+        authoritative_current_trade_date = max(open_dates) if open_dates else ""
     except Exception:
         blockers.append("next_session_authoritative_provider_frames_invalid")
     displayed = [
@@ -722,6 +765,8 @@ def _authoritative_provider_daily_evidence(
         blockers.append("next_session_displayed_dates_do_not_match_open_trade_calendar")
     if not dates or dates[-1] != str(verified.get("validated_trade_date") or ""):
         blockers.append("next_session_displayed_data_date_not_current_provider_trade_date")
+    if authoritative_current_trade_date != str(verified.get("validated_trade_date") or ""):
+        blockers.append("next_session_authoritative_validated_trade_date_stale")
     if any(
         not isinstance(row, Mapping) or row.get("source") != "tushare.daily.close"
         for row in historical
@@ -743,6 +788,15 @@ def _authoritative_provider_daily_evidence(
         "official_execution_event_digest": str(
             verified.get("official_execution_event_digest") or ""
         ),
+        "source_task_finished_at": str(provenance.get("source_task_finished_at") or ""),
+        "provider_receipt_observed_at_utc": str(
+            verified.get("official_receipt_observed_at_utc") or ""
+        ),
+        "provider_receipt_completed_at_utc": str(
+            verified.get("official_receipt_completed_at_utc") or ""
+        ),
+        "authoritative_calendar_as_of_date": calendar_as_of_date,
+        "authoritative_current_trade_date": authoritative_current_trade_date,
         "validated_trade_date": str(verified.get("validated_trade_date") or ""),
         "row_count": len(normalized_daily),
     }
@@ -786,6 +840,36 @@ def _next_packet_evidence(
         and chart.get("is_exact_next_session_packet") is True
         and summary.get("is_exact_next_session_packet") is True
     )
+    task_finished_time = _production_timestamp(
+        source_task.get("finished_at"), assume_shanghai=True
+    )
+    receipt_observed_time = _production_timestamp(
+        authoritative.get("provider_receipt_observed_at_utc")
+    )
+    receipt_completed_time = _production_timestamp(
+        authoritative.get("provider_receipt_completed_at_utc")
+    )
+    now = datetime.now(timezone.utc)
+    freshness_binding = bool(
+        task_finished_time
+        and receipt_observed_time
+        and receipt_completed_time
+        and receipt_observed_time <= receipt_completed_time <= task_finished_time
+        and task_finished_time <= now + timedelta(minutes=1)
+        and receipt_completed_time - receipt_observed_time <= timedelta(hours=6)
+        and task_finished_time - receipt_completed_time <= timedelta(minutes=5)
+        and now - task_finished_time <= timedelta(hours=24)
+        and provenance.get("source_task_finished_at") == source_task.get("finished_at")
+        and provenance.get("provider_receipt_observed_at_utc")
+        == authoritative.get("provider_receipt_observed_at_utc")
+        and provenance.get("provider_receipt_completed_at_utc")
+        == authoritative.get("provider_receipt_completed_at_utc")
+        and provenance.get("authoritative_calendar_as_of_date")
+        == authoritative.get("authoritative_calendar_as_of_date")
+        and provenance.get("authoritative_current_trade_date")
+        == authoritative.get("authoritative_current_trade_date")
+        == authoritative.get("validated_trade_date")
+    )
     source_task_binding = bool(
         source_task.get("task_id") == provenance.get("source_task_id")
         and source_task.get("status") == "success"
@@ -806,6 +890,7 @@ def _next_packet_evidence(
         == _digest(source_task.get("call_ledger") or [])
         and provenance.get("official_execution_event_digest")
         == authoritative.get("official_execution_event_digest")
+        and freshness_binding
     )
     chart_structure_digest = _digest(
         {
@@ -839,6 +924,19 @@ def _next_packet_evidence(
         "source_task_payload_digest": provenance.get("source_task_payload_digest"),
         "source_task_call_ledger_digest": authoritative.get("source_task_call_ledger_digest"),
         "official_execution_event_digest": authoritative.get("official_execution_event_digest"),
+        "source_task_finished_at": authoritative.get("source_task_finished_at"),
+        "provider_receipt_observed_at_utc": authoritative.get(
+            "provider_receipt_observed_at_utc"
+        ),
+        "provider_receipt_completed_at_utc": authoritative.get(
+            "provider_receipt_completed_at_utc"
+        ),
+        "authoritative_calendar_as_of_date": authoritative.get(
+            "authoritative_calendar_as_of_date"
+        ),
+        "authoritative_current_trade_date": authoritative.get(
+            "authoritative_current_trade_date"
+        ),
         "symbol": authoritative.get("symbol"),
         "data_date": authoritative.get("data_date"),
         "provider_scope_hash": authoritative.get("provider_scope_hash"),
@@ -881,6 +979,13 @@ def _next_packet_evidence(
             "dataset_version_digest",
             "daily_rows_digest",
             "trade_calendar_digest",
+            "source_task_call_ledger_digest",
+            "official_execution_event_digest",
+            "source_task_finished_at",
+            "provider_receipt_observed_at_utc",
+            "provider_receipt_completed_at_utc",
+            "authoritative_calendar_as_of_date",
+            "authoritative_current_trade_date",
         ))
         and provenance.get("provider_backed") is True
         and provenance.get("authoritative_dataset") is True
