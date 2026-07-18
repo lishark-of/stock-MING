@@ -54,16 +54,14 @@ CANDIDATE_CACHE_SCHEMA_VERSION = "candidate_radar_cache.v1"
 CANDIDATE_CACHE_REPLACEMENT_SCHEMA_VERSION = (
     "candidate_radar_full_market_cache_replacement_binding.v1"
 )
-PRODUCTION_LINEAGE_EVENT_SCHEMA_VERSION = "full_market_worker_production_lineage_event.v1"
-PRODUCTION_LINEAGE_EVENT_TABLE = "full_market_worker_production_lineage_events"
-PRODUCTION_LINEAGE_EVENT_UPDATE_TRIGGER = (
-    "full_market_worker_production_lineage_events_no_update"
-)
-PRODUCTION_LINEAGE_EVENT_DELETE_TRIGGER = (
-    "full_market_worker_production_lineage_events_no_delete"
-)
 PRODUCTION_LINEAGE_KEY_RELATIVE_PATH = Path(
     "full_market_worker/.production_lineage_hmac_key"
+)
+PRODUCTION_LINEAGE_LOCAL_QA_SCHEMA_VERSION = (
+    "full_market_worker_production_lineage_local_qa.v1"
+)
+PRODUCTION_LINEAGE_EXTERNAL_RUNNER_BLOCKER = (
+    "external_trusted_production_lineage_runner_unavailable"
 )
 FACTOR_LINEAGE_EVENT_KIND = "factor_full_market_research"
 RADAR_LINEAGE_EVENT_KIND = "candidate_radar_authoritative_cache_replacement"
@@ -181,57 +179,6 @@ def _canonical_digest(value: Any) -> str:
     return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
 
 
-_PRODUCTION_LINEAGE_TABLE_SQL = f"""
-CREATE TABLE IF NOT EXISTS {PRODUCTION_LINEAGE_EVENT_TABLE} (
-    sequence_no INTEGER NOT NULL UNIQUE,
-    event_id TEXT PRIMARY KEY,
-    event_kind TEXT NOT NULL,
-    event_json TEXT NOT NULL,
-    event_mac TEXT NOT NULL UNIQUE
-)
-"""
-_PRODUCTION_LINEAGE_UPDATE_TRIGGER_SQL = f"""
-CREATE TRIGGER IF NOT EXISTS {PRODUCTION_LINEAGE_EVENT_UPDATE_TRIGGER}
-BEFORE UPDATE ON {PRODUCTION_LINEAGE_EVENT_TABLE}
-BEGIN SELECT RAISE(ABORT, 'full market worker production lineage is append-only'); END
-"""
-_PRODUCTION_LINEAGE_DELETE_TRIGGER_SQL = f"""
-CREATE TRIGGER IF NOT EXISTS {PRODUCTION_LINEAGE_EVENT_DELETE_TRIGGER}
-BEFORE DELETE ON {PRODUCTION_LINEAGE_EVENT_TABLE}
-BEGIN SELECT RAISE(ABORT, 'full market worker production lineage is append-only'); END
-"""
-_PRODUCTION_LINEAGE_EVENT_KEYS = {
-    "schema_version",
-    "event_id",
-    "sequence_no",
-    "previous_event_mac",
-    "event_kind",
-    "created_at",
-    "head_full",
-    "acceptance_run_id",
-    "worker_packet_digest",
-    "output_binding_digest",
-    "factor_output_contract_digest",
-    "neutralization_audit_digest",
-    "candidate_cache_packet_digest",
-    "candidate_cache_write_task_digest",
-    "deep_scan_execution_evidence_digest",
-    "browser_visual_evidence_digest",
-    "browser_performance_evidence_digest",
-    "legacy_retirement_evidence_digest",
-    "global_candidate_cache_overwritten",
-    "deep_scan_worker_execution_verified",
-    "browser_visual_qa_verified",
-    "browser_performance_verified",
-    "legacy_fallback_retired",
-    "synthetic_fixture",
-    "contains_secret",
-    "does_not_execute_trades",
-    "does_not_modify_strategy_action",
-    "event_mac",
-}
-
-
 def _current_head_full() -> str:
     try:
         completed = subprocess.run(
@@ -249,204 +196,9 @@ def _current_head_full() -> str:
 
 
 def _lineage_key_path(evidence_root: Path) -> Path:
+    """Return the retired local-key path for non-mutation audits only."""
+
     return evidence_root / PRODUCTION_LINEAGE_KEY_RELATIVE_PATH
-
-
-def _read_production_lineage_key(evidence_root: Path) -> bytes:
-    path = _lineage_key_path(evidence_root)
-    try:
-        if path.is_symlink() or not path.is_file() or (path.stat().st_mode & 0o777) != 0o600:
-            return b""
-        value = path.read_bytes()
-    except OSError:
-        return b""
-    return value if len(value) == 32 else b""
-
-
-def _load_or_create_production_lineage_key(evidence_root: Path) -> bytes:
-    existing = _read_production_lineage_key(evidence_root)
-    if existing:
-        return existing
-    path = _lineage_key_path(evidence_root)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    if path.exists() or path.is_symlink():
-        return b""
-    value = os.urandom(32)
-    descriptor = -1
-    try:
-        descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
-        os.write(descriptor, value)
-        os.fsync(descriptor)
-    except OSError:
-        return b""
-    finally:
-        if descriptor >= 0:
-            os.close(descriptor)
-    return _read_production_lineage_key(evidence_root)
-
-
-def _lineage_event_mac(event: Mapping[str, Any], secret: bytes) -> str:
-    material = {key: value for key, value in dict(event).items() if key != "event_mac"}
-    encoded = json.dumps(
-        material,
-        ensure_ascii=True,
-        sort_keys=True,
-        separators=(",", ":"),
-    ).encode("utf-8")
-    return hmac.new(secret, encoded, hashlib.sha256).hexdigest()
-
-
-def _radar_independent_evidence_digests(
-    *,
-    head_full: str,
-    run_id: str,
-    output_binding_digest: str,
-    deep_scan_execution_evidence: Mapping[str, Any] | None,
-    browser_visual_evidence: Mapping[str, Any] | None,
-    browser_performance_evidence: Mapping[str, Any] | None,
-    legacy_retirement_evidence: Mapping[str, Any] | None,
-) -> dict[str, str]:
-    deep_scan = dict(deep_scan_execution_evidence or {})
-    visual = dict(browser_visual_evidence or {})
-    performance = dict(browser_performance_evidence or {})
-    legacy = dict(legacy_retirement_evidence or {})
-    common_ready = lambda item: bool(  # noqa: E731 - keeps four exact checks aligned
-        item.get("head_full") == head_full
-        and item.get("acceptance_run_id") == run_id
-        and item.get("source_output_binding_digest") == output_binding_digest
-        and item.get("contains_secret") is False
-        and item.get("does_not_execute_trades") is True
-    )
-    if not (
-        common_ready(deep_scan)
-        and deep_scan.get("schema_version")
-        == "candidate_radar_deep_scan_worker_execution_evidence.v1"
-        and deep_scan.get("status") == "candidate_radar_deep_scan_worker_execution_verified"
-        and deep_scan.get("worker_execution_verified") is True
-        and deep_scan.get("full_pool_scan_verified") is True
-        and deep_scan.get("deep_scan_verified") is True
-        and common_ready(visual)
-        and visual.get("schema_version") == "candidate_radar_browser_visual_qa_evidence.v1"
-        and visual.get("status") == "candidate_radar_browser_visual_qa_passed"
-        and visual.get("route") == "#candidates"
-        and visual.get("visual_qa_passed") is True
-        and _integer(visual.get("screenshot_count")) > 0
-        and _HEX_64_RE.fullmatch(str(visual.get("review_id") or ""))
-        and common_ready(performance)
-        and performance.get("schema_version")
-        == "candidate_radar_browser_performance_evidence.v1"
-        and performance.get("status") == "candidate_radar_browser_performance_passed"
-        and performance.get("route") == "#candidates"
-        and performance.get("performance_passed") is True
-        and _finite_number(performance.get("p95_ms"))
-        and _finite_number(performance.get("p95_budget_ms"))
-        and 0 <= float(performance.get("p95_ms"))
-        <= float(performance.get("p95_budget_ms"))
-        and common_ready(legacy)
-        and legacy.get("schema_version") == "candidate_radar_legacy_retirement_evidence.v1"
-        and legacy.get("status") == "candidate_radar_legacy_fallback_retired"
-        and legacy.get("legacy_fallback_retired") is True
-        and legacy.get("legacy_fallback_required") is False
-        and legacy.get("streamlit_primary_surface_present") is False
-    ):
-        return {}
-    return {
-        "deep_scan_execution_evidence_digest": _canonical_digest(deep_scan),
-        "browser_visual_evidence_digest": _canonical_digest(visual),
-        "browser_performance_evidence_digest": _canonical_digest(performance),
-        "legacy_retirement_evidence_digest": _canonical_digest(legacy),
-    }
-
-
-def _normalized_sql(value: Any) -> str:
-    normalized = " ".join(str(value or "").lower().split())
-    return normalized.replace("create trigger if not exists", "create trigger")
-
-
-def _production_lineage_schema_ready(connection: sqlite3.Connection) -> bool:
-    columns = connection.execute(
-        f"PRAGMA table_info({PRODUCTION_LINEAGE_EVENT_TABLE})"
-    ).fetchall()
-    expected_columns = ["sequence_no", "event_id", "event_kind", "event_json", "event_mac"]
-    if [str(row[1]) for row in columns] != expected_columns:
-        return False
-    triggers = dict(
-        connection.execute(
-            "SELECT name, sql FROM sqlite_master WHERE type = 'trigger' AND name IN (?, ?)",
-            (
-                PRODUCTION_LINEAGE_EVENT_UPDATE_TRIGGER,
-                PRODUCTION_LINEAGE_EVENT_DELETE_TRIGGER,
-            ),
-        ).fetchall()
-    )
-    return bool(
-        _normalized_sql(triggers.get(PRODUCTION_LINEAGE_EVENT_UPDATE_TRIGGER))
-        == _normalized_sql(_PRODUCTION_LINEAGE_UPDATE_TRIGGER_SQL)
-        and _normalized_sql(triggers.get(PRODUCTION_LINEAGE_EVENT_DELETE_TRIGGER))
-        == _normalized_sql(_PRODUCTION_LINEAGE_DELETE_TRIGGER_SQL)
-    )
-
-
-def _read_verified_production_lineage_events(evidence_root: Path) -> list[dict[str, Any]]:
-    secret = _read_production_lineage_key(evidence_root)
-    db_path = evidence_root / "meta.sqlite"
-    if not secret or not db_path.is_file():
-        return []
-    connection: sqlite3.Connection | None = None
-    try:
-        connection = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
-        connection.execute("PRAGMA query_only = ON")
-        if not _production_lineage_schema_ready(connection):
-            return []
-        rows = connection.execute(
-            f"SELECT sequence_no, event_id, event_kind, event_json, event_mac "
-            f"FROM {PRODUCTION_LINEAGE_EVENT_TABLE} ORDER BY sequence_no"
-        ).fetchall()
-    except Exception:
-        return []
-    finally:
-        if connection is not None:
-            connection.close()
-    events: list[dict[str, Any]] = []
-    previous_mac = ""
-    for expected_sequence, row in enumerate(rows, start=1):
-        sequence_no, event_id, event_kind, encoded, stored_mac = row
-        try:
-            event = json.loads(encoded)
-            created_at = _dt.datetime.fromisoformat(str(event.get("created_at") or ""))
-        except Exception:
-            return []
-        if not (
-            isinstance(event, Mapping)
-            and set(event) == _PRODUCTION_LINEAGE_EVENT_KEYS
-            and sequence_no == expected_sequence == event.get("sequence_no")
-            and event_id == event.get("event_id") == _normalize_uuid4(event_id)
-            and event_kind == event.get("event_kind")
-            and stored_mac == event.get("event_mac")
-            and event.get("previous_event_mac") == previous_mac
-            and event.get("schema_version") == PRODUCTION_LINEAGE_EVENT_SCHEMA_VERSION
-            and created_at.tzinfo is not None
-            and event.get("head_full") == str(event.get("head_full") or "").lower()
-            and re.fullmatch(r"[0-9a-f]{40}", str(event.get("head_full") or ""))
-            and _normalize_uuid4(event.get("acceptance_run_id"))
-            == event.get("acceptance_run_id")
-            and all(
-                _HEX_64_RE.fullmatch(str(event.get(key) or ""))
-                for key in (
-                    "worker_packet_digest",
-                    "output_binding_digest",
-                )
-            )
-            and event.get("synthetic_fixture") is False
-            and event.get("contains_secret") is False
-            and event.get("does_not_execute_trades") is True
-            and event.get("does_not_modify_strategy_action") is True
-            and hmac.compare_digest(str(stored_mac), _lineage_event_mac(event, secret))
-        ):
-            return []
-        previous_mac = str(stored_mac)
-        events.append(dict(event))
-    return events
 
 
 def _persist_official_production_lineage_event(
@@ -471,132 +223,53 @@ def _persist_official_production_lineage_event(
     browser_performance_verified: bool = False,
     legacy_fallback_retired: bool = False,
 ) -> dict[str, Any]:
-    """Append a trusted output event; ordinary mapping callers have no capability."""
+    """Report a sealed local-QA result without writing production lineage.
 
-    state = _official_orchestrator_state(capability, run_id)
-    head_full = _current_head_full()
-    independent_evidence_digests = _radar_independent_evidence_digests(
-        head_full=head_full,
-        run_id=run_id,
-        output_binding_digest=output_binding_digest,
-        deep_scan_execution_evidence=deep_scan_execution_evidence,
-        browser_visual_evidence=browser_visual_evidence,
-        browser_performance_evidence=browser_performance_evidence,
-        legacy_retirement_evidence=legacy_retirement_evidence,
+    A capability held in this Python process is enumerable through ordinary
+    introspection and therefore cannot establish an independent production trust
+    boundary.  Until an external trusted runner and verifier are integrated, this
+    entry point is deliberately write-free and production-ineligible.
+    """
+
+    del (
+        evidence_root,
+        capability,
+        worker_packet_digest,
+        output_binding_digest,
+        factor_output_contract_digest,
+        neutralization_audit_digest,
+        candidate_cache_packet_digest,
+        candidate_cache_write_task_digest,
+        deep_scan_execution_evidence,
+        browser_visual_evidence,
+        browser_performance_evidence,
+        legacy_retirement_evidence,
+        global_candidate_cache_overwritten,
+        deep_scan_worker_execution_verified,
+        browser_visual_qa_verified,
+        browser_performance_verified,
+        legacy_fallback_retired,
     )
-    if not (
-        state
-        and state.get("transport_event_persisted") is True
-        and _normalize_uuid4(run_id) == run_id
-        and event_kind in {FACTOR_LINEAGE_EVENT_KIND, RADAR_LINEAGE_EVENT_KIND}
-        and head_full
-        and _HEX_64_RE.fullmatch(worker_packet_digest)
-        and _HEX_64_RE.fullmatch(output_binding_digest)
-    ):
-        return {}
-    if event_kind == FACTOR_LINEAGE_EVENT_KIND and not (
-        factor_output_contract_digest == FACTOR_OUTPUT_CONTRACT_DIGEST
-        and _HEX_64_RE.fullmatch(neutralization_audit_digest)
-        and not candidate_cache_packet_digest
-        and not candidate_cache_write_task_digest
-        and not independent_evidence_digests
-    ):
-        return {}
-    if event_kind == RADAR_LINEAGE_EVENT_KIND and not (
-        _HEX_64_RE.fullmatch(candidate_cache_packet_digest)
-        and _HEX_64_RE.fullmatch(candidate_cache_write_task_digest)
-        and set(independent_evidence_digests)
-        == {
-            "deep_scan_execution_evidence_digest",
-            "browser_visual_evidence_digest",
-            "browser_performance_evidence_digest",
-            "legacy_retirement_evidence_digest",
-        }
-        and global_candidate_cache_overwritten is True
-        and deep_scan_worker_execution_verified is True
-        and browser_visual_qa_verified is True
-        and browser_performance_verified is True
-        and legacy_fallback_retired is True
-        and not factor_output_contract_digest
-        and not neutralization_audit_digest
-    ):
-        return {}
-    secret = _load_or_create_production_lineage_key(evidence_root)
-    if not secret:
-        return {}
-    db_path = evidence_root / "meta.sqlite"
-    SQLiteMetaStore(db_path)
-    connection = sqlite3.connect(db_path, timeout=5)
-    try:
-        connection.execute("BEGIN IMMEDIATE")
-        connection.execute(_PRODUCTION_LINEAGE_TABLE_SQL)
-        connection.execute(_PRODUCTION_LINEAGE_UPDATE_TRIGGER_SQL)
-        connection.execute(_PRODUCTION_LINEAGE_DELETE_TRIGGER_SQL)
-        if not _production_lineage_schema_ready(connection):
-            raise RuntimeError("production_lineage_schema_invalid")
-        previous = connection.execute(
-            f"SELECT sequence_no, event_mac FROM {PRODUCTION_LINEAGE_EVENT_TABLE} "
-            "ORDER BY sequence_no DESC LIMIT 1"
-        ).fetchone()
-        sequence_no = int(previous[0]) + 1 if previous else 1
-        previous_mac = str(previous[1]) if previous else ""
-        event = {
-            "schema_version": PRODUCTION_LINEAGE_EVENT_SCHEMA_VERSION,
-            "event_id": uuid.uuid4().hex,
-            "sequence_no": sequence_no,
-            "previous_event_mac": previous_mac,
-            "event_kind": event_kind,
-            "created_at": _now_iso(),
-            "head_full": head_full,
-            "acceptance_run_id": run_id,
-            "worker_packet_digest": worker_packet_digest,
-            "output_binding_digest": output_binding_digest,
-            "factor_output_contract_digest": factor_output_contract_digest,
-            "neutralization_audit_digest": neutralization_audit_digest,
-            "candidate_cache_packet_digest": candidate_cache_packet_digest,
-            "candidate_cache_write_task_digest": candidate_cache_write_task_digest,
-            "deep_scan_execution_evidence_digest": independent_evidence_digests.get(
-                "deep_scan_execution_evidence_digest", ""
-            ),
-            "browser_visual_evidence_digest": independent_evidence_digests.get(
-                "browser_visual_evidence_digest", ""
-            ),
-            "browser_performance_evidence_digest": independent_evidence_digests.get(
-                "browser_performance_evidence_digest", ""
-            ),
-            "legacy_retirement_evidence_digest": independent_evidence_digests.get(
-                "legacy_retirement_evidence_digest", ""
-            ),
-            "global_candidate_cache_overwritten": global_candidate_cache_overwritten,
-            "deep_scan_worker_execution_verified": deep_scan_worker_execution_verified,
-            "browser_visual_qa_verified": browser_visual_qa_verified,
-            "browser_performance_verified": browser_performance_verified,
-            "legacy_fallback_retired": legacy_fallback_retired,
-            "synthetic_fixture": False,
-            "contains_secret": False,
-            "does_not_execute_trades": True,
-            "does_not_modify_strategy_action": True,
-        }
-        event["event_mac"] = _lineage_event_mac(event, secret)
-        connection.execute(
-            f"INSERT INTO {PRODUCTION_LINEAGE_EVENT_TABLE} "
-            "(sequence_no, event_id, event_kind, event_json, event_mac) VALUES (?, ?, ?, ?, ?)",
-            (
-                sequence_no,
-                event["event_id"],
-                event_kind,
-                json.dumps(event, ensure_ascii=True, sort_keys=True),
-                event["event_mac"],
-            ),
-        )
-        connection.commit()
-    except Exception:
-        connection.rollback()
-        return {}
-    finally:
-        connection.close()
-    events = _read_verified_production_lineage_events(evidence_root)
-    return dict(events[-1]) if events and events[-1] == event else {}
+    return {
+        "schema_version": PRODUCTION_LINEAGE_LOCAL_QA_SCHEMA_VERSION,
+        "status": "external_trusted_production_lineage_runner_required",
+        "event_kind": (
+            event_kind
+            if event_kind in {FACTOR_LINEAGE_EVENT_KIND, RADAR_LINEAGE_EVENT_KIND}
+            else "invalid"
+        ),
+        "acceptance_run_id": (
+            run_id if _normalize_uuid4(run_id) == run_id else ""
+        ),
+        "production_eligible": False,
+        "external_trusted_runner_observed": False,
+        "writes_storage": False,
+        "evidence_root_mutated": False,
+        "blockers": [PRODUCTION_LINEAGE_EXTERNAL_RUNNER_BLOCKER],
+        "contains_secret": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+    }
 
 
 def _matching_production_lineage_event(
@@ -607,26 +280,16 @@ def _matching_production_lineage_event(
     worker_packet_digest: str,
     output_binding_digest: str,
 ) -> dict[str, Any]:
-    if not (
-        _normalize_uuid4(run_id) == run_id
-        and _HEX_64_RE.fullmatch(worker_packet_digest)
-        and _HEX_64_RE.fullmatch(output_binding_digest)
-    ):
-        return {}
-    head_full = _current_head_full()
-    if not head_full:
-        return {}
-    events = _read_verified_production_lineage_events(evidence_root)
-    matches = [
-        event
-        for event in events
-        if event.get("event_kind") == event_kind
-        and event.get("acceptance_run_id") == run_id
-        and event.get("head_full") == head_full
-        and event.get("worker_packet_digest") == worker_packet_digest
-        and event.get("output_binding_digest") == output_binding_digest
-    ]
-    return dict(matches[-1]) if matches else {}
+    """Fail closed until production lineage comes from an external trust root."""
+
+    del (
+        evidence_root,
+        event_kind,
+        run_id,
+        worker_packet_digest,
+        output_binding_digest,
+    )
+    return {}
 
 
 def _integer(value: Any, *, default: int = 0) -> int:
@@ -3404,7 +3067,7 @@ def validate_factor_full_market_research_fact(evidence_root: Path) -> dict[str, 
     checks = {
         "upstream_provider_current_last_good_and_artifacts": universe.get("ready") is True,
         "factor_worker_packet_direct_binding": packet_core_ready and metric_audit_ready,
-        "trusted_factor_worker_execution_lineage": trusted_lineage_ready,
+        PRODUCTION_LINEAGE_EXTERNAL_RUNNER_BLOCKER: trusted_lineage_ready,
         "factor_full_market_rank_zscore_neutralized_output": result_ready,
     }
     blockers = [key for key, passed in checks.items() if not passed]
@@ -3761,7 +3424,7 @@ def validate_full_market_worker_production_fact(
     if not authoritative_candidate_cache_ready:
         candidate_radar_replacement_blockers.extend(
             [
-                "runner_owned_current_head_cache_write_event",
+                PRODUCTION_LINEAGE_EXTERNAL_RUNNER_BLOCKER,
                 "authoritative_candidate_cache_replacement",
                 "deep_scan_worker_execution_evidence",
                 "browser_visual_performance_evidence",

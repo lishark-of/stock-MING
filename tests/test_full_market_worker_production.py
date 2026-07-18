@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-import sqlite3
 import tempfile
 import sys
 import types
@@ -666,7 +665,11 @@ class FullMarketWorkerProductionTests(unittest.TestCase):
                     browser_performance_verified=True,
                     legacy_fallback_retired=True,
                 )
-                self.assertEqual(rejected, {})
+                self.assertFalse(rejected["production_eligible"])
+                self.assertEqual(
+                    rejected["blockers"],
+                    [service.PRODUCTION_LINEAGE_EXTERNAL_RUNNER_BLOCKER],
+                )
                 event = service._persist_official_production_lineage_event(
                     evidence_root,
                     capability=object(),
@@ -686,8 +689,15 @@ class FullMarketWorkerProductionTests(unittest.TestCase):
                     browser_performance_verified=True,
                     legacy_fallback_retired=True,
                 )
-            self.assertTrue(event)
-            self.assertTrue(
+            self.assertFalse(event["production_eligible"])
+            self.assertFalse(event["writes_storage"])
+            self.assertEqual(
+                event["status"],
+                "external_trusted_production_lineage_runner_required",
+            )
+            self.assertFalse((evidence_root / "meta.sqlite").exists())
+            self.assertFalse(service._lineage_key_path(evidence_root).exists())
+            self.assertFalse(
                 service._candidate_cache_replacement_ready(
                     cache_packet,
                     worker_packet,
@@ -723,20 +733,6 @@ class FullMarketWorkerProductionTests(unittest.TestCase):
                     evidence_root=evidence_root,
                 )
             )
-            connection = sqlite3.connect(evidence_root / "meta.sqlite")
-            try:
-                with self.assertRaises(sqlite3.IntegrityError):
-                    connection.execute(
-                        f"UPDATE {service.PRODUCTION_LINEAGE_EVENT_TABLE} SET event_kind = ?",
-                        ("forged",),
-                    )
-                connection.rollback()
-                with self.assertRaises(sqlite3.IntegrityError):
-                    connection.execute(
-                        f"DELETE FROM {service.PRODUCTION_LINEAGE_EVENT_TABLE}"
-                    )
-            finally:
-                connection.close()
 
     def test_candidate_worker_packet_cannot_satisfy_factor_full_market_contract(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -762,7 +758,7 @@ class FullMarketWorkerProductionTests(unittest.TestCase):
             self.assertFalse(fact["candidate_radar_output_accepted_as_factor"])
             self.assertIn("factor_worker_packet_direct_binding", fact["blockers"])
 
-    def test_factor_metric_and_runner_owned_lineage_contract_is_satisfiable(self) -> None:
+    def test_factor_metric_contract_awaits_external_trusted_lineage_runner(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             symbols = ["000001.SZ", "000002.SZ", "600000.SH", "600001.SH"]
@@ -856,7 +852,9 @@ class FullMarketWorkerProductionTests(unittest.TestCase):
                     factor_output_contract_digest=service.FACTOR_OUTPUT_CONTRACT_DIGEST,
                     neutralization_audit_digest=metric_audit["audit_digest"],
                 )
-            self.assertTrue(event)
+            self.assertFalse(event["production_eligible"])
+            self.assertFalse(event["writes_storage"])
+            self.assertFalse(service._lineage_key_path(root).exists())
             with patch.object(
                 service,
                 "_authoritative_provider_universe",
@@ -867,25 +865,87 @@ class FullMarketWorkerProductionTests(unittest.TestCase):
                 return_value=pointer,
             ), patch.object(pd, "read_parquet", return_value=pd.DataFrame(rows)):
                 fact = service.validate_factor_full_market_research_fact(root)
-            self.assertTrue(fact["ready"], fact["blockers"])
-            self.assertTrue(fact["trusted_lineage_event_observed"])
+            self.assertFalse(fact["ready"])
+            self.assertFalse(fact["trusted_lineage_event_observed"])
+            self.assertEqual(
+                fact["blockers"],
+                [service.PRODUCTION_LINEAGE_EXTERNAL_RUNNER_BLOCKER],
+            )
 
-    def test_production_lineage_event_rejects_unowned_capability(self) -> None:
+    def test_introspected_runner_capability_cannot_promote_lineage(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
+            closure_values = [
+                cell.cell_contents
+                for cell in (
+                    service.run_full_market_worker_production_acceptance.__closure__ or ()
+                )
+            ]
+            register = next(
+                value
+                for value in closure_values
+                if callable(value) and getattr(value, "__name__", "") == "register"
+            )
+            run_id = uuid.uuid4().hex
+            capability, state = register(run_id)
+            state["transport_event_persisted"] = True
+            self.assertTrue(service._official_orchestrator_state(capability, run_id))
             event = service._persist_official_production_lineage_event(
                 root,
-                capability=object(),
-                run_id=uuid.uuid4().hex,
+                capability=capability,
+                run_id=run_id,
                 event_kind=service.FACTOR_LINEAGE_EVENT_KIND,
                 worker_packet_digest="a" * 64,
                 output_binding_digest="b" * 64,
                 factor_output_contract_digest=service.FACTOR_OUTPUT_CONTRACT_DIGEST,
                 neutralization_audit_digest="c" * 64,
             )
-            self.assertEqual(event, {})
+            self.assertFalse(event["production_eligible"])
+            self.assertFalse(event["external_trusted_runner_observed"])
+            self.assertFalse(event["writes_storage"])
+            self.assertEqual(
+                event["blockers"],
+                [service.PRODUCTION_LINEAGE_EXTERNAL_RUNNER_BLOCKER],
+            )
             self.assertFalse((root / "meta.sqlite").exists())
             self.assertFalse(service._lineage_key_path(root).exists())
+            self.assertEqual(
+                service._matching_production_lineage_event(
+                    root,
+                    event_kind=service.FACTOR_LINEAGE_EVENT_KIND,
+                    run_id=run_id,
+                    worker_packet_digest="a" * 64,
+                    output_binding_digest="b" * 64,
+                ),
+                {},
+            )
+
+    def test_sealed_lineage_writer_preserves_existing_key_and_database(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            key_path = service._lineage_key_path(root)
+            key_path.parent.mkdir(parents=True)
+            key_path.write_bytes(b"k" * 32)
+            key_path.chmod(0o600)
+            database_path = root / "meta.sqlite"
+            database_path.write_bytes(b"preexisting-database-sentinel")
+            key_before = key_path.read_bytes()
+            database_before = database_path.read_bytes()
+            mode_before = key_path.stat().st_mode & 0o777
+
+            event = service._persist_official_production_lineage_event(
+                root,
+                capability=object(),
+                run_id=uuid.uuid4().hex,
+                event_kind=service.RADAR_LINEAGE_EVENT_KIND,
+                worker_packet_digest="a" * 64,
+                output_binding_digest="b" * 64,
+            )
+
+            self.assertFalse(event["production_eligible"])
+            self.assertEqual(key_path.read_bytes(), key_before)
+            self.assertEqual(key_path.stat().st_mode & 0o777, mode_before)
+            self.assertEqual(database_path.read_bytes(), database_before)
 
     def test_factor_metric_audit_rejects_nonfinite_and_false_neutralization(self) -> None:
         rows = [
