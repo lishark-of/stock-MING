@@ -3660,7 +3660,40 @@ def _motion_clarity_readiness_audit() -> tuple[dict[str, Any], list[dict[str, An
         "@keyframes cc-status-settle",
         "@keyframes cc-phase-confirm",
     )
-    task_polling_interval_is_bounded = "window.setInterval" in task_panel and "getTask(taskId)" in task_panel and "window.clearInterval" in task_panel
+    task_polling_interval_is_bounded = (
+        task_panel.count("window.setInterval(") == 1
+        and task_panel.count("window.clearInterval(") == 1
+        and (
+            "getTask(taskId)" in task_panel
+            or ("getTasks()" in task_panel and "taskFromIndex" in task_panel)
+        )
+    )
+    layout_health_polling_is_bounded = (
+        layout.count("window.setInterval(") == 1
+        and layout.count("window.clearInterval(") == 1
+        and "checkLocalFastapi" in layout
+    )
+    page_state_health_polling_is_bounded = (
+        page_state.count("window.setInterval(") == 1
+        and page_state.count("window.clearInterval(") == 2
+        and "checkLocalHealth" in page_state
+    )
+    non_polling_motion_loop_text = (
+        motion_loop_text.replace(layout, "").replace(page_state, "").replace(task_panel, "")
+    )
+    candidate_radar_frame_reveal_is_bounded = (
+        candidate_radar.count("window.requestAnimationFrame(") == 2
+        and candidate_radar.count("window.cancelAnimationFrame(") == 2
+        and "revealFrameOne" in candidate_radar
+        and "revealFrameTwo" in candidate_radar
+        and "cancelled = true" in candidate_radar
+    )
+    packet_status_uses_accessible_internal_badge = (
+        'className="packet-card__state"' in packet_card
+        and 'role="status"' in packet_card
+        and 'className="packet-card__state-dot"' in packet_card
+        and "toneLabel(tone)" in packet_card
+    )
     checks = {
         "motion_tokens_present": all(marker in styles for marker in token_markers),
         "finite_keyframes_present": all(marker in styles for marker in keyframe_markers),
@@ -3694,7 +3727,10 @@ def _motion_clarity_readiness_audit() -> tuple[dict[str, Any], list[dict[str, An
         "packet_status_clarity_cue": 'data-motion-scope="packet_status_clarity"' in packet_card
         and "function statusTone" in packet_card
         and "data-status-tone={tone}" in packet_card
-        and 'StatusBadge label={status} tone={tone}' in packet_card
+        and (
+            'StatusBadge label={status} tone={tone}' in packet_card
+            or packet_status_uses_accessible_internal_badge
+        )
         and '.packet-card[data-motion-scope="packet_status_clarity"][data-status-tone="good"]' in styles
         and '.packet-card[data-motion-scope="packet_status_clarity"][data-status-tone="warn"]' in styles
         and '.packet-card[data-motion-scope="packet_status_clarity"][data-status-tone="bad"]' in styles,
@@ -3745,8 +3781,15 @@ def _motion_clarity_readiness_audit() -> tuple[dict[str, Any], list[dict[str, An
         and "grid-template-columns: minmax(0, 1fr);" in styles
         and "repeat(auto-fit, minmax(118px, 1fr))" in styles,
         "no_timer_or_raf_motion_loop": "setTimeout" not in motion_loop_text
-        and "requestAnimationFrame" not in motion_loop_text
-        and ("setInterval" not in motion_loop_text or task_polling_interval_is_bounded),
+        and "requestAnimationFrame" not in motion_loop_text.replace(candidate_radar, "")
+        and (
+            "requestAnimationFrame" not in candidate_radar
+            or candidate_radar_frame_reveal_is_bounded
+        )
+        and "setInterval" not in non_polling_motion_loop_text
+        and layout_health_polling_is_bounded
+        and page_state_health_polling_is_bounded
+        and task_polling_interval_is_bounded,
         "no_provider_call_markers": not _script_contains_any(
             audited_text,
             ("tushare_adapter", "deepseek.chat", "gh api", "api.github.com", "curl "),
@@ -3772,7 +3815,7 @@ def _motion_clarity_readiness_audit() -> tuple[dict[str, Any], list[dict[str, An
         _motion_row("route_and_surface_staging", checks["route_and_surface_staging"], evidence="route-stage + motion-surface"),
         _motion_row("visual_hierarchy_clarity_cue", checks["visual_hierarchy_clarity_cue"], evidence="metric cards and packet cards expose visual_hierarchy_clarity with finite non-interactive cue"),
         _motion_row("keynote_focus_sweep_cue", checks["keynote_focus_sweep_cue"], evidence="visual hierarchy surfaces use a finite keynote-style focus sweep while keeping content above the cue"),
-        _motion_row("packet_status_clarity_cue", checks["packet_status_clarity_cue"], evidence="packet cards derive good/warn/bad visual hierarchy from status strings and pass the same tone to StatusBadge"),
+        _motion_row("packet_status_clarity_cue", checks["packet_status_clarity_cue"], evidence="packet cards derive good/warn/bad visual hierarchy from status strings and bind the tone to an accessible status badge"),
         _motion_row("navigation_context_cue", checks["navigation_context_cue"], evidence="aria-current + data-route-active + finite active-nav sweep"),
         _motion_row("status_badge_context_cue", checks["status_badge_context_cue"], evidence="status badges expose data-status-tone and visual dot cue"),
         _motion_row("task_progress_motion_present", checks["task_progress_motion_present"], evidence="task status classes + progress transition"),
@@ -3788,7 +3831,7 @@ def _motion_clarity_readiness_audit() -> tuple[dict[str, Any], list[dict[str, An
             checks["mobile_responsive_motion_layout"],
             evidence="mobile breakpoint keeps navigation scrollable and content/state rails readable",
         ),
-        _motion_row("no_timer_or_raf_motion_loop", checks["no_timer_or_raf_motion_loop"], evidence="no setTimeout/requestAnimationFrame motion loop; bounded setInterval is task polling only"),
+        _motion_row("no_timer_or_raf_motion_loop", checks["no_timer_or_raf_motion_loop"], evidence="no unbounded timer/RAF motion loop; task polling and the two-frame initial reveal are bounded and cleaned up"),
         _motion_row("no_provider_call_markers", checks["no_provider_call_markers"], evidence="audited motion files contain no provider invocation markers"),
         _motion_row("visual_only_boundary_visible", checks["visual_only_boundary_visible"], evidence="motion state labels remain visual-only and trade guarded"),
         _motion_row("motion_viewport_qa_contract_ready", checks["motion_viewport_qa_contract_ready"], evidence="scripts/motion_viewport_qa_contract.py pins routes, viewports, and pending browser QA state"),

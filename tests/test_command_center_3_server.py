@@ -46351,7 +46351,10 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertTrue(review["writes_no_artifacts"])
         self.assertFalse(review["external_calls_triggered"])
         self.assertTrue(packet["policy"]["candidate_browser_qa_review_is_button_gated"])
-        self.assertEqual(packet["call_ledger"][1]["api"], "local_candidate_radar_browser_qa_review")
+        cache_ledger_apis = {row["api"] for row in packet["call_ledger"]}
+        self.assertIn("local_candidate_radar_cache", cache_ledger_apis)
+        self.assertIn("local_candidate_radar_production_activation_receipt", cache_ledger_apis)
+        self.assertNotIn("local_candidate_radar_browser_qa_review", cache_ledger_apis)
 
     def test_candidate_radar_browser_qa_review_ready_after_default_and_reduced_reports(self):
         artifact_root = self._with_candidate_motion_qa_root()
@@ -46703,7 +46706,10 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertTrue(packet["policy"]["candidate_radar_production_replacement_review_is_local"])
         self.assertFalse(packet["policy"]["candidate_radar_production_replacement_review_calls_provider_or_model"])
         self.assertTrue(packet["policy"]["candidate_radar_production_replacement_review_is_not_production_replacement"])
-        self.assertEqual(packet["call_ledger"][1]["api"], "local_candidate_radar_production_replacement_review")
+        cache_ledger_apis = {row["api"] for row in packet["call_ledger"]}
+        self.assertIn("local_candidate_radar_cache", cache_ledger_apis)
+        self.assertIn("local_candidate_radar_production_activation_receipt", cache_ledger_apis)
+        self.assertNotIn("local_candidate_radar_production_replacement_review", cache_ledger_apis)
         self.assertNotIn("SHOULD_DROP", json.dumps(cache, ensure_ascii=False))
 
     def test_candidate_radar_production_promotion_dry_run_is_scope_bound_local_only(self):
@@ -58437,6 +58443,7 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertFalse(promotion["github_called"])
         self.assertTrue(promotion["does_not_execute_trades"])
         self.assertTrue(promotion["does_not_modify_strategy_action"])
+
         self.assertIn("scope_hash_short", promotion)
         self.assertEqual(len(packet["motion_promotion_dry_run_rows"]), promotion["row_count"])
         promotion_criteria = {row["criterion"] for row in packet["motion_promotion_dry_run_rows"]}
@@ -58499,6 +58506,29 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertTrue(packet["policy"]["motion_durable_evidence_recipe_is_not_production_completion"])
         self.assertTrue(packet["does_not_execute_trades"])
         self.assertTrue(packet["does_not_modify_strategy_action"])
+
+    def test_motion_clarity_audit_rejects_unbounded_candidate_reveal_frame(self):
+        original_motion_source = audit_service._motion_source
+
+        def read_motion_source(relative_path):
+            source = original_motion_source(relative_path)
+            if relative_path == "routes/CandidateRadar.tsx":
+                return source.replace(
+                    "if (revealFrameTwo !== undefined) window.cancelAnimationFrame(revealFrameTwo);",
+                    "",
+                )
+            return source
+
+        audit_service._motion_source = read_motion_source
+        self.addCleanup(setattr, audit_service, "_motion_source", original_motion_source)
+
+        audit, rows = audit_service._motion_clarity_readiness_audit()
+        by_criterion = {row["criterion"]: row for row in rows}
+
+        self.assertEqual(audit["status"], "motion_clarity_static_blocked")
+        self.assertFalse(audit["static_ready"])
+        self.assertIn("no_timer_or_raf_motion_loop", audit["blockers"])
+        self.assertEqual(by_criterion["no_timer_or_raf_motion_loop"]["status"], "blocked")
 
     def test_remote_ci_review_receipt_recorder_writes_matching_green_without_release_completion(self):
         self._with_meta_store()
