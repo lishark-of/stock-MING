@@ -18,6 +18,10 @@ from typing import Any
 from urllib.parse import urlsplit
 
 from server.services.sqlite_evidence_reader import immutable_evidence_connection
+from server.services.full_market_industry_service import (
+    INDUSTRY_BINDING_DIGEST_KEYS,
+    validate_full_market_industry_membership,
+)
 from storage import parquet_store
 from storage.sqlite_meta import SQLiteMetaStore
 
@@ -35,9 +39,9 @@ STAGE_PACKET_PREFIX = f"{PACKET_KEY}_stage"
 CHECKPOINT_PACKET_PREFIX = f"{PACKET_KEY}_checkpoint"
 TRANSPORT_PACKET_PREFIX = f"{PACKET_KEY}_transport"
 EXECUTION_EVENT_PACKET_PREFIX = f"{PACKET_KEY}_execution_event"
-SCHEMA_VERSION = "full_market_worker_production_acceptance.v2"
-STAGE_SCHEMA_VERSION = "full_market_worker_production_stage.v2"
-CHECKPOINT_SCHEMA_VERSION = "full_market_worker_checkpoint.v1"
+SCHEMA_VERSION = "full_market_worker_production_acceptance.v3"
+STAGE_SCHEMA_VERSION = "full_market_worker_production_stage.v3"
+CHECKPOINT_SCHEMA_VERSION = "full_market_worker_checkpoint.v2"
 TRANSPORT_SCHEMA_VERSION = "redis_celery_direct_attestation.v1"
 EXECUTION_EVENT_SCHEMA_VERSION = "full_market_worker_execution_event.v1"
 PROMOTION_JOURNAL_SCHEMA_VERSION = "full_market_worker_promotion_journal.v1"
@@ -49,7 +53,7 @@ RESULT_DATASET = "full_market_candidate_radar_results"
 FACTOR_RESULT_DATASET = "full_market_factor_research_results"
 FACTOR_PACKET_KEY = "command_center_3_factor_full_market_worker_production_acceptance"
 FACTOR_LAST_GOOD_PACKET_KEY = f"{FACTOR_PACKET_KEY}_last_good"
-FACTOR_SCHEMA_VERSION = "factor_full_market_worker_production_acceptance.v1"
+FACTOR_SCHEMA_VERSION = "factor_full_market_worker_production_acceptance.v2"
 CANDIDATE_CACHE_PACKET_KEY = "command_center_3_candidate_radar_cache"
 CANDIDATE_CACHE_SCHEMA_VERSION = "candidate_radar_cache.v1"
 CANDIDATE_CACHE_REPLACEMENT_SCHEMA_VERSION = (
@@ -428,11 +432,28 @@ def _normalize_symbols(values: Any) -> tuple[list[str], int, int]:
     return unique, len(valid) - len(unique), invalid
 
 
+def _industry_binding(universe: Mapping[str, Any]) -> dict[str, str]:
+    return {
+        key: str(universe.get(key) or "")
+        for key in INDUSTRY_BINDING_DIGEST_KEYS
+    }
+
+
+def _industry_binding_ready(universe: Mapping[str, Any]) -> bool:
+    binding = _industry_binding(universe)
+    return all(_HEX_64_RE.fullmatch(value) for value in binding.values())
+
+
+def _industry_input_digest(universe: Mapping[str, Any]) -> str:
+    return _canonical_digest(_industry_binding(universe))
+
+
 def _authoritative_provider_universe(
     evidence_root: Path,
     *,
     minimum_universe_size: int,
     include_frames: bool = False,
+    require_industry_membership: bool = False,
 ) -> dict[str, Any]:
     try:
         from server.services.tushare_production_store import (
@@ -490,6 +511,21 @@ def _authoritative_provider_universe(
         or any(getattr(frames.get(name), "empty", True) for name in required_frames)
     ):
         blockers.append("shared_provider_verified_frames_missing")
+    industry = validate_full_market_industry_membership(
+        evidence_root,
+        expected_symbols=symbols,
+        expected_universe_digest=universe_digest,
+        expected_validated_trade_date=source.get("validated_trade_date"),
+    ) if require_industry_membership else {
+        "ready": False,
+        "status": "full_market_industry_membership_not_requested",
+        "blockers": [],
+        "production_industry_verified": False,
+        "external_calls_triggered": False,
+        "writes_storage": False,
+    }
+    if require_industry_membership and industry.get("ready") is not True:
+        blockers.append("authoritative_full_market_industry_membership_missing_or_invalid")
     result = {
         **source,
         "ready": not blockers,
@@ -505,6 +541,21 @@ def _authoritative_provider_universe(
         "minimum_universe_size": minimum_universe_size,
         "universe_digest": universe_digest,
         "feature_contract_digest": FEATURE_CONTRACT_DIGEST,
+        "industry_membership": industry,
+        "industry_membership_required": require_industry_membership,
+        "industry_membership_verified": bool(
+            require_industry_membership and industry.get("ready") is True
+        ),
+        "industry_scope_digest": str(industry.get("scope_digest") or ""),
+        "industry_source_version_digest": str(
+            industry.get("source_version_digest") or ""
+        ),
+        "industry_artifact_sha256": str(industry.get("artifact_sha256") or ""),
+        "industry_manifest_digest": str(industry.get("manifest_digest") or ""),
+        "industry_pointer_digest": str(industry.get("pointer_digest") or ""),
+        "industry_semantic_evidence_sha256": str(
+            industry.get("semantic_evidence_sha256") or ""
+        ),
         "blockers": list(dict.fromkeys(blockers)),
         "provider_execution_triggered": False,
         "external_calls_triggered": False,
@@ -513,6 +564,15 @@ def _authoritative_provider_universe(
     if include_frames:
         result["_frames"] = dict(frames)
     result.pop("frames", None)
+    if require_industry_membership and not _industry_binding_ready(result):
+        result["ready"] = False
+        result["status"] = "authoritative_full_market_universe_missing_or_below_threshold"
+        result["blockers"] = list(
+            dict.fromkeys(
+                list(result.get("blockers") or [])
+                + ["authoritative_full_market_industry_digest_binding_incomplete"]
+            )
+        )
     return result
 
 
@@ -539,6 +599,17 @@ def _batch_input_hash(universe: Mapping[str, Any], symbols: list[str]) -> str:
         "provider_scope_hash": universe.get("scope_hash"),
         "provider_version_digest": universe.get("version_digest"),
         "universe_digest": universe.get("universe_digest"),
+        "industry_scope_digest": universe.get("industry_scope_digest"),
+        "industry_source_version_digest": universe.get(
+            "industry_source_version_digest"
+        ),
+        "industry_artifact_sha256": universe.get("industry_artifact_sha256"),
+        "industry_manifest_digest": universe.get("industry_manifest_digest"),
+        "industry_pointer_digest": universe.get("industry_pointer_digest"),
+        "industry_semantic_evidence_sha256": universe.get(
+            "industry_semantic_evidence_sha256"
+        ),
+        "industry_input_digest": _industry_input_digest(universe),
         "symbols": list(symbols),
         "frames": {
             name: _frame_records_for_digest(frames.get(name), symbols)
@@ -707,6 +778,8 @@ def _worker_execution_proof_material(
         "universe_digest": str(payload.get("universe_digest") or ""),
         "batch_symbol_hash": str(payload.get("batch_symbol_hash") or ""),
         "batch_input_hash": str(payload.get("batch_input_hash") or ""),
+        "industry_pointer_digest": str(payload.get("industry_pointer_digest") or ""),
+        "industry_input_digest": str(payload.get("industry_input_digest") or ""),
     }
 
 
@@ -797,6 +870,11 @@ def _execute_candidate_radar_batch_after_challenge(
             "universe_digest": str(payload_map.get("universe_digest") or ""),
             "provider_scope_hash": str(payload_map.get("provider_scope_hash") or ""),
             "provider_version_digest": str(payload_map.get("provider_version_digest") or ""),
+            **{
+                key: str(payload_map.get(key) or "")
+                for key in INDUSTRY_BINDING_DIGEST_KEYS
+            },
+            "industry_input_digest": str(payload_map.get("industry_input_digest") or ""),
             "worker_challenge_id": str(payload_map.get("worker_challenge_id") or ""),
         },
         "runtime_provenance": runtime_map,
@@ -831,6 +909,9 @@ def _execute_candidate_radar_batch_after_challenge(
         and not invalid
         and MIN_BATCH_SIZE <= len(symbols) <= MAX_BATCH_SIZE
         and payload_map.get("batch_symbol_hash") == _canonical_digest(symbols)
+        and _industry_binding_ready(payload_map)
+        and payload_map.get("industry_input_digest")
+        == _industry_input_digest(payload_map)
         and _normalize_uuid4(payload_map.get("worker_challenge_id"))
     )
     if not runtime_ready or not payload_ready:
@@ -847,12 +928,15 @@ def _execute_candidate_radar_batch_after_challenge(
         EVIDENCE_ROOT,
         minimum_universe_size=minimum,
         include_frames=True,
+        require_industry_membership=True,
     )
     if not (
         universe.get("ready") is True
         and universe.get("scope_hash") == payload_map.get("provider_scope_hash")
         and universe.get("version_digest") == payload_map.get("provider_version_digest")
         and universe.get("universe_digest") == payload_map.get("universe_digest")
+        and _industry_binding(universe) == _industry_binding(payload_map)
+        and payload_map.get("industry_input_digest") == _industry_input_digest(universe)
         and set(symbols).issubset(set(universe.get("symbols") or []))
     ):
         base["failure_reason_safe"] = "worker_independent_provider_universe_validation_failed"
@@ -893,6 +977,8 @@ def _execute_candidate_radar_batch_after_challenge(
             "provider_version_digest": universe["version_digest"],
             "universe_digest": universe["universe_digest"],
             "validated_trade_date": universe["validated_trade_date"],
+            **_industry_binding(universe),
+            "industry_input_digest": _industry_input_digest(universe),
             "synthetic_fixture": False,
             "call_ledger": [
                 {
@@ -1368,6 +1454,10 @@ def _validate_worker_task(
         and payload.get("universe_digest") == universe.get("universe_digest")
         and payload.get("provider_scope_hash") == universe.get("scope_hash")
         and payload.get("provider_version_digest") == universe.get("version_digest")
+        and _industry_binding(payload) == _industry_binding(universe)
+        and payload.get("industry_input_digest") == _industry_input_digest(universe)
+        and _industry_binding(batch) == _industry_binding(universe)
+        and batch.get("industry_input_digest") == _industry_input_digest(universe)
         and _normalize_uuid4(payload.get("worker_challenge_id"))
         and payload.get("worker_challenge_id") == runtime.get("worker_challenge_id")
         and runtime.get("worker_challenge_consumed") is True
@@ -1678,6 +1768,8 @@ def _dispatch_batches(
             "symbols": symbols,
             "batch_symbol_hash": _canonical_digest(symbols),
             "batch_input_hash": _batch_input_hash(universe, symbols),
+            **_industry_binding(universe),
+            "industry_input_digest": _industry_input_digest(universe),
             "celery_task_id": celery_task_id,
         }
         challenge_id = str(challenge_issuer(specification) or "")
@@ -1696,6 +1788,8 @@ def _dispatch_batches(
             "provider_scope_hash": universe["scope_hash"],
             "provider_version_digest": universe["version_digest"],
             "minimum_universe_size": universe["minimum_universe_size"],
+            **_industry_binding(universe),
+            "industry_input_digest": _industry_input_digest(universe),
             "worker_challenge_id": challenge_id,
         }
         try:
@@ -1846,6 +1940,8 @@ def _write_checkpoint(
         "provider_scope_hash": universe.get("scope_hash"),
         "provider_version_digest": universe.get("version_digest"),
         "universe_digest": universe.get("universe_digest"),
+        **_industry_binding(universe),
+        "industry_input_digest": _industry_input_digest(universe),
         "transport_attestation_digest": _canonical_digest(transport),
         "transport_execution_event_key": transport.get("execution_event_key"),
         "transport_execution_event_digest": transport.get("execution_event_digest"),
@@ -1858,6 +1954,8 @@ def _write_checkpoint(
                 "symbols": symbols,
                 "batch_symbol_hash": _canonical_digest(symbols),
                 "batch_input_hash": _batch_input_hash(universe, symbols),
+                **_industry_binding(universe),
+                "industry_input_digest": _industry_input_digest(universe),
             }
             for index, symbols in enumerate(batches)
         ],
@@ -1893,6 +1991,8 @@ def _validated_resume_successes(
         and checkpoint.get("provider_scope_hash") == universe.get("scope_hash")
         and checkpoint.get("provider_version_digest") == universe.get("version_digest")
         and checkpoint.get("universe_digest") == universe.get("universe_digest")
+        and _industry_binding(checkpoint) == _industry_binding(universe)
+        and checkpoint.get("industry_input_digest") == _industry_input_digest(universe)
         and checkpoint.get("feature_contract_digest") == FEATURE_CONTRACT_DIGEST
         and _integer(checkpoint.get("batch_count")) == len(batches)
         and checkpoint.get("transport_attestation_digest") == _canonical_digest(transport)
@@ -2407,6 +2507,8 @@ def _promote_official_candidate_results(
         "provider_scope_hash": universe.get("scope_hash"),
         "provider_version_digest": universe.get("version_digest"),
         "universe_digest": universe.get("universe_digest"),
+        **_industry_binding(universe),
+        "industry_input_digest": _industry_input_digest(universe),
         "universe_count": universe.get("universe_count"),
         "validated_trade_date": universe.get("validated_trade_date"),
         "feature_contract_digest": FEATURE_CONTRACT_DIGEST,
@@ -2455,6 +2557,8 @@ def _promote_official_candidate_results(
             "provider_scope_hash": universe.get("scope_hash"),
             "provider_version_digest": universe.get("version_digest"),
             "universe_digest": universe.get("universe_digest"),
+            **_industry_binding(universe),
+            "industry_input_digest": _industry_input_digest(universe),
             "feature_contract_digest": FEATURE_CONTRACT_DIGEST,
             "result_output_hash": output_hash,
             "dispatch_chain_digest": dispatch_chain_digest,
@@ -2489,6 +2593,8 @@ def _promote_official_candidate_results(
         "provider_scope_hash": universe.get("scope_hash"),
         "provider_version_digest": universe.get("version_digest"),
         "universe_digest": universe.get("universe_digest"),
+        **_industry_binding(universe),
+        "industry_input_digest": _industry_input_digest(universe),
         "universe_count": universe.get("universe_count"),
         "minimum_universe_size": universe.get("minimum_universe_size"),
         "validated_trade_date": universe.get("validated_trade_date"),
@@ -2927,8 +3033,12 @@ def _factor_output_binding_digest(packet: Mapping[str, Any]) -> str:
             "result_output_hash": packet.get("result_output_hash"),
             "provider_version_digest": packet.get("provider_version_digest"),
             "universe_digest": packet.get("universe_digest"),
+            "validated_trade_date": packet.get("validated_trade_date"),
             "factor_output_contract_digest": packet.get("factor_output_contract_digest"),
             "neutralization_audit_digest": packet.get("neutralization_audit_digest"),
+            **_industry_binding(packet),
+            "industry_input_digest": packet.get("industry_input_digest"),
+            "factor_batch_input_digest": packet.get("factor_batch_input_digest"),
         }
     )
 
@@ -2955,6 +3065,7 @@ def validate_factor_full_market_research_fact(evidence_root: Path) -> dict[str, 
         evidence_root,
         minimum_universe_size=minimum,
         include_frames=False,
+        require_industry_membership=True,
     )
     packet_binding = (
         _canonical_digest(
@@ -2968,6 +3079,17 @@ def validate_factor_full_market_research_fact(evidence_root: Path) -> dict[str, 
         else ""
     )
     run_id = str(packet.get("acceptance_run_id") or "")
+    expected_factor_batch_input_digest = _canonical_digest(
+        {
+            "provider_scope_hash": universe.get("scope_hash"),
+            "provider_version_digest": universe.get("version_digest"),
+            "universe_digest": universe.get("universe_digest"),
+            "validated_trade_date": universe.get("validated_trade_date"),
+            "symbols": universe.get("symbols"),
+            "industry_binding": _industry_binding(universe),
+            "industry_input_digest": _industry_input_digest(universe),
+        }
+    )
     packet_core_ready = bool(
         packet
         and packet == last_good
@@ -2985,6 +3107,12 @@ def validate_factor_full_market_research_fact(evidence_root: Path) -> dict[str, 
         and packet.get("provider_version_digest") == universe.get("version_digest")
         and packet.get("universe_digest") == universe.get("universe_digest")
         and _integer(packet.get("universe_count")) == universe.get("universe_count")
+        and packet.get("validated_trade_date") == universe.get("validated_trade_date")
+        and _industry_binding_ready(universe)
+        and _industry_binding(packet) == _industry_binding(universe)
+        and packet.get("industry_input_digest") == _industry_input_digest(universe)
+        and packet.get("factor_batch_input_digest")
+        == expected_factor_batch_input_digest
         and packet.get("synthetic_fixture") is False
         and packet.get("does_not_execute_trades") is True
         and packet.get("does_not_modify_strategy_action") is True
@@ -3052,6 +3180,14 @@ def validate_factor_full_market_research_fact(evidence_root: Path) -> dict[str, 
         == universe.get("universe_digest")
         and pointer.get("lineage", {}).get("provider_version_digest")
         == universe.get("version_digest")
+        and pointer.get("lineage", {}).get("validated_trade_date")
+        == universe.get("validated_trade_date")
+        and _industry_binding(pointer.get("lineage", {}))
+        == _industry_binding(universe)
+        and pointer.get("lineage", {}).get("industry_input_digest")
+        == _industry_input_digest(universe)
+        and pointer.get("lineage", {}).get("factor_batch_input_digest")
+        == expected_factor_batch_input_digest
         and pointer.get("lineage", {}).get("neutralization_audit_digest")
         == metric_audit.get("audit_digest")
     )
@@ -3131,6 +3267,7 @@ def validate_full_market_worker_production_fact(
         evidence_root,
         minimum_universe_size=minimum,
         include_frames=True,
+        require_industry_membership=True,
     )
     run_id = str(packet.get("acceptance_run_id") or "")
     production_binding = _canonical_digest(
@@ -3169,6 +3306,9 @@ def validate_full_market_worker_production_fact(
         and packet.get("universe_digest") == universe.get("universe_digest")
         and _integer(packet.get("universe_count")) == universe.get("universe_count")
         and packet.get("validated_trade_date") == universe.get("validated_trade_date")
+        and _industry_binding_ready(universe)
+        and _industry_binding(packet) == _industry_binding(universe)
+        and packet.get("industry_input_digest") == _industry_input_digest(universe)
         and packet.get("feature_contract_digest") == FEATURE_CONTRACT_DIGEST
         and packet.get("feature_contract") == FEATURE_CONTRACT
         and packet.get("does_not_execute_trades") is True
@@ -3235,6 +3375,8 @@ def validate_full_market_worker_production_fact(
         and checkpoint.get("provider_scope_hash") == universe.get("scope_hash")
         and checkpoint.get("provider_version_digest") == universe.get("version_digest")
         and checkpoint.get("universe_digest") == universe.get("universe_digest")
+        and _industry_binding(checkpoint) == _industry_binding(universe)
+        and checkpoint.get("industry_input_digest") == _industry_input_digest(universe)
         and checkpoint.get("transport_attestation_digest") == _canonical_digest(transport)
         and checkpoint.get("checkpoint_binding_digest")
         == _canonical_digest(
@@ -3286,6 +3428,8 @@ def validate_full_market_worker_production_fact(
                 or not (MIN_BATCH_SIZE <= len(symbols) <= MAX_BATCH_SIZE)
                 or spec.get("batch_symbol_hash") != _canonical_digest(symbols)
                 or spec.get("batch_input_hash") != _batch_input_hash(universe, symbols)
+                or _industry_binding(spec) != _industry_binding(universe)
+                or spec.get("industry_input_digest") != _industry_input_digest(universe)
                 or not _dispatch_chain_ready(success, task, run_id=run_id, transport=transport)
                 or str(success.get("celery_task_id") or "") in _quarantined_task_ids_for_db(
                     db_path,
@@ -3336,6 +3480,8 @@ def validate_full_market_worker_production_fact(
         and stage.get("status") == "full_market_worker_stage_ready_production_pending"
         and stage.get("acceptance_run_id") == run_id
         and stage.get("provider_version_digest") == universe.get("version_digest")
+        and _industry_binding(stage) == _industry_binding(universe)
+        and stage.get("industry_input_digest") == _industry_input_digest(universe)
         and stage.get("dispatch_chain_digest") == packet.get("dispatch_chain_digest")
         and stage.get("stage_binding_digest") == stage_binding
         and stage.get("stage_binding_digest") == packet.get("stage_binding_digest")
@@ -3391,6 +3537,10 @@ def validate_full_market_worker_production_fact(
         and pointer.get("lineage", {}).get("acceptance_run_id") == run_id
         and pointer.get("lineage", {}).get("universe_digest") == universe.get("universe_digest")
         and pointer.get("lineage", {}).get("provider_version_digest") == universe.get("version_digest")
+        and _industry_binding(pointer.get("lineage", {}))
+        == _industry_binding(universe)
+        and pointer.get("lineage", {}).get("industry_input_digest")
+        == _industry_input_digest(universe)
         and pointer.get("lineage", {}).get("feature_contract_digest") == FEATURE_CONTRACT_DIGEST
         and pointer.get("lineage", {}).get("result_output_hash") == packet.get("result_output_hash")
         and pointer.get("lineage", {}).get("dispatch_chain_digest") == packet.get("dispatch_chain_digest")
@@ -3507,6 +3657,7 @@ def _run_full_market_worker_production_acceptance_impl(
         EVIDENCE_ROOT,
         minimum_universe_size=minimum,
         include_frames=True,
+        require_industry_membership=True,
     )
     if universe.get("ready") is not True:
         return _blocked_attempt(

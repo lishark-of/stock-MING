@@ -10,6 +10,10 @@ from typing import Any, Mapping
 from storage.sqlite_meta import SQLiteMetaStore
 
 from . import task_service
+from .full_market_industry_service import (
+    INDUSTRY_BINDING_DIGEST_KEYS,
+    validate_full_market_industry_membership,
+)
 from .tushare_production_store import (
     REQUIRED_SESSIONS,
     validate_tushare_full_market_production_version,
@@ -33,9 +37,9 @@ FACTOR_TARGET_DATASET = "full_market_factor_research_results"
 RADAR_TARGET_PACKET_KEY = "command_center_3_candidate_radar_cache"
 RADAR_TARGET_DATASET = "full_market_candidate_radar_results"
 
-SCHEMA_VERSION = "full_market_factor_radar_map_reduce_request.v1"
-CHILD_SCHEMA_VERSION = "full_market_map_reduce_child_request.v1"
-BUNDLE_SCHEMA_VERSION = "full_market_factor_radar_request_bundle.v1"
+SCHEMA_VERSION = "full_market_factor_radar_map_reduce_request.v2"
+CHILD_SCHEMA_VERSION = "full_market_map_reduce_child_request.v2"
+BUNDLE_SCHEMA_VERSION = "full_market_factor_radar_request_bundle.v2"
 EXTERNAL_LINEAGE_BLOCKER = "external_trusted_production_lineage_runner_unavailable"
 MINIMUM_UNIVERSE_SIZE = 3000
 _HEX_64 = re.compile(r"^[0-9a-f]{64}$")
@@ -54,6 +58,7 @@ FACTOR_OUTPUT_CONTRACT: dict[str, Any] = {
         "combined_factor_score",
     ],
     "requires_effective_dated_industry_membership": True,
+    "requires_bound_full_market_batch_input_digest": True,
     "requires_full_universe_symbol_coverage": True,
     "candidate_radar_rows_are_not_factor_rows": True,
     "research_only": True,
@@ -76,6 +81,7 @@ RADAR_OUTPUT_CONTRACT: dict[str, Any] = {
     ],
     "requires_full_universe_symbol_coverage": True,
     "requires_authoritative_candidate_cache_write": True,
+    "requires_bound_full_market_batch_input_digest": True,
     "factor_rows_are_not_candidate_radar_rows": True,
     "candidate_is_not_buy_instruction": True,
     "research_only": True,
@@ -125,7 +131,12 @@ def _provider_contract(evidence_root: Path) -> dict[str, Any]:
         include_frames=False,
     )
     provider = dict(raw) if isinstance(raw, Mapping) else {}
-    symbols = [str(item).strip().upper() for item in provider.get("symbols") or []]
+    raw_symbols = provider.get("symbols")
+    symbols = (
+        [str(item).strip().upper() for item in raw_symbols]
+        if type(raw_symbols) is list
+        else []
+    )
     blockers = [str(item) for item in provider.get("blockers") or [] if str(item)]
     required_digests = {
         "provider_scope_hash": _safe_digest(provider.get("scope_hash")),
@@ -133,7 +144,8 @@ def _provider_contract(evidence_root: Path) -> dict[str, Any]:
         "universe_digest": _safe_digest(provider.get("universe_digest")),
         "artifact_manifest_digest": _safe_digest(provider.get("artifact_manifest_digest")),
     }
-    universe_count = int(provider.get("universe_count") or 0)
+    raw_universe_count = provider.get("universe_count")
+    universe_count = raw_universe_count if type(raw_universe_count) is int else 0
     validated_trade_date = str(provider.get("validated_trade_date") or "")
     if provider.get("ready") is not True:
         blockers.append("authoritative_provider_pointer_not_ready")
@@ -141,6 +153,8 @@ def _provider_contract(evidence_root: Path) -> dict[str, Any]:
         blockers.append("authoritative_provider_universe_below_3000")
     if len(symbols) != universe_count or len(set(symbols)) != universe_count:
         blockers.append("authoritative_provider_symbol_identity_invalid")
+    if required_digests["universe_digest"] != _digest(sorted(symbols)):
+        blockers.append("authoritative_provider_universe_digest_mismatch")
     if any(not value for value in required_digests.values()):
         blockers.append("authoritative_provider_digest_binding_incomplete")
     if not (len(validated_trade_date) == 8 and validated_trade_date.isdigit()):
@@ -157,6 +171,7 @@ def _provider_contract(evidence_root: Path) -> dict[str, Any]:
         "minimum_universe_size": MINIMUM_UNIVERSE_SIZE,
         "required_sessions": REQUIRED_SESSIONS,
         "validated_trade_date": validated_trade_date,
+        "_symbols": sorted(symbols),
         **required_digests,
         "blockers": blockers,
         "read_only": True,
@@ -172,20 +187,57 @@ def build_full_market_factor_radar_map_reduce_contract(
 ) -> dict[str, Any]:
     payload_map = dict(payload) if isinstance(payload, Mapping) else {}
     root = Path(evidence_root or EVIDENCE_ROOT)
-    provider = _provider_contract(root)
+    provider_internal = _provider_contract(root)
+    symbols = list(provider_internal.get("_symbols") or [])
+    provider = {
+        key: value for key, value in provider_internal.items() if key != "_symbols"
+    }
+    industry_raw = validate_full_market_industry_membership(
+        root,
+        expected_symbols=symbols,
+        expected_universe_digest=provider.get("universe_digest"),
+        expected_validated_trade_date=provider.get("validated_trade_date"),
+    )
+    industry = dict(industry_raw) if isinstance(industry_raw, Mapping) else {}
+    industry_binding = {
+        "industry_scope_digest": _safe_digest(industry.get("scope_digest")),
+        "industry_source_version_digest": _safe_digest(
+            industry.get("source_version_digest")
+        ),
+        "industry_artifact_sha256": _safe_digest(industry.get("artifact_sha256")),
+        "industry_manifest_digest": _safe_digest(industry.get("manifest_digest")),
+        "industry_pointer_digest": _safe_digest(industry.get("pointer_digest")),
+        "industry_semantic_evidence_sha256": _safe_digest(
+            industry.get("semantic_evidence_sha256")
+        ),
+    }
+    industry_input_digest = _digest(industry_binding)
+    full_market_batch_input_digest = _digest(
+        {
+            "provider_scope_hash": provider.get("provider_scope_hash"),
+            "provider_version_digest": provider.get("provider_version_digest"),
+            "universe_digest": provider.get("universe_digest"),
+            "validated_trade_date": provider.get("validated_trade_date"),
+            "symbols": symbols,
+            "industry_binding": industry_binding,
+            "industry_input_digest": industry_input_digest,
+        }
+    )
     head_full = _current_head_full()
     requested_industry_digest = _safe_digest(
         payload_map.get("effective_dated_industry_membership_digest")
     )
     blockers = list(provider.get("blockers") or [])
+    blockers.extend(str(item) for item in industry.get("blockers") or [] if str(item))
     if not head_full:
         blockers.append("current_head_binding_missing")
-    if not requested_industry_digest:
-        blockers.append("effective_dated_industry_membership_digest_missing")
-    # A caller-provided digest is request material, not evidence.  The current
-    # repository has no full-market, effective-dated industry pointer that an
-    # independent verifier can read back, so the producer remains fail closed.
-    blockers.append("authoritative_effective_dated_industry_membership_missing")
+    if industry.get("ready") is not True or not all(industry_binding.values()):
+        blockers.append("authoritative_effective_dated_industry_membership_missing")
+    if (
+        requested_industry_digest
+        and requested_industry_digest != industry_binding["industry_pointer_digest"]
+    ):
+        blockers.append("requested_industry_pointer_digest_mismatch")
     blockers.append(EXTERNAL_LINEAGE_BLOCKER)
     shared_material = {
         "schema_version": SCHEMA_VERSION,
@@ -197,8 +249,13 @@ def build_full_market_factor_radar_map_reduce_contract(
         "universe_count": provider.get("universe_count"),
         "required_sessions": REQUIRED_SESSIONS,
         "validated_trade_date": provider.get("validated_trade_date"),
-        "requested_effective_dated_industry_membership_digest": requested_industry_digest,
-        "effective_dated_industry_membership_verified": False,
+        "requested_effective_dated_industry_membership_digest": industry_binding[
+            "industry_pointer_digest"
+        ],
+        **industry_binding,
+        "industry_input_digest": industry_input_digest,
+        "full_market_batch_input_digest": full_market_batch_input_digest,
+        "effective_dated_industry_membership_verified": industry.get("ready") is True,
         "factor_output_contract_digest": FACTOR_OUTPUT_CONTRACT_DIGEST,
         "radar_output_contract_digest": RADAR_OUTPUT_CONTRACT_DIGEST,
     }
@@ -218,7 +275,17 @@ def build_full_market_factor_radar_map_reduce_contract(
         "output_contract_digest": RADAR_OUTPUT_CONTRACT_DIGEST,
     }
     request_scope_ready = bool(
-        provider.get("ready") is True and head_full and requested_industry_digest
+        provider.get("ready") is True
+        and industry.get("ready") is True
+        and not provider.get("blockers")
+        and not industry.get("blockers")
+        and all(industry_binding.values())
+        and head_full
+        and (
+            not requested_industry_digest
+            or requested_industry_digest
+            == industry_binding["industry_pointer_digest"]
+        )
     )
     return {
         "schema_version": SCHEMA_VERSION,
@@ -229,6 +296,7 @@ def build_full_market_factor_radar_map_reduce_contract(
         ),
         "head_full": head_full,
         "provider": provider,
+        "industry_membership": industry,
         "shared_scope_hash": shared_scope_hash,
         "shared_scope_material": shared_material,
         "factor_output_contract": dict(FACTOR_OUTPUT_CONTRACT),
@@ -337,7 +405,17 @@ def _expected_request_bundle(contract: Mapping[str, Any]) -> dict[str, Any]:
         "requested_effective_dated_industry_membership_digest": shared.get(
             "requested_effective_dated_industry_membership_digest"
         ),
-        "effective_dated_industry_membership_verified": False,
+        **{
+            key: shared.get(key) for key in INDUSTRY_BINDING_DIGEST_KEYS
+        },
+        "industry_input_digest": shared.get("industry_input_digest"),
+        "full_market_batch_input_digest": shared.get(
+            "full_market_batch_input_digest"
+        ),
+        "effective_dated_industry_membership_verified": shared.get(
+            "effective_dated_industry_membership_verified"
+        )
+        is True,
         "blockers": list(contract.get("blockers") or []),
         "dispatch_allowed": False,
         "external_trusted_lineage_runner_available": False,
@@ -363,6 +441,7 @@ def _expected_request_bundle(contract: Mapping[str, Any]) -> dict[str, Any]:
         "target_dataset": FACTOR_TARGET_DATASET,
         "target_packet_key": FACTOR_TARGET_PACKET_KEY,
         "output_contract_digest": FACTOR_OUTPUT_CONTRACT_DIGEST,
+        "factor_batch_input_digest": shared.get("full_market_batch_input_digest"),
     }
     radar_packet = {
         **expected_common,
@@ -372,6 +451,9 @@ def _expected_request_bundle(contract: Mapping[str, Any]) -> dict[str, Any]:
         "target_dataset": RADAR_TARGET_DATASET,
         "target_packet_key": RADAR_TARGET_PACKET_KEY,
         "output_contract_digest": RADAR_OUTPUT_CONTRACT_DIGEST,
+        "radar_full_market_input_digest": shared.get(
+            "full_market_batch_input_digest"
+        ),
     }
     factor_packet_digest = _child_packet_digest(factor_packet)
     radar_packet_digest = _child_packet_digest(radar_packet)
@@ -385,6 +467,13 @@ def _expected_request_bundle(contract: Mapping[str, Any]) -> dict[str, Any]:
         "provider_version_digest": provider.get("provider_version_digest"),
         "universe_digest": provider.get("universe_digest"),
         "artifact_manifest_digest": provider.get("artifact_manifest_digest"),
+        **{
+            key: shared.get(key) for key in INDUSTRY_BINDING_DIGEST_KEYS
+        },
+        "industry_input_digest": shared.get("industry_input_digest"),
+        "full_market_batch_input_digest": shared.get(
+            "full_market_batch_input_digest"
+        ),
         "factor_task_id": identity["factor_task_id"],
         "factor_request_digest": contract.get("factor_request_digest"),
         "factor_packet_digest": factor_packet_digest,
@@ -461,6 +550,20 @@ def _validate_independent_output_requests(
                 "artifact_manifest_digest",
             )
         ),
+        "industry_digests_complete": all(
+            _safe_digest(shared.get(key)) for key in INDUSTRY_BINDING_DIGEST_KEYS
+        ),
+        "industry_input_digest_recomputed": (
+            _safe_digest(shared.get("industry_input_digest"))
+            == _digest({key: shared.get(key) for key in INDUSTRY_BINDING_DIGEST_KEYS})
+        ),
+        "full_market_batch_input_digest_complete": bool(
+            _safe_digest(shared.get("full_market_batch_input_digest"))
+            and factor_request.get("factor_batch_input_digest")
+            == shared.get("full_market_batch_input_digest")
+            and radar_request.get("radar_full_market_input_digest")
+            == shared.get("full_market_batch_input_digest")
+        ),
         **packet_checks("factor", factor_request, expected_factor),
         **packet_checks("radar", radar_request, expected_radar),
         "output_digests_are_distinct": (
@@ -513,9 +616,7 @@ def validate_independent_output_requests(
 ) -> dict[str, Any]:
     """Rebuild authoritative local bindings before validating two request packets."""
 
-    requested_digest = factor_request.get(
-        "requested_effective_dated_industry_membership_digest"
-    )
+    requested_digest = factor_request.get("industry_pointer_digest")
     contract = build_full_market_factor_radar_map_reduce_contract(
         {"effective_dated_industry_membership_digest": requested_digest},
         evidence_root=evidence_root,

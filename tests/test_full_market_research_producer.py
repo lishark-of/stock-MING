@@ -15,20 +15,42 @@ from server.main import app
 from server.services import full_market_research_producer_service as service
 from server.services import task_service
 from storage.sqlite_meta import SQLiteMetaStore
+from tests.test_full_market_industry_membership import (
+    _symbols as _industry_symbols,
+    _write_evidence,
+)
 
 
 def _provider(*, count: int = 3000) -> dict:
+    symbols = [f"{600000 + index:06d}.SH" for index in range(count)]
     return {
         "ready": True,
         "status": "production_version_verified",
         "blockers": [],
         "scope_hash": "a" * 64,
         "version_digest": "b" * 64,
-        "universe_digest": "c" * 64,
+        "universe_digest": service._digest(sorted(symbols)),
         "artifact_manifest_digest": "d" * 64,
         "universe_count": count,
         "validated_trade_date": "20260717",
-        "symbols": [f"{600000 + index:06d}.SH" for index in range(count)],
+        "symbols": symbols,
+    }
+
+
+def _industry() -> dict:
+    return {
+        "ready": True,
+        "status": "full_market_industry_membership_verified",
+        "scope_digest": "1" * 64,
+        "source_version_digest": "2" * 64,
+        "artifact_sha256": "3" * 64,
+        "manifest_digest": "4" * 64,
+        "pointer_digest": "e" * 64,
+        "semantic_evidence_sha256": "6" * 64,
+        "blockers": [],
+        "read_only": True,
+        "writes_storage": False,
+        "external_calls_triggered": False,
     }
 
 
@@ -53,6 +75,15 @@ def _request_pair(contract: dict) -> tuple[dict, dict]:
 
 
 class FullMarketResearchProducerTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.industry_patcher = patch.object(
+            service,
+            "validate_full_market_industry_membership",
+            return_value=_industry(),
+        )
+        self.industry_patcher.start()
+        self.addCleanup(self.industry_patcher.stop)
+
     def test_contract_fails_closed_when_provider_pointer_is_missing(self):
         blocked = {
             "ready": False,
@@ -116,12 +147,12 @@ class FullMarketResearchProducerTests(unittest.TestCase):
             "deep_scan_score",
             contract["radar_output_contract"]["required_fields"],
         )
-        self.assertFalse(
+        self.assertTrue(
             contract["shared_scope_material"][
                 "effective_dated_industry_membership_verified"
             ]
         )
-        self.assertIn(
+        self.assertNotIn(
             "authoritative_effective_dated_industry_membership_missing",
             contract["blockers"],
         )
@@ -156,14 +187,11 @@ class FullMarketResearchProducerTests(unittest.TestCase):
             contract["shared_scope_material"][
                 "requested_effective_dated_industry_membership_digest"
             ],
-            "9" * 64,
+            "e" * 64,
         )
         self.assertFalse(contract["execution_request_ready"])
         self.assertFalse(contract["production_prerequisites_ready"])
-        self.assertIn(
-            "authoritative_effective_dated_industry_membership_missing",
-            contract["blockers"],
-        )
+        self.assertIn("requested_industry_pointer_digest_mismatch", contract["blockers"])
 
     def test_missing_effective_dated_industry_digest_blocks_shared_dispatch(self):
         with patch.object(
@@ -173,8 +201,9 @@ class FullMarketResearchProducerTests(unittest.TestCase):
         ):
             contract = service.build_full_market_factor_radar_map_reduce_contract({})
 
+        self.assertTrue(contract["execution_request_scope_ready"])
         self.assertFalse(contract["execution_request_ready"])
-        self.assertIn(
+        self.assertNotIn(
             "effective_dated_industry_membership_digest_missing",
             contract["blockers"],
         )
@@ -216,7 +245,7 @@ class FullMarketResearchProducerTests(unittest.TestCase):
             "same_request_digest": ("request_digest", factor["request_digest"]),
             "wrong_head": ("head_full", "f" * 40),
             "wrong_provider": ("provider_version_digest", "9" * 64),
-            "fake_industry_verified": ("effective_dated_industry_membership_verified", True),
+            "fake_industry_verified": ("effective_dated_industry_membership_verified", False),
         }
         for name, (field, value) in attacks.items():
             with self.subTest(name=name):
@@ -282,7 +311,7 @@ class FullMarketResearchProducerTests(unittest.TestCase):
                     "ready"
                 ]
             )
-            self.assertTrue(
+            self.assertFalse(
                 service.validate_independent_output_requests(factor_second, radar_second)[
                     "ready"
                 ]
@@ -923,6 +952,63 @@ class FullMarketResearchProducerTests(unittest.TestCase):
         self.assertFalse(row["production_complete"])
         self.assertFalse(row["cache_get_external_calls"])
         self.assertTrue(row["factor_and_radar_outputs_are_independent"])
+
+
+class FullMarketResearchProducerIndustryIntegrationTests(unittest.TestCase):
+    def test_real_pointer_binds_both_producer_requests_end_to_end(self) -> None:
+        symbols = _industry_symbols()
+        provider = {
+            "ready": True,
+            "status": "production_version_verified",
+            "blockers": [],
+            "scope_hash": "a" * 64,
+            "version_digest": "b" * 64,
+            "universe_digest": service._digest(symbols),
+            "artifact_manifest_digest": "d" * 64,
+            "universe_count": len(symbols),
+            "validated_trade_date": "20260717",
+            "symbols": symbols,
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            _write_evidence(root, symbols)
+            with patch.object(
+                service,
+                "validate_tushare_full_market_production_version",
+                return_value=provider,
+            ):
+                contract = service.build_full_market_factor_radar_map_reduce_contract(
+                    {}, evidence_root=root
+                )
+                factor, radar = _request_pair(contract)
+                audit = service.validate_independent_output_requests(
+                    factor, radar, evidence_root=root
+                )
+
+        shared = contract["shared_scope_material"]
+        self.assertTrue(contract["execution_request_scope_ready"], contract["blockers"])
+        self.assertTrue(shared["effective_dated_industry_membership_verified"])
+        self.assertEqual(
+            shared["industry_input_digest"],
+            service._digest(
+                {
+                    key: shared[key]
+                    for key in service.INDUSTRY_BINDING_DIGEST_KEYS
+                }
+            ),
+        )
+        for key in service.INDUSTRY_BINDING_DIGEST_KEYS:
+            self.assertEqual(factor[key], shared[key])
+            self.assertEqual(radar[key], shared[key])
+        self.assertEqual(
+            factor["factor_batch_input_digest"],
+            shared["full_market_batch_input_digest"],
+        )
+        self.assertEqual(
+            radar["radar_full_market_input_digest"],
+            shared["full_market_batch_input_digest"],
+        )
+        self.assertTrue(audit["ready"], audit["blockers"])
 
 
 if __name__ == "__main__":
