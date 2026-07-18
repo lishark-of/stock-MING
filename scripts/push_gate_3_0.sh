@@ -80,7 +80,7 @@ secret_high_risk_scan() {
   local hits
   hits="$(
     git grep -nE \
-      '(sk-[A-Za-z0-9_-]{20,}|gh[pousr]_[A-Za-z0-9_]{20,}|Bearer[[:space:]]+[A-Za-z0-9._-]{20,}|(api_key|apikey|token|secret|password)[[:space:]]*=[[:space:]]*["'\''][^"'\'']{12,}["'\''])' \
+      '((^|[^A-Za-z0-9_])sk-[A-Za-z0-9_-]{20,}|gh[pousr]_[A-Za-z0-9_]{20,}|Bearer[[:space:]]+[A-Za-z0-9._-]{20,}|(api_key|apikey|token|secret|password)[[:space:]]*=[[:space:]]*["'\''][^"'\'']{12,}["'\''])' \
       -- ':!tests/*' ':!docs/*' ':!*.md' ':!desktop/src-tauri/Cargo.lock' || true
   )"
   if [ -n "$hits" ]; then

@@ -17162,6 +17162,8 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("node_modules|dist|target|__pycache__", script)
         self.assertIn("desktop/src-tauri/icons/icon.png", script)
         self.assertIn("high-risk secret value scan", script)
+        self.assertIn("(^|[^A-Za-z0-9_])sk-", script)
+        self.assertNotIn("'(sk-[A-Za-z0-9_-]{20,}", script)
         self.assertIn("keyword scan for review", script)
         self.assertIn("raw lines suppressed", script)
         self.assertNotIn("showing first 120", script)
