@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import sqlite3
 import tempfile
 import unittest
 from pathlib import Path
@@ -26,6 +27,34 @@ def _provider(*, count: int = 3000) -> dict:
         "validated_trade_date": "20260717",
         "symbols": [f"{600000 + index:06d}.SH" for index in range(count)],
     }
+
+
+def _request_pair(contract: dict) -> tuple[dict, dict]:
+    factor = service._request_packet(
+        contract,
+        output_kind=service.FACTOR_OUTPUT_CONTRACT["output_kind"],
+        target_dataset=service.FACTOR_TARGET_DATASET,
+        target_packet_key=service.FACTOR_TARGET_PACKET_KEY,
+        output_contract_digest=service.FACTOR_OUTPUT_CONTRACT_DIGEST,
+        request_digest=contract["factor_request_digest"],
+    )
+    radar = service._request_packet(
+        contract,
+        output_kind=service.RADAR_OUTPUT_CONTRACT["output_kind"],
+        target_dataset=service.RADAR_TARGET_DATASET,
+        target_packet_key=service.RADAR_TARGET_PACKET_KEY,
+        output_contract_digest=service.RADAR_OUTPUT_CONTRACT_DIGEST,
+        request_digest=contract["radar_request_digest"],
+    )
+    factor["task_id"] = "local-" + "1" * 12
+    radar["task_id"] = "local-" + "2" * 12
+    factor["packet_digest"] = service._digest(
+        {key: value for key, value in factor.items() if key != "packet_digest"}
+    )
+    radar["packet_digest"] = service._digest(
+        {key: value for key, value in radar.items() if key != "packet_digest"}
+    )
+    return factor, radar
 
 
 class FullMarketResearchProducerTests(unittest.TestCase):
@@ -156,32 +185,96 @@ class FullMarketResearchProducerTests(unittest.TestCase):
         )
 
     def test_factor_request_cannot_be_relabelled_as_radar(self):
-        shared = "f" * 64
-        factor = {
-            "output_kind": service.FACTOR_OUTPUT_CONTRACT["output_kind"],
-            "target_dataset": service.FACTOR_TARGET_DATASET,
-            "target_packet_key": service.FACTOR_TARGET_PACKET_KEY,
-            "output_contract_digest": service.FACTOR_OUTPUT_CONTRACT_DIGEST,
-            "shared_scope_hash": shared,
-        }
-        radar = {
-            "output_kind": service.RADAR_OUTPUT_CONTRACT["output_kind"],
-            "target_dataset": service.RADAR_TARGET_DATASET,
-            "target_packet_key": service.RADAR_TARGET_PACKET_KEY,
-            "output_contract_digest": service.RADAR_OUTPUT_CONTRACT_DIGEST,
-            "shared_scope_hash": shared,
-        }
+        with patch.object(
+            service,
+            "validate_tushare_full_market_production_version",
+            return_value=_provider(),
+        ):
+            contract = service.build_full_market_factor_radar_map_reduce_contract(
+                {"effective_dated_industry_membership_digest": "e" * 64}
+            )
+        factor, radar = _request_pair(contract)
         self.assertTrue(
-            service.validate_independent_output_requests(factor, radar)["ready"]
+            service._validate_independent_output_requests(factor, radar, contract)["ready"]
         )
         tampered = dict(radar)
         tampered["output_contract_digest"] = service.FACTOR_OUTPUT_CONTRACT_DIGEST
-        audit = service.validate_independent_output_requests(factor, tampered)
+        tampered["packet_digest"] = service._digest(
+            {key: value for key, value in tampered.items() if key != "packet_digest"}
+        )
+        audit = service._validate_independent_output_requests(factor, tampered, contract)
         self.assertFalse(audit["ready"])
-        self.assertIn("radar_contract_digest_exact", audit["blockers"])
+        self.assertIn("radar_authoritative_fields_exact", audit["blockers"])
         self.assertIn("output_digests_are_distinct", audit["blockers"])
         self.assertFalse(audit["factor_rows_accepted_as_radar"])
         self.assertFalse(audit["radar_rows_accepted_as_factor"])
+
+    def test_independence_validator_rejects_reused_or_forged_bindings(self):
+        with patch.object(
+            service,
+            "validate_tushare_full_market_production_version",
+            return_value=_provider(),
+        ):
+            contract = service.build_full_market_factor_radar_map_reduce_contract(
+                {"effective_dated_industry_membership_digest": "e" * 64}
+            )
+        factor, radar = _request_pair(contract)
+        attacks = {
+            "same_request_digest": ("request_digest", factor["request_digest"]),
+            "wrong_head": ("head_full", "f" * 40),
+            "wrong_provider": ("provider_version_digest", "9" * 64),
+            "fake_industry_verified": ("effective_dated_industry_membership_verified", True),
+        }
+        for name, (field, value) in attacks.items():
+            with self.subTest(name=name):
+                tampered = dict(radar)
+                tampered[field] = value
+                tampered["packet_digest"] = service._digest(
+                    {key: item for key, item in tampered.items() if key != "packet_digest"}
+                )
+                audit = service._validate_independent_output_requests(
+                    factor, tampered, contract
+                )
+                self.assertFalse(audit["ready"])
+        reused_packet_digest = dict(radar)
+        reused_packet_digest["packet_digest"] = factor["packet_digest"]
+        audit = service._validate_independent_output_requests(
+            factor, reused_packet_digest, contract
+        )
+        self.assertFalse(audit["ready"])
+        self.assertIn("packet_digests_are_distinct", audit["blockers"])
+        missing_head = dict(radar)
+        missing_head.pop("head_full")
+        missing_head["packet_digest"] = service._digest(
+            {key: item for key, item in missing_head.items() if key != "packet_digest"}
+        )
+        self.assertFalse(
+            service._validate_independent_output_requests(
+                factor, missing_head, contract
+            )["ready"]
+        )
+
+    def test_public_validator_rebuilds_authoritative_contract(self):
+        with patch.object(
+            service,
+            "validate_tushare_full_market_production_version",
+            return_value=_provider(),
+        ):
+            contract = service.build_full_market_factor_radar_map_reduce_contract(
+                {"effective_dated_industry_membership_digest": "e" * 64}
+            )
+            factor, radar = _request_pair(contract)
+            self.assertTrue(
+                service.validate_independent_output_requests(factor, radar)["ready"]
+            )
+            forged = dict(factor)
+            forged["provider_scope_hash"] = "9" * 64
+            forged["packet_digest"] = service._digest(
+                {key: value for key, value in forged.items() if key != "packet_digest"}
+            )
+            self.assertFalse(
+                service.validate_independent_output_requests(forged, radar)["ready"]
+            )
 
     def test_explicit_post_writes_only_three_local_request_packets(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -249,6 +342,108 @@ class FullMarketResearchProducerTests(unittest.TestCase):
             self.assertFalse(payload["external_calls_triggered"])
             self.assertFalse(payload["tushare_called"])
             self.assertTrue(payload["does_not_execute_trades"])
+
+    def test_packet_and_task_bundle_rolls_back_on_each_packet_write_failure(self):
+        for blocked_key in (
+            service.FACTOR_REQUEST_PACKET_KEY,
+            service.RADAR_REQUEST_PACKET_KEY,
+            service.COORDINATOR_PACKET_KEY,
+        ):
+            with (
+                self.subTest(blocked_key=blocked_key),
+                tempfile.TemporaryDirectory() as tmp,
+            ):
+                root = Path(tmp)
+                meta_path = root / "meta.sqlite"
+                SQLiteMetaStore(meta_path)
+                with sqlite3.connect(meta_path) as connection:
+                    connection.execute(
+                        f"""
+                        CREATE TRIGGER fail_bundle_packet
+                        BEFORE INSERT ON packets
+                        WHEN NEW.packet_key = '{blocked_key}'
+                        BEGIN
+                            SELECT RAISE(ABORT, 'injected_bundle_packet_failure');
+                        END
+                        """
+                    )
+                    connection.commit()
+                with (
+                    patch.object(service, "SQLITE_META_PATH", meta_path),
+                    patch.object(task_service, "SQLITE_META_PATH", meta_path),
+                    patch.object(
+                        service,
+                        "validate_tushare_full_market_production_version",
+                        return_value=_provider(),
+                    ),
+                ):
+                    with self.assertRaises(sqlite3.IntegrityError):
+                        service.run_full_market_factor_radar_map_reduce_request(
+                            {"effective_dated_industry_membership_digest": "e" * 64},
+                            evidence_root=root,
+                            meta_path=meta_path,
+                        )
+                store = SQLiteMetaStore(meta_path, read_only=True)
+                self.assertIsNone(store.read_packet(service.FACTOR_REQUEST_PACKET_KEY))
+                self.assertIsNone(store.read_packet(service.RADAR_REQUEST_PACKET_KEY))
+                self.assertIsNone(store.read_packet(service.COORDINATOR_PACKET_KEY))
+                self.assertEqual(store.list_task_metadata(), [])
+                with sqlite3.connect(meta_path) as connection:
+                    history_count = connection.execute(
+                        "SELECT COUNT(*) FROM task_status_history"
+                    ).fetchone()[0]
+                self.assertEqual(history_count, 0)
+
+    def test_packet_and_task_bundle_rolls_back_on_each_task_write_failure(self):
+        for blocked_task_type in (
+            service.FACTOR_TASK_TYPE,
+            service.RADAR_TASK_TYPE,
+            service.COORDINATOR_TASK_TYPE,
+        ):
+            with (
+                self.subTest(task_type=blocked_task_type),
+                tempfile.TemporaryDirectory() as tmp,
+            ):
+                root = Path(tmp)
+                meta_path = root / "meta.sqlite"
+                SQLiteMetaStore(meta_path)
+                with sqlite3.connect(meta_path) as connection:
+                    connection.execute(
+                        f"""
+                        CREATE TRIGGER fail_bundle_task
+                        BEFORE INSERT ON task_status
+                        WHEN json_extract(NEW.payload_json, '$.task_type') = '{blocked_task_type}'
+                        BEGIN
+                            SELECT RAISE(ABORT, 'injected_bundle_task_failure');
+                        END
+                        """
+                    )
+                    connection.commit()
+                with (
+                    patch.object(service, "SQLITE_META_PATH", meta_path),
+                    patch.object(task_service, "SQLITE_META_PATH", meta_path),
+                    patch.object(
+                        service,
+                        "validate_tushare_full_market_production_version",
+                        return_value=_provider(),
+                    ),
+                ):
+                    with self.assertRaises(sqlite3.IntegrityError):
+                        service.run_full_market_factor_radar_map_reduce_request(
+                            {"effective_dated_industry_membership_digest": "e" * 64},
+                            evidence_root=root,
+                            meta_path=meta_path,
+                        )
+                store = SQLiteMetaStore(meta_path, read_only=True)
+                self.assertIsNone(store.read_packet(service.FACTOR_REQUEST_PACKET_KEY))
+                self.assertIsNone(store.read_packet(service.RADAR_REQUEST_PACKET_KEY))
+                self.assertIsNone(store.read_packet(service.COORDINATOR_PACKET_KEY))
+                self.assertEqual(store.list_task_metadata(), [])
+                with sqlite3.connect(meta_path) as connection:
+                    history_count = connection.execute(
+                        "SELECT COUNT(*) FROM task_status_history"
+                    ).fetchone()[0]
+                self.assertEqual(history_count, 0)
 
     def test_task_catalog_exposes_only_the_local_request_boundary(self):
         row = next(

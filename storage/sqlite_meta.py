@@ -6,7 +6,7 @@ import json
 import sqlite3
 from contextlib import closing
 from pathlib import Path
-from typing import Any
+from typing import Any, Mapping, Sequence
 from urllib.parse import quote
 
 
@@ -189,6 +189,116 @@ class SQLiteMetaStore:
             "readback_verified_before_commit": True,
             "current_payload_digest": hashlib.sha256(pairs[0][1].encode("utf-8")).hexdigest(),
             "last_good_payload_digest": hashlib.sha256(pairs[1][1].encode("utf-8")).hexdigest(),
+        }
+
+    def write_packet_task_bundle_atomic(
+        self,
+        *,
+        packets: Mapping[str, Any],
+        tasks: Sequence[Mapping[str, Any]],
+    ) -> dict[str, Any]:
+        """Atomically persist request packets and their terminal task records."""
+
+        if self.read_only:
+            raise RuntimeError("read_only_store_cannot_write_bundle")
+        packet_rows = [
+            (
+                str(packet_key),
+                json.dumps(
+                    packet,
+                    ensure_ascii=False,
+                    sort_keys=True,
+                    separators=(",", ":"),
+                    default=str,
+                ),
+            )
+            for packet_key, packet in packets.items()
+        ]
+        task_rows: list[tuple[str, str, str, str]] = []
+        for task in tasks:
+            task_id = str(task.get("task_id") or "")
+            task_type = str(task.get("task_type") or "")
+            if not task_id or not task_type:
+                raise ValueError("bundle_task_identity_required")
+            payload = json.dumps(
+                dict(task),
+                ensure_ascii=False,
+                sort_keys=True,
+                separators=(",", ":"),
+                default=str,
+            )
+            task_rows.append(
+                (
+                    task_id,
+                    task_type,
+                    payload,
+                    hashlib.sha256(payload.encode("utf-8")).hexdigest(),
+                )
+            )
+        packet_keys = [row[0] for row in packet_rows]
+        task_ids = [row[0] for row in task_rows]
+        if (
+            not packet_rows
+            or not task_rows
+            or any(not key for key in packet_keys)
+            or len(set(packet_keys)) != len(packet_keys)
+            or len(set(task_ids)) != len(task_ids)
+        ):
+            raise ValueError("bundle_packet_or_task_identity_invalid")
+
+        now = _dt.datetime.now().isoformat(timespec="microseconds")
+        with closing(self._connect()) as conn:
+            try:
+                conn.execute("BEGIN IMMEDIATE")
+                for packet_key, payload in packet_rows:
+                    conn.execute(
+                        """
+                        INSERT OR REPLACE INTO packets(
+                            packet_key, payload_json, updated_at
+                        ) VALUES (?, ?, ?)
+                        """,
+                        (packet_key, payload, now),
+                    )
+                    row = conn.execute(
+                        "SELECT payload_json FROM packets WHERE packet_key = ?",
+                        (packet_key,),
+                    ).fetchone()
+                    if row is None or str(row[0]) != payload:
+                        raise RuntimeError("atomic_bundle_packet_readback_mismatch")
+                for task_id, task_type, payload, payload_digest in task_rows:
+                    conn.execute(
+                        """
+                        INSERT OR REPLACE INTO task_status(
+                            task_id, payload_json, updated_at
+                        ) VALUES (?, ?, ?)
+                        """,
+                        (task_id, payload, now),
+                    )
+                    conn.execute(
+                        """
+                        INSERT INTO task_status_history(
+                            task_id, task_type, payload_json, updated_at, payload_digest
+                        ) VALUES (?, ?, ?, ?, ?)
+                        """,
+                        (task_id, task_type, payload, now, payload_digest),
+                    )
+                    row = conn.execute(
+                        "SELECT payload_json FROM task_status WHERE task_id = ?",
+                        (task_id,),
+                    ).fetchone()
+                    if row is None or str(row[0]) != payload:
+                        raise RuntimeError("atomic_bundle_task_readback_mismatch")
+                conn.commit()
+            except Exception:
+                conn.rollback()
+                raise
+        return {
+            "status": "packet_task_bundle_committed",
+            "packet_keys": packet_keys,
+            "task_ids": task_ids,
+            "updated_at": now,
+            "transaction_committed": True,
+            "readback_verified_before_commit": True,
         }
 
     def restore_packet_pair_and_delete_event_atomic(

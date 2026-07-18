@@ -4,6 +4,7 @@ import hashlib
 import json
 import re
 import subprocess
+import uuid
 from pathlib import Path
 from typing import Any, Mapping
 
@@ -267,27 +268,119 @@ def build_full_market_factor_radar_map_reduce_contract(
     }
 
 
-def validate_independent_output_requests(
+def _exact_value(actual: Any, expected: Any) -> bool:
+    if isinstance(expected, bool):
+        return actual is expected
+    if isinstance(expected, int):
+        return type(actual) is int and actual == expected
+    return actual == expected
+
+
+def _validate_independent_output_requests(
     factor_request: Mapping[str, Any],
     radar_request: Mapping[str, Any],
+    contract: Mapping[str, Any],
 ) -> dict[str, Any]:
+    provider = contract.get("provider") if isinstance(contract.get("provider"), Mapping) else {}
+    shared = (
+        contract.get("shared_scope_material")
+        if isinstance(contract.get("shared_scope_material"), Mapping)
+        else {}
+    )
+    expected_common = {
+        "schema_version": CHILD_SCHEMA_VERSION,
+        "status": (
+            "execution_request_recorded_authoritative_inputs_pending"
+            if contract.get("execution_request_scope_ready") is True
+            else "execution_request_blocked_prerequisites_missing"
+        ),
+        "head_full": contract.get("head_full"),
+        "shared_scope_hash": contract.get("shared_scope_hash"),
+        "provider_scope_hash": provider.get("provider_scope_hash"),
+        "provider_version_digest": provider.get("provider_version_digest"),
+        "universe_digest": provider.get("universe_digest"),
+        "artifact_manifest_digest": provider.get("artifact_manifest_digest"),
+        "universe_count": provider.get("universe_count"),
+        "required_sessions": REQUIRED_SESSIONS,
+        "validated_trade_date": provider.get("validated_trade_date"),
+        "requested_effective_dated_industry_membership_digest": shared.get(
+            "requested_effective_dated_industry_membership_digest"
+        ),
+        "effective_dated_industry_membership_verified": False,
+        "blockers": list(contract.get("blockers") or []),
+        "dispatch_allowed": False,
+        "external_trusted_lineage_runner_available": False,
+        "production_complete": False,
+        "writes_target_dataset": False,
+        "writes_target_packet": False,
+        "global_candidate_cache_overwritten": False,
+        "provider_execution_triggered": False,
+        "worker_execution_triggered": False,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "contains_secret": False,
+    }
+    expected_factor = {
+        **expected_common,
+        "request_digest": contract.get("factor_request_digest"),
+        "output_kind": FACTOR_OUTPUT_CONTRACT["output_kind"],
+        "target_dataset": FACTOR_TARGET_DATASET,
+        "target_packet_key": FACTOR_TARGET_PACKET_KEY,
+        "output_contract_digest": FACTOR_OUTPUT_CONTRACT_DIGEST,
+    }
+    expected_radar = {
+        **expected_common,
+        "request_digest": contract.get("radar_request_digest"),
+        "output_kind": RADAR_OUTPUT_CONTRACT["output_kind"],
+        "target_dataset": RADAR_TARGET_DATASET,
+        "target_packet_key": RADAR_TARGET_PACKET_KEY,
+        "output_contract_digest": RADAR_OUTPUT_CONTRACT_DIGEST,
+    }
+
+    def packet_checks(
+        prefix: str,
+        packet: Mapping[str, Any],
+        expected: Mapping[str, Any],
+    ) -> dict[str, bool]:
+        task_id = str(packet.get("task_id") or "")
+        expected_keys = set(expected) | {"task_id", "packet_digest"}
+        return {
+            f"{prefix}_fields_exact": set(packet) == expected_keys,
+            f"{prefix}_task_id_valid": bool(re.fullmatch(r"local-[0-9a-f]{12}", task_id)),
+            f"{prefix}_authoritative_fields_exact": all(
+                _exact_value(packet.get(key), value) for key, value in expected.items()
+            ),
+            f"{prefix}_packet_digest_exact": (
+                _safe_digest(packet.get("packet_digest"))
+                == _digest(
+                    {key: value for key, value in packet.items() if key != "packet_digest"}
+                )
+            ),
+        }
+
     checks = {
-        "factor_output_kind_exact": (
-            factor_request.get("output_kind") == FACTOR_OUTPUT_CONTRACT["output_kind"]
+        "current_head_exact": bool(
+            re.fullmatch(r"[0-9a-f]{40}", str(contract.get("head_full") or ""))
+            and contract.get("head_full") == _current_head_full()
         ),
-        "factor_dataset_exact": factor_request.get("target_dataset") == FACTOR_TARGET_DATASET,
-        "factor_packet_exact": factor_request.get("target_packet_key") == FACTOR_TARGET_PACKET_KEY,
-        "factor_contract_digest_exact": (
-            factor_request.get("output_contract_digest") == FACTOR_OUTPUT_CONTRACT_DIGEST
+        "shared_scope_recomputed": (
+            _safe_digest(contract.get("shared_scope_hash")) == _digest(shared)
         ),
-        "radar_output_kind_exact": (
-            radar_request.get("output_kind") == RADAR_OUTPUT_CONTRACT["output_kind"]
+        "provider_digests_complete": all(
+            _safe_digest(provider.get(key))
+            for key in (
+                "provider_scope_hash",
+                "provider_version_digest",
+                "universe_digest",
+                "artifact_manifest_digest",
+            )
         ),
-        "radar_dataset_exact": radar_request.get("target_dataset") == RADAR_TARGET_DATASET,
-        "radar_packet_exact": radar_request.get("target_packet_key") == RADAR_TARGET_PACKET_KEY,
-        "radar_contract_digest_exact": (
-            radar_request.get("output_contract_digest") == RADAR_OUTPUT_CONTRACT_DIGEST
-        ),
+        **packet_checks("factor", factor_request, expected_factor),
+        **packet_checks("radar", radar_request, expected_radar),
         "output_digests_are_distinct": (
             factor_request.get("output_contract_digest")
             != radar_request.get("output_contract_digest")
@@ -302,6 +395,20 @@ def validate_independent_output_requests(
             factor_request.get("shared_scope_hash")
             and factor_request.get("shared_scope_hash") == radar_request.get("shared_scope_hash")
         ),
+        "request_digests_are_distinct": bool(
+            _safe_digest(factor_request.get("request_digest"))
+            and _safe_digest(radar_request.get("request_digest"))
+            and factor_request.get("request_digest") != radar_request.get("request_digest")
+        ),
+        "packet_digests_are_distinct": bool(
+            _safe_digest(factor_request.get("packet_digest"))
+            and _safe_digest(radar_request.get("packet_digest"))
+            and factor_request.get("packet_digest") != radar_request.get("packet_digest")
+        ),
+        "task_ids_are_distinct": bool(
+            factor_request.get("task_id")
+            and factor_request.get("task_id") != radar_request.get("task_id")
+        ),
     }
     blockers = [key for key, ready in checks.items() if ready is not True]
     return {
@@ -314,6 +421,24 @@ def validate_independent_output_requests(
         "external_calls_triggered": False,
         "does_not_execute_trades": True,
     }
+
+
+def validate_independent_output_requests(
+    factor_request: Mapping[str, Any],
+    radar_request: Mapping[str, Any],
+    *,
+    evidence_root: Path | None = None,
+) -> dict[str, Any]:
+    """Rebuild authoritative local bindings before validating two request packets."""
+
+    requested_digest = factor_request.get(
+        "requested_effective_dated_industry_membership_digest"
+    )
+    contract = build_full_market_factor_radar_map_reduce_contract(
+        {"effective_dated_industry_membership_digest": requested_digest},
+        evidence_root=evidence_root,
+    )
+    return _validate_independent_output_requests(factor_request, radar_request, contract)
 
 
 def _request_packet(
@@ -347,6 +472,10 @@ def _request_packet(
         "universe_count": provider.get("universe_count"),
         "required_sessions": REQUIRED_SESSIONS,
         "validated_trade_date": provider.get("validated_trade_date"),
+        "requested_effective_dated_industry_membership_digest": contract.get(
+            "shared_scope_material", {}
+        ).get("requested_effective_dated_industry_membership_digest"),
+        "effective_dated_industry_membership_verified": False,
         "blockers": list(contract.get("blockers") or []),
         "dispatch_allowed": False,
         "external_trusted_lineage_runner_available": False,
@@ -408,6 +537,9 @@ def run_full_market_factor_radar_map_reduce_request(
         payload,
         evidence_root=evidence_root,
     )
+    factor_task_id = f"local-{uuid.uuid4().hex[:12]}"
+    radar_task_id = f"local-{uuid.uuid4().hex[:12]}"
+    coordinator_task_id = f"local-{uuid.uuid4().hex[:12]}"
     factor_packet = _request_packet(
         contract,
         output_kind=str(FACTOR_OUTPUT_CONTRACT["output_kind"]),
@@ -415,6 +547,10 @@ def run_full_market_factor_radar_map_reduce_request(
         target_packet_key=FACTOR_TARGET_PACKET_KEY,
         output_contract_digest=FACTOR_OUTPUT_CONTRACT_DIGEST,
         request_digest=str(contract.get("factor_request_digest") or ""),
+    )
+    factor_packet["task_id"] = factor_task_id
+    factor_packet["packet_digest"] = _digest(
+        {key: value for key, value in factor_packet.items() if key != "packet_digest"}
     )
     radar_packet = _request_packet(
         contract,
@@ -424,51 +560,44 @@ def run_full_market_factor_radar_map_reduce_request(
         output_contract_digest=RADAR_OUTPUT_CONTRACT_DIGEST,
         request_digest=str(contract.get("radar_request_digest") or ""),
     )
-    factor_ledger = _local_request_ledger("local_factor_full_market_map_reduce_request", factor_packet)
-    radar_ledger = _local_request_ledger("local_candidate_radar_map_reduce_request", radar_packet)
-    factor_task = task_service.create_task_record(
-        FACTOR_TASK_TYPE,
-        output_packet_key=FACTOR_REQUEST_PACKET_KEY,
-        payload=factor_packet,
-        current_step=str(factor_packet["status"]),
-        warnings=["execution_request_only_no_provider_worker_or_production_write"],
-    )
-    factor_task = task_service.update_task_status(
-        str(factor_task["task_id"]),
-        status="success",
-        progress=1.0,
-        current_step=str(factor_packet["status"]),
-        call_ledger=factor_ledger,
-    ) or factor_task
-    radar_task = task_service.create_task_record(
-        RADAR_TASK_TYPE,
-        output_packet_key=RADAR_REQUEST_PACKET_KEY,
-        payload=radar_packet,
-        current_step=str(radar_packet["status"]),
-        warnings=["execution_request_only_no_provider_worker_or_candidate_cache_write"],
-    )
-    radar_task = task_service.update_task_status(
-        str(radar_task["task_id"]),
-        status="success",
-        progress=1.0,
-        current_step=str(radar_packet["status"]),
-        call_ledger=radar_ledger,
-    ) or radar_task
-    factor_packet["task_id"] = factor_task.get("task_id")
-    radar_packet["task_id"] = radar_task.get("task_id")
-    factor_packet["packet_digest"] = _digest(
-        {key: value for key, value in factor_packet.items() if key != "packet_digest"}
-    )
+    radar_packet["task_id"] = radar_task_id
     radar_packet["packet_digest"] = _digest(
         {key: value for key, value in radar_packet.items() if key != "packet_digest"}
     )
-    independence = validate_independent_output_requests(factor_packet, radar_packet)
+    independence = _validate_independent_output_requests(factor_packet, radar_packet, contract)
+    if independence.get("ready") is not True:
+        raise RuntimeError("independent_output_request_integrity_failed")
+    factor_ledger = _local_request_ledger("local_factor_full_market_map_reduce_request", factor_packet)
+    radar_ledger = _local_request_ledger("local_candidate_radar_map_reduce_request", radar_packet)
+    factor_task = task_service.build_task_record(
+        FACTOR_TASK_TYPE,
+        task_id=factor_task_id,
+        output_packet_key=FACTOR_REQUEST_PACKET_KEY,
+        payload=factor_packet,
+        status="success",
+        progress=1.0,
+        current_step=str(factor_packet["status"]),
+        warnings=["execution_request_only_no_provider_worker_or_production_write"],
+        call_ledger=factor_ledger,
+    )
+    radar_task = task_service.build_task_record(
+        RADAR_TASK_TYPE,
+        task_id=radar_task_id,
+        output_packet_key=RADAR_REQUEST_PACKET_KEY,
+        payload=radar_packet,
+        status="success",
+        progress=1.0,
+        current_step=str(radar_packet["status"]),
+        warnings=["execution_request_only_no_provider_worker_or_candidate_cache_write"],
+        call_ledger=radar_ledger,
+    )
     coordinator_payload = {
         **dict(contract),
-        "factor_task_id": factor_task.get("task_id"),
+        "task_id": coordinator_task_id,
+        "factor_task_id": factor_task_id,
         "factor_request_packet_key": FACTOR_REQUEST_PACKET_KEY,
         "factor_request_packet_digest": factor_packet.get("packet_digest"),
-        "radar_task_id": radar_task.get("task_id"),
+        "radar_task_id": radar_task_id,
         "radar_request_packet_key": RADAR_REQUEST_PACKET_KEY,
         "radar_request_packet_digest": radar_packet.get("packet_digest"),
         "independent_output_request_validation": independence,
@@ -484,31 +613,29 @@ def run_full_market_factor_radar_map_reduce_request(
             "required_sessions": REQUIRED_SESSIONS,
         },
     )
-    coordinator = task_service.create_task_record(
+    coordinator = task_service.build_task_record(
         COORDINATOR_TASK_TYPE,
+        task_id=coordinator_task_id,
         output_packet_key=COORDINATOR_PACKET_KEY,
         payload=coordinator_payload,
+        status="success",
+        progress=1.0,
         current_step=str(contract.get("status") or "execution_request_blocked"),
         warnings=[
             "shared_map_reduce_execution_request_only_no_provider_redis_celery_dispatch",
             "factor_and_candidate_radar_outputs_require_independent_trusted_lineage",
         ],
-    )
-    coordinator = task_service.update_task_status(
-        str(coordinator["task_id"]),
-        status="success",
-        progress=1.0,
-        current_step=str(contract.get("status") or "execution_request_blocked"),
         call_ledger=coordinator_ledger,
-    ) or coordinator
-    store = SQLiteMetaStore(Path(meta_path or SQLITE_META_PATH))
-    coordinator_payload["task_id"] = coordinator.get("task_id")
-    coordinator_payload["packet_digest"] = _digest(
-        {key: value for key, value in coordinator_payload.items() if key != "packet_digest"}
     )
-    store.write_packet(FACTOR_REQUEST_PACKET_KEY, factor_packet)
-    store.write_packet(RADAR_REQUEST_PACKET_KEY, radar_packet)
-    store.write_packet(COORDINATOR_PACKET_KEY, coordinator_payload)
+    store = SQLiteMetaStore(Path(meta_path or SQLITE_META_PATH))
+    store.write_packet_task_bundle_atomic(
+        packets={
+            FACTOR_REQUEST_PACKET_KEY: factor_packet,
+            RADAR_REQUEST_PACKET_KEY: radar_packet,
+            COORDINATOR_PACKET_KEY: coordinator_payload,
+        },
+        tasks=[factor_task, radar_task, coordinator],
+    )
     coordinator["payload_safe"] = coordinator_payload
     coordinator["external_calls_triggered"] = False
     coordinator["tushare_called"] = False
