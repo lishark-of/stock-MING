@@ -52,6 +52,25 @@ def _digest(value: Mapping[str, Any] | list[Any]) -> str:
     ).hexdigest()
 
 
+def _canonical_equal(left: Any, right: Any) -> bool:
+    try:
+        left_bytes = json.dumps(
+            left,
+            ensure_ascii=True,
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8")
+        right_bytes = json.dumps(
+            right,
+            ensure_ascii=True,
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8")
+    except (TypeError, ValueError, OverflowError):
+        return False
+    return left_bytes == right_bytes
+
+
 def _safe_int(value: Any) -> int:
     return value if type(value) is int and 0 <= value <= (2**63 - 1) else 0
 
@@ -93,14 +112,25 @@ def _consumer_keys(consumer: str) -> tuple[str, str, str]:
 def _source_identity(consumer: str, packet: Mapping[str, Any]) -> dict[str, Any]:
     if consumer == "worker":
         run_id = str(packet.get("acceptance_run_id") or "")
-        celery_ids = [str(value) for value in packet.get("celery_task_ids") or [] if str(value)]
+        celery_values = packet.get("celery_task_ids")
+        celery_ids = (
+            list(celery_values)
+            if type(celery_values) is list
+            and all(type(value) is str and bool(value) for value in celery_values)
+            else []
+        )
+        worker_values = packet.get("worker_task_ids")
+        worker_ids = (
+            list(worker_values)
+            if type(worker_values) is list
+            and all(type(value) is str and bool(value) for value in worker_values)
+            else []
+        )
         claims = {
             "worker_run_id": run_id,
             "redis_transport_digest": str(packet.get("transport_attestation_digest") or ""),
             "celery_task_ids_digest": _digest(celery_ids),
-            "eligible_worker_count": len(
-                {str(value) for value in packet.get("worker_task_ids") or [] if str(value)}
-            ),
+            "eligible_worker_count": len(set(worker_ids)),
             "batch_count": _safe_int(packet.get("batch_count")),
             "row_count": _safe_int(packet.get("result_row_count")),
             "does_not_execute_trades": True,
@@ -199,6 +229,8 @@ def _source_binding(consumer: str, *, evidence_root: Path | None = None) -> dict
         else str(last_good_binding.get("source_result_version_id") or "")
     )
     if consumer == "worker":
+        celery_values = current_packet.get("celery_task_ids")
+        worker_values = current_packet.get("worker_task_ids")
         consumer_shape_ready = bool(
             current_packet.get("result_dataset") == config["dataset"]
             and current_packet.get("result_version_id")
@@ -206,6 +238,12 @@ def _source_binding(consumer: str, *, evidence_root: Path | None = None) -> dict
             and current_packet.get("transport_attestation_digest")
             and _safe_int(current_packet.get("batch_count")) > 0
             and _safe_int(current_packet.get("result_row_count")) > 0
+            and type(celery_values) is list
+            and bool(celery_values)
+            and all(type(value) is str and bool(value) for value in celery_values)
+            and type(worker_values) is list
+            and bool(worker_values)
+            and all(type(value) is str and bool(value) for value in worker_values)
         )
         last_good_shape_ready = bool(
             last_good_packet.get("result_dataset") == config["dataset"]
@@ -351,7 +389,7 @@ def _validate_claims(consumer: str, event: Mapping[str, Any], source: Mapping[st
         and event.get("task_id") == source.get("task_id")
         and event.get("scope_hash") == source.get("scope_hash")
         and event.get("artifact_digest") == source.get("artifact_digest")
-        and event.get("claims") == source.get("claims")
+        and _canonical_equal(event.get("claims"), source.get("claims"))
         and event.get("external_trust_verified") is True
         and event.get("production_trusted") is True
         and event.get("snapshot_rollback_resistant") is True
@@ -375,7 +413,7 @@ def _strict_registry_consumer_matches(
     }
     consumer_key, _, _ = _consumer_keys(consumer)
     return bool(
-        dict(registry) == dict(canonical_registry)
+        _canonical_equal(registry, canonical_registry)
         and registry.get("schema_version") == external_trust.REGISTRY_SCHEMA_VERSION
         and registry.get("packet_key") == external_trust.REGISTRY_PACKET_KEY
         and registry.get("status")
@@ -446,7 +484,7 @@ def _strict_registry_consumer_matches(
         and event.get("task_id") == source.get("task_id")
         and event.get("scope_hash") == source.get("scope_hash")
         and event.get("artifact_digest") == source.get("artifact_digest")
-        and event.get("claims") == packet.get("claims")
+        and _canonical_equal(event.get("claims"), packet.get("claims"))
         and event.get("external_trust_verified") is True
         and event.get("production_trusted") is True
         and event.get("snapshot_rollback_resistant") is True
@@ -580,14 +618,17 @@ def validate_consumer(
         and trusted.get("ready") is True
         and packet.get("schema_version") == CONSUMER_SCHEMA_VERSION
         and packet.get("consumer") == consumer
-        and packet.get("claims") == source.get("claims")
-        and packet.get("source_binding") == {
-            key: source.get(key)
-            for key in source
-            if key not in {"ready", "status", "claims", "writes_performed"}
-        }
+        and _canonical_equal(packet.get("claims"), source.get("claims"))
+        and _canonical_equal(
+            packet.get("source_binding"),
+            {
+                key: source.get(key)
+                for key in source
+                if key not in {"ready", "status", "claims", "writes_performed"}
+            },
+        )
         and _validate_claims(consumer, event, source)
-        and event == expected_current_event
+        and _canonical_equal(event, expected_current_event)
         and _stored_pointer_matches(
             consumer,
             registry_source,
@@ -598,8 +639,8 @@ def validate_consumer(
         )
         and current.get("generation") == source.get("generation")
         and current.get("consumer_packet_digest") == packet_digest
-        and current.get("consumer_packet") == packet
-        and last_good_event == expected_last_good_event
+        and _canonical_equal(current.get("consumer_packet"), packet)
+        and _canonical_equal(last_good_event, expected_last_good_event)
         and _stored_pointer_matches(
             consumer,
             registry_source,

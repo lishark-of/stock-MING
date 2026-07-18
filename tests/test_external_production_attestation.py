@@ -1886,6 +1886,8 @@ class ExternalProductionAttestationTests(unittest.TestCase):
         cases = (
             ("worker", ("batch_count", True)),
             ("worker", ("result_row_count", "8")),
+            ("worker", ("celery_task_ids", 1)),
+            ("worker", ("worker_task_ids", "worker-1")),
             ("factor", ("universe_count", "3000")),
             ("radar", ("candidate_row_count", True)),
         )
@@ -1913,6 +1915,45 @@ class ExternalProductionAttestationTests(unittest.TestCase):
                         "ready"
                     ]
                 )
+                if field == "celery_task_ids":
+                    before = self.db_path.read_bytes()
+                    response = TestClient(app).get(
+                        "/api/audit/external-production-consumers/worker/attestation-material"
+                    )
+                    self.assertEqual(response.status_code, 200)
+                    self.assertFalse(response.json()["data"]["ready"])
+                    self.assertEqual(before, self.db_path.read_bytes())
+        identity = phase2_consumers._source_identity(
+            "worker",
+            {"celery_task_ids": 1, "worker_task_ids": []},
+        )
+        self.assertEqual(identity["claims"]["eligible_worker_count"], 0)
+
+    def test_phase2_typed_bool_number_registry_bypass_is_blocked(self) -> None:
+        previous = ""
+        for counter, consumer in enumerate(("worker", "factor"), start=1):
+            self._install_phase2_source(consumer)
+            envelope = self._phase2_envelope(consumer, counter, previous)
+            self._install_external_proof(envelope)
+            promoted = phase2_consumers.import_and_promote_consumer(
+                consumer, {"signed_envelope": envelope}
+            )
+            self.assertTrue(promoted["ready"], promoted)
+            previous = str(promoted["current_pointer"]["attestation_id"])
+            store = SQLiteMetaStore(self.db_path)
+            registry = store.read_packet(external.REGISTRY_PACKET_KEY)
+            tampered = json.loads(json.dumps(registry))
+            signed_claim = tampered["events"][0]["signed_envelope"]["statement"][
+                "claims"
+            ]["does_not_execute_trades"]
+            self.assertIs(signed_claim, True)
+            tampered["events"][0]["claims"]["does_not_execute_trades"] = 1
+            store.write_packet(external.REGISTRY_PACKET_KEY, tampered)
+            result = phase2_consumers.validate_consumer(consumer)
+            self.assertFalse(result["ready"], (consumer, result))
+            self.assertFalse(result["production_trusted"])
+            store.write_packet(external.REGISTRY_PACKET_KEY, registry)
+            self.assertTrue(phase2_consumers.validate_consumer(consumer)["ready"])
 
     def test_worker_production_post_exposes_three_external_trust_states(self) -> None:
         client = TestClient(app)
