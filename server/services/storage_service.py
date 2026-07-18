@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+import fcntl
 import hashlib
 import json
 import math
@@ -30,6 +31,8 @@ COMPACTION_DRY_RUN_PACKET_KEY = "command_center_3_storage_compaction_dry_run_pac
 CACHE_TTL_DRY_RUN_PACKET_KEY = "command_center_3_storage_cache_ttl_dry_run_packet"
 CACHE_TTL_REFRESH_EVIDENCE_PACKET_KEY = "command_center_3_storage_cache_ttl_refresh_evidence_packet"
 CACHE_TTL_REFRESH_EVIDENCE_SCHEMA_VERSION = "command_center_3_storage_cache_ttl_refresh_evidence.v1"
+STORAGE_TTL_PRODUCTION_CONSUMER_PACKET_KEY = "command_center_3_storage_ttl_production_consumer"
+STORAGE_TTL_PRODUCTION_CONSUMER_SCHEMA_VERSION = "command_center_3_storage_ttl_production_consumer.v1"
 DATASET_VERSION_MANIFEST_DRY_RUN_PACKET_KEY = "command_center_3_storage_dataset_version_manifest_dry_run_packet"
 DATASET_VERSION_MANIFEST_REVIEW_PACKET_KEY = "command_center_3_storage_dataset_version_manifest_review_packet"
 DATASET_VERSION_MANIFEST_WRITE_PACKET_KEY = "command_center_3_storage_dataset_version_manifest_write_packet"
@@ -734,6 +737,160 @@ def _storage_cache_ttl_resolution_material(row: Mapping[str, Any], head_full: st
     }
 
 
+def _external_packet_digest(packet: Mapping[str, Any]) -> str:
+    return hashlib.sha256(
+        json.dumps(
+            dict(packet),
+            ensure_ascii=True,
+            sort_keys=True,
+            separators=(",", ":"),
+            default=str,
+        ).encode("utf-8")
+    ).hexdigest()
+
+
+def _storage_phase_a_external_binding(
+    packet: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
+    if isinstance(packet, Mapping):
+        source = dict(packet)
+    else:
+        stored, _ = _read_storage_meta_packet_no_init(STORAGE_PHYSICAL_EXECUTION_PHASE_A_PACKET_KEY)
+        source = dict(stored) if isinstance(stored, Mapping) else {}
+    head_full = production_evidence_journal.current_head_full()
+    ready = bool(
+        source.get("schema_version") == STORAGE_PHASE_A_PACKET_SCHEMA_VERSION
+        and source.get("head_full") == head_full
+        and source.get("status") == "storage_physical_execution_phase_a_v04_durable_execution_success"
+        and source.get("task_id")
+        and source.get("phase_a_local_evidence_done") is True
+        and source.get("physical_task_created") is True
+        and source.get("physical_task_executed") is True
+        and source.get("v04_durable_storage_executed") is True
+        and source.get("v04_duckdb_query_parity") is True
+        and source.get("v04_sqlite_readback_verified") is True
+        and source.get("v04_atomic_current_promoted") is True
+        and source.get("production_storage_complete") is False
+        and source.get("external_calls_triggered") is False
+        and source.get("does_not_execute_trades") is True
+        and source.get("does_not_modify_strategy_action") is True
+        and source.get("contains_secret") is False
+    )
+    return {
+        "ready": ready,
+        "status": "storage_phase_a_current_head_exact_binding_verified"
+        if ready
+        else "storage_phase_a_current_head_exact_binding_missing",
+        "head_full": str(source.get("head_full") or ""),
+        "task_id": str(source.get("task_id") or ""),
+        "packet_digest": _external_packet_digest(source) if source else "",
+        "packet": source,
+    }
+
+
+def _read_storage_ttl_production_consumer() -> tuple[dict[str, Any], str]:
+    packet, status = _read_storage_meta_packet_no_init(STORAGE_TTL_PRODUCTION_CONSUMER_PACKET_KEY)
+    return (dict(packet), status) if isinstance(packet, Mapping) else ({}, status)
+
+
+def _validate_storage_ttl_production_consumer(
+    *,
+    phase_a_packet: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
+    source, read_status = _read_storage_ttl_production_consumer()
+    phase_a = _storage_phase_a_external_binding(phase_a_packet)
+    trusted_registry = external_production_attestation_service.validate_trusted_registry()
+    registry_events = trusted_registry.get("_registry_packet", {}).get("events")
+    if not isinstance(registry_events, list):
+        registry_source, _ = external_production_attestation_service._read_registry_no_init()
+        registry_events = registry_source.get("events") if isinstance(registry_source.get("events"), list) else []
+    events_by_id = {
+        str(row.get("attestation_id") or ""): row
+        for row in registry_events
+        if isinstance(row, Mapping) and row.get("attestation_id")
+    }
+    raw_rows = source.get("rows") if isinstance(source.get("rows"), list) else []
+    rows_by_dataset = {
+        str(row.get("dataset") or ""): dict(row)
+        for row in raw_rows
+        if isinstance(row, Mapping)
+        and str(row.get("dataset") or "") in CANONICAL_PARQUET_DATASETS
+    }
+    row_set_shape_ready = len(raw_rows) == len(rows_by_dataset)
+    valid_datasets: set[str] = set()
+    for dataset in CANONICAL_PARQUET_DATASETS:
+        row = rows_by_dataset.get(dataset, {})
+        event = events_by_id.get(str(row.get("attestation_id") or ""), {})
+        claims = event.get("claims") if isinstance(event.get("claims"), Mapping) else {}
+        row_ready = bool(
+            row
+            and event.get("attestation_kind") == "storage_ttl_resolution"
+            and event.get("head_full") == phase_a.get("head_full")
+            and event.get("subject") == dataset
+            and event.get("scope_hash") == row.get("scope_hash")
+            and event.get("task_id") == row.get("task_id")
+            and event.get("artifact_digest") == row.get("artifact_digest")
+            and event.get("head_full") == row.get("head_full")
+            and event.get("monotonic_counter") == row.get("monotonic_counter")
+            and claims.get("dataset") == dataset
+            and claims.get("phase_a_packet_digest") == phase_a.get("packet_digest")
+            and claims.get("phase_a_task_id") == phase_a.get("task_id")
+            and row.get("claims") == claims
+            and row.get("head_key_epoch") == event.get("head_key_epoch")
+            and row.get("head_key_epoch_digest") == event.get("head_key_epoch_digest")
+            and row.get("monotonic_anchor_digest") == event.get("monotonic_anchor_digest")
+            and event.get("external_trust_verified") is True
+            and event.get("production_trusted") is True
+            and event.get("snapshot_rollback_resistant") is True
+            and row.get("production_trusted") is True
+        )
+        if row_ready:
+            valid_datasets.add(dataset)
+    rows_ready = bool(
+        row_set_shape_ready
+        and valid_datasets == set(CANONICAL_PARQUET_DATASETS)
+    )
+    ready = bool(
+        source.get("schema_version") == STORAGE_TTL_PRODUCTION_CONSUMER_SCHEMA_VERSION
+        and read_status == "packet_present"
+        and source.get("head_full") == phase_a.get("head_full")
+        and source.get("phase_a_packet_digest") == phase_a.get("packet_digest")
+        and source.get("phase_a_task_id") == phase_a.get("task_id")
+        and source.get("last_attestation_id") == trusted_registry.get("attestation_id")
+        and source.get("last_monotonic_counter") == trusted_registry.get("monotonic_counter")
+        and phase_a.get("ready") is True
+        and trusted_registry.get("ready") is True
+        and trusted_registry.get("production_trusted") is True
+        and trusted_registry.get("snapshot_rollback_resistant") is True
+        and source.get("production_trusted") is True
+        and rows_ready
+    )
+    return {
+        "ready": ready,
+        "status": "storage_ttl_production_consumer_verified"
+        if ready
+        else "storage_ttl_production_consumer_blocked",
+        "read_status": read_status,
+        "head_full": str(source.get("head_full") or ""),
+        "dataset_count": len(CANONICAL_PARQUET_DATASETS),
+        "verified_dataset_count": len(valid_datasets),
+        "unresolved_datasets": [
+            dataset for dataset in CANONICAL_PARQUET_DATASETS if dataset not in valid_datasets
+        ],
+        "phase_a_ready": phase_a.get("ready") is True,
+        "external_trust_verified": trusted_registry.get("ready") is True,
+        "snapshot_rollback_resistant": trusted_registry.get("snapshot_rollback_resistant") is True,
+        "production_ttl_evidence_ready": ready,
+        "production_storage_complete": ready,
+        "rows": list(rows_by_dataset.values()),
+        "writes_performed": False,
+        "pointers_written": False,
+        "external_calls_triggered": False,
+        "does_not_execute_trades": True,
+        "contains_secret": False,
+    }
+
+
 def storage_cache_ttl_refresh_evidence() -> dict[str, Any]:
     """Validate explicit TTL maintenance evidence without writing or refreshing.
 
@@ -743,6 +900,7 @@ def storage_cache_ttl_refresh_evidence() -> dict[str, Any]:
     """
 
     packet, read_status = _read_storage_meta_packet_no_init(CACHE_TTL_REFRESH_EVIDENCE_PACKET_KEY)
+    production_consumer = _validate_storage_ttl_production_consumer()
     head_full = production_evidence_journal.current_head_full()
     source = dict(packet) if isinstance(packet, Mapping) else {}
     source_rows = source.get("rows") if isinstance(source.get("rows"), list) else []
@@ -821,6 +979,8 @@ def storage_cache_ttl_refresh_evidence() -> dict[str, Any]:
             "refresh_executed": material["refresh_executed"],
             "provider_call_count": material["provider_call_count"],
             "fetched_at": material["fetched_at"],
+            "phase_a_packet_digest": str(row.get("phase_a_packet_digest") or ""),
+            "phase_a_task_id": str(row.get("phase_a_task_id") or ""),
             "external_calls_triggered": material["external_calls_triggered"],
             "does_not_execute_trades": material["does_not_execute_trades"],
         }
@@ -863,7 +1023,7 @@ def storage_cache_ttl_refresh_evidence() -> dict[str, Any]:
         and not duplicate_or_unknown
         and local_verified_count == len(CANONICAL_PARQUET_DATASETS)
     )
-    production_resolution_ready = False
+    production_resolution_ready = production_consumer.get("ready") is True
     return {
         "schema_version": CACHE_TTL_REFRESH_EVIDENCE_SCHEMA_VERSION,
         "packet_key": CACHE_TTL_REFRESH_EVIDENCE_PACKET_KEY,
@@ -894,15 +1054,16 @@ def storage_cache_ttl_refresh_evidence() -> dict[str, Any]:
         "local_integrity_current_head_journal_required": True,
         "trusted_current_head_journal_required": False,
         "production_trust_boundary_satisfied": production_resolution_ready,
-        "snapshot_rollback_resistant": False,
+        "snapshot_rollback_resistant": production_resolution_ready,
         "external_signature_is_local_integrity_only": True,
-        "production_trusted": False,
-        "production_blockers": list(
+        "production_trusted": production_resolution_ready,
+        "production_blockers": [] if production_resolution_ready else list(
             external_production_attestation_service.PRODUCTION_TRUST_BLOCKERS
         ),
         "requires_independently_held_or_external_production_capability": True,
         "production_ttl_evidence_ready": production_resolution_ready,
-        "production_storage_complete": False,
+        "production_storage_complete": production_resolution_ready,
+        "production_consumer": production_consumer,
         "cache_get_writes_files": False,
         "refresh_executed_by_validator": False,
         "external_calls_triggered_by_validator": False,
@@ -913,41 +1074,172 @@ def storage_cache_ttl_refresh_evidence() -> dict[str, Any]:
 
 
 def import_storage_cache_ttl_external_attestation(payload: Any) -> dict[str, Any]:
-    """Import a signed TTL statement as local integrity evidence only.
+    """Atomically consume one externally anchored Storage TTL attestation."""
 
-    The registry and the storage cache packet are separate state machines.  In
-    the absence of a cross-store transaction and an external monotonic anchor,
-    this route deliberately does not mutate the storage consumer packet.
-    """
-
-    imported = external_production_attestation_service.import_signed_attestation(
-        payload,
-        expected_kind="storage_ttl_resolution",
-    )
-    if imported.get("local_integrity_ready") is not True:
-        return {
-            **imported,
-            "storage_packet_written": False,
-            "consumer_state_unchanged": True,
-            "production_trusted": False,
-            "production_ttl_evidence_ready": False,
-            "production_blockers": list(
-                external_production_attestation_service.PRODUCTION_TRUST_BLOCKERS
-            ),
+    lock_path = external_production_attestation_service.IMPORT_LOCK_PATH
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+    with lock_path.open("a+b") as lock_handle:
+        fcntl.flock(lock_handle.fileno(), fcntl.LOCK_EX)
+        prepared = external_production_attestation_service.prepare_external_trusted_attestation(
+            payload,
+            expected_kind="storage_ttl_resolution",
+        )
+        registry_packet = prepared.pop("_registry_packet", None)
+        if prepared.get("ready") is not True or not isinstance(registry_packet, Mapping):
+            return {
+                **prepared,
+                "ready": False,
+                "storage_packet_written": False,
+                "consumer_state_unchanged": True,
+                "production_ttl_evidence_ready": False,
+                "production_storage_complete": False,
+                "pointers_written": False,
+            }
+        phase_a = _storage_phase_a_external_binding()
+        claims = prepared.get("claims") if isinstance(prepared.get("claims"), Mapping) else {}
+        if not (
+            phase_a.get("ready") is True
+            and claims.get("phase_a_packet_digest") == phase_a.get("packet_digest")
+            and claims.get("phase_a_task_id") == phase_a.get("task_id")
+        ):
+            return {
+                **prepared,
+                "ready": False,
+                "status": "storage_ttl_attestation_phase_a_binding_invalid",
+                "storage_packet_written": False,
+                "consumer_state_unchanged": True,
+                "production_ttl_evidence_ready": False,
+                "production_storage_complete": False,
+                "production_trusted": False,
+                "snapshot_rollback_resistant": False,
+                "production_blockers": list(
+                    external_production_attestation_service.PRODUCTION_TRUST_BLOCKERS
+                ),
+                "pointers_written": False,
+            }
+        consumer, consumer_read_status = _read_storage_ttl_production_consumer()
+        if consumer_read_status == "packet_present" and consumer.get("schema_version") != STORAGE_TTL_PRODUCTION_CONSUMER_SCHEMA_VERSION:
+            return {
+                **prepared,
+                "ready": False,
+                "status": "storage_ttl_consumer_existing_state_invalid",
+                "storage_packet_written": False,
+                "consumer_state_unchanged": True,
+                "production_ttl_evidence_ready": False,
+                "production_storage_complete": False,
+                "production_trusted": False,
+                "snapshot_rollback_resistant": False,
+                "production_blockers": list(
+                    external_production_attestation_service.PRODUCTION_TRUST_BLOCKERS
+                ),
+                "pointers_written": False,
+            }
+        reuse_rows = bool(
+            consumer.get("head_full") == phase_a.get("head_full")
+            and consumer.get("phase_a_packet_digest") == phase_a.get("packet_digest")
+            and consumer.get("phase_a_task_id") == phase_a.get("task_id")
+        )
+        rows_by_dataset = {
+            str(row.get("dataset") or ""): dict(row)
+            for row in (consumer.get("rows") if reuse_rows and isinstance(consumer.get("rows"), list) else [])
+            if isinstance(row, Mapping)
+            and str(row.get("dataset") or "") in CANONICAL_PARQUET_DATASETS
         }
-    return {
-        **imported,
-        "ready": False,
-        "status": "storage_ttl_external_signature_imported_consumer_not_wired",
-        "dataset": str(imported.get("subject") or ""),
-        "storage_packet_written": False,
-        "consumer_state_unchanged": True,
-        "production_trusted": False,
-        "production_ttl_evidence_ready": False,
-        "production_blockers": list(
-            external_production_attestation_service.PRODUCTION_TRUST_BLOCKERS
-        ),
-    }
+        dataset = str(prepared.get("subject") or "")
+        rows_by_dataset[dataset] = {
+            "dataset": dataset,
+            "attestation_id": prepared["attestation_id"],
+            "head_full": prepared["head_full"],
+            "scope_hash": prepared["scope_hash"],
+            "task_id": prepared["task_id"],
+            "artifact_digest": prepared["artifact_digest"],
+            "monotonic_counter": prepared["monotonic_counter"],
+            "head_key_epoch": prepared["head_key_epoch"],
+            "head_key_epoch_digest": prepared["head_key_epoch_digest"],
+            "monotonic_anchor_digest": prepared["monotonic_anchor_digest"],
+            "claims": dict(claims),
+            "production_trusted": True,
+        }
+        complete = set(rows_by_dataset) == set(CANONICAL_PARQUET_DATASETS)
+        consumer_packet = {
+            "schema_version": STORAGE_TTL_PRODUCTION_CONSUMER_SCHEMA_VERSION,
+            "packet_key": STORAGE_TTL_PRODUCTION_CONSUMER_PACKET_KEY,
+            "status": "storage_ttl_production_consumer_complete"
+            if complete
+            else "storage_ttl_production_consumer_collecting",
+            "head_full": phase_a["head_full"],
+            "phase_a_packet_digest": phase_a["packet_digest"],
+            "phase_a_task_id": phase_a["task_id"],
+            "last_attestation_id": prepared["attestation_id"],
+            "last_monotonic_counter": prepared["monotonic_counter"],
+            "dataset_count": len(CANONICAL_PARQUET_DATASETS),
+            "verified_dataset_count": len(rows_by_dataset),
+            "rows": [rows_by_dataset[name] for name in CANONICAL_PARQUET_DATASETS if name in rows_by_dataset],
+            "external_trust_verified": True,
+            "snapshot_rollback_resistant": True,
+            "production_trusted": complete,
+            "production_ttl_evidence_ready": complete,
+            "production_storage_complete": complete,
+            "private_key_generated": False,
+            "anchor_generated_by_application": False,
+            "approval_generated_by_application": False,
+            "pointers_written": False,
+            "external_calls_triggered": False,
+            "does_not_execute_trades": True,
+            "does_not_modify_strategy_action": True,
+            "contains_secret": False,
+        }
+        try:
+            SQLiteMetaStore(SQLITE_META_PATH).promote_packet_pair_atomic(
+                external_production_attestation_service.REGISTRY_PACKET_KEY,
+                registry_packet,
+                STORAGE_TTL_PRODUCTION_CONSUMER_PACKET_KEY,
+                consumer_packet,
+            )
+        except Exception:
+            return {
+                **prepared,
+                "ready": False,
+                "status": "storage_ttl_registry_consumer_atomic_write_failed",
+                "storage_packet_written": False,
+                "consumer_state_unchanged": True,
+                "production_ttl_evidence_ready": False,
+                "production_storage_complete": False,
+                "production_trusted": False,
+                "snapshot_rollback_resistant": False,
+                "production_blockers": list(
+                    external_production_attestation_service.PRODUCTION_TRUST_BLOCKERS
+                ),
+                "pointers_written": False,
+            }
+        readback = _validate_storage_ttl_production_consumer()
+        expected_readback = complete
+        readback_ready = bool(
+            readback.get("read_status") == "packet_present"
+            and readback.get("verified_dataset_count") == len(rows_by_dataset)
+            and readback.get("production_ttl_evidence_ready") is expected_readback
+        )
+        return {
+            **prepared,
+            "ready": bool(expected_readback and readback_ready),
+            "status": "storage_ttl_external_trust_consumer_complete"
+            if expected_readback and readback_ready
+            else "storage_ttl_external_trust_consumer_atomic_progress",
+            "dataset": dataset,
+            "storage_packet_written": True,
+            "consumer_state_unchanged": False,
+            "consumer_readback_verified": readback_ready,
+            "verified_dataset_count": len(rows_by_dataset),
+            "production_trusted": bool(expected_readback and readback_ready),
+            "production_ttl_evidence_ready": bool(expected_readback and readback_ready),
+            "production_storage_complete": bool(expected_readback and readback_ready),
+            "snapshot_rollback_resistant": True,
+            "production_blockers": []
+            if expected_readback and readback_ready
+            else ["storage_ttl_six_dataset_consumer_incomplete"],
+            "pointers_written": False,
+            "writes_performed": True,
+        }
 
 
 def _dataset_version_manifest_path() -> Path:
@@ -5184,12 +5476,10 @@ def validate_storage_production_fact(
     *,
     expected_head_full: str | None = None,
 ) -> dict[str, Any]:
-    """Fail closed until an independently trusted production validator exists.
+    """Accept only the externally anchored, atomically consumed Storage fact.
 
-    Local phase-A packets and the local HMAC journal are useful integrity
-    evidence, but neither is an externally held production trust root.  In
-    particular, a caller-supplied ``production_storage_complete`` boolean must
-    never become an authoritative closeout fact.
+    Local phase-A packets and the local HMAC journal remain non-authoritative.
+    A caller-supplied ``production_storage_complete`` boolean never promotes.
     """
 
     packet = dict(source) if isinstance(source, Mapping) else {}
@@ -5202,28 +5492,36 @@ def validate_storage_production_fact(
     exact_schema = packet.get("schema_version") == STORAGE_PHASE_A_PACKET_SCHEMA_VERSION
     exact_head = bool(authoritative_head and packet_head == authoritative_head)
     untrusted_claim_present = packet.get("production_storage_complete") is True
+    consumer_validation = _validate_storage_ttl_production_consumer(
+        phase_a_packet=packet,
+    )
     blockers: list[str] = []
     if not exact_schema:
         blockers.append("storage_production_packet_exact_schema_missing")
     if not exact_head:
         blockers.append("storage_production_packet_current_head_binding_missing")
-    blockers.append("trusted_external_storage_production_validator_missing")
+    if consumer_validation.get("ready") is not True:
+        blockers.append("trusted_external_storage_production_validator_missing")
     if untrusted_claim_present:
         blockers.append("untrusted_local_production_storage_claim_rejected")
+    ready = not blockers
     return {
         "schema_version": STORAGE_PRODUCTION_FACT_VALIDATION_SCHEMA_VERSION,
-        "status": "storage_production_fact_blocked_external_trust_validator_missing",
-        "ready": False,
-        "production_storage_complete": False,
+        "status": "storage_production_fact_verified"
+        if ready
+        else "storage_production_fact_blocked_external_trust_validator_missing",
+        "ready": ready,
+        "production_storage_complete": ready,
         "expected_head_full": authoritative_head,
         "packet_head_full": packet_head,
         "exact_schema_validated": exact_schema,
         "current_head_binding_validated": exact_head,
-        "trusted_external_production_validator_ready": False,
+        "trusted_external_production_validator_ready": consumer_validation.get("ready") is True,
         "local_integrity_journal_is_not_production_trust": True,
         "caller_boolean_is_not_authoritative": True,
         "untrusted_claim_present": untrusted_claim_present,
         "blockers": blockers,
+        "storage_ttl_production_consumer": consumer_validation,
         "read_only": True,
         "writes_storage": False,
         "external_calls_triggered": False,
@@ -7621,6 +7919,7 @@ def storage_physical_execution_phase_a_packet(
     return {
         "schema_version": "command_center_3_storage_physical_execution_phase_a.v1",
         "packet_key": STORAGE_PHYSICAL_EXECUTION_PHASE_A_PACKET_KEY,
+        "head_full": production_evidence_journal.current_head_full(),
         "task_id": str(task_id or ""),
         "status": status,
         "mode": "button_gated_local_physical_execution_phase_a",

@@ -5,8 +5,10 @@ from concurrent.futures import ThreadPoolExecutor
 from contextlib import ExitStack
 from datetime import datetime, timedelta, timezone
 import hashlib
+import json
 import os
 from pathlib import Path
+import sqlite3
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -28,6 +30,10 @@ class ExternalProductionAttestationTests(unittest.TestCase):
         self.trust_root = self.root / "operator-trust"
         self.db_path = self.root / "state" / "meta.sqlite"
         self.lock_path = self.root / "state" / "external-trust.lock"
+        self.epoch_path = self.trust_root / "head-key-epoch.json"
+        self.anchor_path = self.trust_root / "monotonic-high-water.json"
+        self.phase_a_digest = "9" * 64
+        self.phase_a_task_id = "phase-a-task-1"
         self.private_key = Ed25519PrivateKey.generate()
         self.fingerprint = self._install_public_key()
         self.stack.enter_context(
@@ -37,12 +43,15 @@ class ExternalProductionAttestationTests(unittest.TestCase):
                 TRUST_ANCHOR=self.root,
                 PUBLIC_KEY_PATH=self.trust_root / "ed25519-public.pem",
                 FINGERPRINT_PATH=self.trust_root / "ed25519-public.sha256",
+                HEAD_KEY_EPOCH_PATH=self.epoch_path,
+                MONOTONIC_ANCHOR_PATH=self.anchor_path,
                 IMPORT_LOCK_PATH=self.lock_path,
                 SQLITE_META_PATH=self.db_path,
                 TRUSTED_OWNER_UIDS=frozenset({os.getuid()}),
             )
         )
         self.stack.enter_context(patch.object(storage_service, "SQLITE_META_PATH", self.db_path))
+        self.stack.enter_context(patch.object(storage_service, "PARQUET_ROOT", self.root / "parquet"))
 
     def tearDown(self) -> None:
         self.stack.close()
@@ -68,6 +77,118 @@ class ExternalProductionAttestationTests(unittest.TestCase):
         self.trust_root.chmod(0o555)
         return fingerprint
 
+    def _install_phase_a(self) -> dict:
+        packet = {
+            "schema_version": storage_service.STORAGE_PHASE_A_PACKET_SCHEMA_VERSION,
+            "packet_key": storage_service.STORAGE_PHYSICAL_EXECUTION_PHASE_A_PACKET_KEY,
+            "head_full": external._current_head_full(),
+            "task_id": self.phase_a_task_id,
+            "status": "storage_physical_execution_phase_a_v04_durable_execution_success",
+            "phase_a_local_evidence_done": True,
+            "physical_task_created": True,
+            "physical_task_executed": True,
+            "v04_durable_storage_executed": True,
+            "v04_duckdb_query_parity": True,
+            "v04_sqlite_readback_verified": True,
+            "v04_atomic_current_promoted": True,
+            "production_storage_complete": False,
+            "external_calls_triggered": False,
+            "does_not_execute_trades": True,
+            "does_not_modify_strategy_action": True,
+            "contains_secret": False,
+        }
+        self.phase_a_digest = storage_service._external_packet_digest(packet)
+        SQLiteMetaStore(self.db_path).write_packet(
+            storage_service.STORAGE_PHYSICAL_EXECUTION_PHASE_A_PACKET_KEY,
+            packet,
+        )
+        return packet
+
+    def _attestation_id(self, envelope: dict) -> str:
+        signature = base64.b64decode(envelope["signature_base64"])
+        return external._sha256(
+            {
+                "statement": envelope["statement"],
+                "key_fingerprint_sha256": envelope["key_fingerprint_sha256"],
+                "signature_sha256": hashlib.sha256(signature).hexdigest(),
+            }
+        )
+
+    def _install_external_proof(
+        self,
+        envelope: dict,
+        *,
+        epoch_number: int = 1,
+        proof_key: Ed25519PrivateKey | None = None,
+        fingerprint: str | None = None,
+        epoch_head: str | None = None,
+    ) -> tuple[dict, dict]:
+        signing_key = proof_key or self.private_key
+        resolved_fingerprint = fingerprint or self.fingerprint
+        now = datetime.now(timezone.utc)
+        existing_epoch = (
+            json.loads(self.epoch_path.read_text(encoding="utf-8"))
+            if self.epoch_path.exists()
+            else {}
+        )
+        reuse_epoch = bool(
+            proof_key is None
+            and fingerprint is None
+            and epoch_head is None
+            and existing_epoch.get("epoch") == epoch_number
+            and existing_epoch.get("head_full") == envelope["statement"]["head_full"]
+            and existing_epoch.get("key_fingerprint_sha256") == resolved_fingerprint
+        )
+        if reuse_epoch:
+            epoch = existing_epoch
+        else:
+            epoch = {
+                "schema_version": external.HEAD_KEY_EPOCH_SCHEMA_VERSION,
+                "algorithm": "Ed25519",
+                "epoch": epoch_number,
+                "head_full": epoch_head or envelope["statement"]["head_full"],
+                "key_fingerprint_sha256": resolved_fingerprint,
+                "valid_from": (now - timedelta(minutes=1)).isoformat(),
+                "expires_at": (now + timedelta(days=1)).isoformat(),
+                "nonce_digest": hashlib.sha256(f"epoch:{epoch_number}".encode()).hexdigest(),
+                "previous_epoch_digest": "0" * 64 if epoch_number == 1 else "a" * 64,
+            }
+            epoch["signature_base64"] = base64.b64encode(
+                signing_key.sign(external._canonical_bytes(epoch))
+            ).decode("ascii")
+        epoch_digest = external._sha256(external._signed_document_material(epoch))
+        statement = envelope["statement"]
+        anchor = {
+            "schema_version": external.MONOTONIC_ANCHOR_SCHEMA_VERSION,
+            "algorithm": "Ed25519",
+            "epoch": epoch_number,
+            "head_full": statement["head_full"],
+            "key_fingerprint_sha256": resolved_fingerprint,
+            "epoch_digest": epoch_digest,
+            "monotonic_counter": statement["monotonic_counter"],
+            "cas_previous_counter": statement["monotonic_counter"] - 1,
+            "previous_attestation_digest": statement["previous_attestation_digest"],
+            "cas_previous_attestation_digest": statement["previous_attestation_digest"],
+            "attestation_id": self._attestation_id(envelope),
+            "nonce_digest": statement["nonce_digest"],
+            "issued_at": statement["issued_at"],
+            "expires_at": statement["expires_at"],
+        }
+        anchor["signature_base64"] = base64.b64encode(
+            signing_key.sign(external._canonical_bytes(anchor))
+        ).decode("ascii")
+        self.trust_root.chmod(0o755)
+        if self.epoch_path.exists():
+            self.epoch_path.unlink()
+        if self.anchor_path.exists():
+            self.anchor_path.unlink()
+        self.epoch_path.write_text(json.dumps(epoch), encoding="utf-8")
+        self.anchor_path.write_text(json.dumps(anchor), encoding="utf-8")
+        self.epoch_path.chmod(0o444)
+        self.anchor_path.chmod(0o444)
+        self.trust_root.chmod(0o555)
+        return epoch, anchor
+
     def _claims(self, kind: str, subject: str) -> dict:
         if kind == "storage_ttl_resolution":
             return {
@@ -79,6 +200,8 @@ class ExternalProductionAttestationTests(unittest.TestCase):
                 "refresh_executed": False,
                 "provider_call_count": 0,
                 "fetched_at": (datetime.now(timezone.utc) - timedelta(seconds=1)).isoformat(),
+                "phase_a_packet_digest": self.phase_a_digest,
+                "phase_a_task_id": self.phase_a_task_id,
                 "external_calls_triggered": False,
                 "does_not_execute_trades": True,
             }
@@ -94,7 +217,7 @@ class ExternalProductionAttestationTests(unittest.TestCase):
             }
         if kind == "factor_full_market_lineage":
             return {
-                "result_dataset": "factor_values",
+                "result_dataset": "full_market_factor_research_results",
                 "result_version_id": subject,
                 "universe_digest": "3" * 64,
                 "universe_count": 4000,
@@ -410,9 +533,9 @@ class ExternalProductionAttestationTests(unittest.TestCase):
         self.assertEqual(unchanged["events"][0]["attestation_id"], "0" * 64)
         self.assertEqual(len(unchanged["events"]), 1)
 
-    def test_storage_imports_are_local_integrity_only_and_never_write_consumer(self) -> None:
+    def test_storage_six_dataset_consumer_is_atomic_and_production_trusted(self) -> None:
+        phase_a = self._install_phase_a()
         previous = ""
-        imported_rows: list[dict] = []
         for counter, dataset in enumerate(storage_service.CANONICAL_PARQUET_DATASETS, start=1):
             signed = self._envelope(
                 "storage_ttl_resolution",
@@ -420,73 +543,33 @@ class ExternalProductionAttestationTests(unittest.TestCase):
                 counter,
                 previous,
             )
+            self._install_external_proof(signed)
             result = storage_service.import_storage_cache_ttl_external_attestation(
                 {"signed_envelope": signed}
             )
-            self.assertFalse(result["ready"])
-            self.assertTrue(result["local_integrity_ready"])
-            self.assertFalse(result["production_trusted"])
-            self.assertFalse(result["storage_packet_written"])
-            self.assertTrue(result["consumer_state_unchanged"])
-            imported_rows.append(result)
+            self.assertTrue(result["consumer_readback_verified"])
+            self.assertTrue(result["snapshot_rollback_resistant"])
+            self.assertFalse(result["pointers_written"])
+            self.assertEqual(result["ready"], counter == len(storage_service.CANONICAL_PARQUET_DATASETS))
             previous = result["attestation_id"]
+
         validation = storage_service.storage_cache_ttl_refresh_evidence()
-        self.assertFalse(validation["production_ttl_evidence_ready"])
-        self.assertFalse(validation["production_trust_boundary_satisfied"])
-        self.assertEqual(validation["external_attestation_verified_dataset_count"], 0)
-        self.assertFalse(
+        self.assertTrue(validation["production_ttl_evidence_ready"])
+        self.assertTrue(validation["production_trust_boundary_satisfied"])
+        self.assertTrue(validation["snapshot_rollback_resistant"])
+        self.assertTrue(validation["production_storage_complete"])
+        fact = storage_service.validate_storage_production_fact(
+            phase_a,
+            expected_head_full=external._current_head_full(),
+        )
+        self.assertTrue(fact["ready"])
+        self.assertTrue(fact["production_storage_complete"])
+        self.assertTrue(fact["trusted_external_production_validator_ready"])
+        self.assertIsNone(
             SQLiteMetaStore(self.db_path).read_packet(
                 storage_service.CACHE_TTL_REFRESH_EVIDENCE_PACKET_KEY
             )
         )
-        registry = external.validate_registry()
-        self.assertTrue(registry["local_integrity_ready"])
-        self.assertFalse(registry["production_trusted"])
-        self.assertEqual(registry["last_monotonic_counter"], len(storage_service.CANONICAL_PARQUET_DATASETS))
-        self.assertFalse(validation["refresh_executed_by_validator"])
-        self.assertFalse(validation["external_calls_triggered_by_validator"])
-
-        rows = []
-        for imported in imported_rows:
-            claims = imported["claims"]
-            row = {
-                "dataset": claims["dataset"],
-                "resolution": claims["resolution"],
-                "refresh_task_id": claims["refresh_task_id"],
-                "refresh_scope_hash": imported["scope_hash"],
-                "artifact_sha256": imported["artifact_digest"],
-                "before_ttl_state": claims["before_ttl_state"],
-                "after_ttl_state": claims["after_ttl_state"],
-                "refresh_executed": claims["refresh_executed"],
-                "provider_call_count": claims["provider_call_count"],
-                "fetched_at": claims["fetched_at"],
-                "external_calls_triggered": claims["external_calls_triggered"],
-                "does_not_execute_trades": claims["does_not_execute_trades"],
-                "external_attestation_id": imported["attestation_id"],
-            }
-            row["payload_digest"] = storage_service._json_sha256(
-                storage_service._storage_cache_ttl_resolution_material(
-                    row, imported["head_full"]
-                )
-            )
-            rows.append(row)
-        SQLiteMetaStore(self.db_path).write_packet(
-            storage_service.CACHE_TTL_REFRESH_EVIDENCE_PACKET_KEY,
-            {
-                "schema_version": storage_service.CACHE_TTL_REFRESH_EVIDENCE_SCHEMA_VERSION,
-                "head_full": imported_rows[-1]["head_full"],
-                "rows": rows,
-            },
-        )
-        caller_wired = storage_service.storage_cache_ttl_refresh_evidence()
-        self.assertEqual(
-            caller_wired["external_attestation_verified_dataset_count"],
-            len(storage_service.CANONICAL_PARQUET_DATASETS),
-        )
-        self.assertFalse(caller_wired["production_ttl_evidence_ready"])
-        self.assertFalse(caller_wired["production_trust_boundary_satisfied"])
-        self.assertFalse(caller_wired["production_trusted"])
-        self.assertIn("production_consumer_not_wired", caller_wired["production_blockers"])
 
     def test_worker_factor_and_radar_lineages_stay_local_integrity_only(self) -> None:
         previous = ""
@@ -526,7 +609,7 @@ class ExternalProductionAttestationTests(unittest.TestCase):
             contract["planned_consumers"],
             ["storage", "worker", "factor", "candidate_radar"],
         )
-        self.assertEqual(contract["production_consumers_wired"], [])
+        self.assertEqual(contract["production_consumers_wired"], ["storage_ttl"])
         self.assertFalse(contract["application_generates_private_key"])
         self.assertTrue(contract["caller_boolean_cannot_promote"])
 
@@ -616,93 +699,122 @@ class ExternalProductionAttestationTests(unittest.TestCase):
             self.assertFalse(lineage["ready"])
             self.assertIn("trusted_head_key_epoch_unavailable", lineage["blockers"])
 
-    def test_storage_update_retry_and_invalid_semantics_never_touch_consumer_packet(self) -> None:
-        store = SQLiteMetaStore(self.db_path)
-        sentinel = {"schema_version": "sentinel.v1", "head_full": external._current_head_full(), "rows": []}
-        store.write_packet(storage_service.CACHE_TTL_REFRESH_EVIDENCE_PACKET_KEY, sentinel)
+    def test_external_high_water_detects_registry_rollback_and_replay(self) -> None:
+        phase_a = self._install_phase_a()
         first_envelope = self._envelope("storage_ttl_resolution", "daily", 1, "")
+        self._install_external_proof(first_envelope)
         first = storage_service.import_storage_cache_ttl_external_attestation(
             {"signed_envelope": first_envelope}
         )
-        self.assertTrue(first["local_integrity_ready"])
-        self.assertEqual(
-            store.read_packet(storage_service.CACHE_TTL_REFRESH_EVIDENCE_PACKET_KEY), sentinel
+        store = SQLiteMetaStore(self.db_path)
+        first_registry = store.read_packet(external.REGISTRY_PACKET_KEY)
+
+        second_envelope = self._envelope(
+            "storage_ttl_resolution",
+            "daily_basic",
+            2,
+            first["attestation_id"],
         )
+        self._install_external_proof(second_envelope)
+        second = storage_service.import_storage_cache_ttl_external_attestation(
+            {"signed_envelope": second_envelope}
+        )
+        self.assertTrue(second["consumer_readback_verified"])
+        store.write_packet(external.REGISTRY_PACKET_KEY, first_registry)
+
+        trusted = external.validate_trusted_registry()
+        self.assertFalse(trusted["ready"])
+        self.assertFalse(trusted["production_trusted"])
+        fact = storage_service.validate_storage_production_fact(
+            phase_a,
+            expected_head_full=external._current_head_full(),
+        )
+        self.assertFalse(fact["ready"])
         replay = storage_service.import_storage_cache_ttl_external_attestation(
             {"signed_envelope": first_envelope}
         )
-        self.assertTrue(replay["local_integrity_ready"])
-        self.assertFalse(replay["writes_performed"])
+        self.assertFalse(replay["ready"])
+        self.assertFalse(replay["storage_packet_written"])
 
-        refreshed = self._claims("storage_ttl_resolution", "daily")
-        refreshed.update(
-            {
-                "resolution": "refreshed",
-                "refresh_task_id": "refresh-daily-v2",
-                "before_ttl_state": "stale",
-                "after_ttl_state": "fresh",
-                "refresh_executed": True,
-                "provider_call_count": 1,
-                "external_calls_triggered": True,
-            }
+    def test_epoch_rotation_and_wrong_head_proofs_fail_before_write(self) -> None:
+        self._install_phase_a()
+        envelope = self._envelope("storage_ttl_resolution", "daily", 1, "")
+        self._install_external_proof(envelope, epoch_head="0" * 40)
+        wrong_head_epoch = storage_service.import_storage_cache_ttl_external_attestation(
+            {"signed_envelope": envelope}
         )
-        second = storage_service.import_storage_cache_ttl_external_attestation(
-            {
-                "signed_envelope": self._envelope(
-                    "storage_ttl_resolution",
-                    "daily",
-                    2,
-                    first["attestation_id"],
-                    claims=refreshed,
-                )
-            }
-        )
-        self.assertTrue(second["local_integrity_ready"])
-        self.assertFalse(second["storage_packet_written"])
-        self.assertEqual(
-            store.read_packet(storage_service.CACHE_TTL_REFRESH_EVIDENCE_PACKET_KEY), sentinel
-        )
-        before_registry = store.read_packet(external.REGISTRY_PACKET_KEY)
-        invalid = storage_service.import_storage_cache_ttl_external_attestation(
-            {
-                "signed_envelope": self._envelope(
-                    "storage_ttl_resolution",
-                    "unknown_dataset",
-                    3,
-                    second["attestation_id"],
-                )
-            }
-        )
-        self.assertFalse(invalid["local_integrity_ready"])
-        self.assertFalse(invalid["writes_performed"])
-        self.assertEqual(store.read_packet(external.REGISTRY_PACKET_KEY), before_registry)
-        self.assertEqual(
-            store.read_packet(storage_service.CACHE_TTL_REFRESH_EVIDENCE_PACKET_KEY), sentinel
-        )
+        self.assertFalse(wrong_head_epoch["ready"])
+        self.assertEqual(wrong_head_epoch["status"], "trusted_head_key_epoch_invalid")
 
-    def test_registry_atomic_write_failure_leaves_registry_and_consumer_unchanged(self) -> None:
+        self._install_external_proof(envelope)
+        first = storage_service.import_storage_cache_ttl_external_attestation(
+            {"signed_envelope": envelope}
+        )
+        self.assertTrue(first["consumer_readback_verified"])
+
+        rotated_envelope = self._envelope(
+            "storage_ttl_resolution",
+            "daily_basic",
+            2,
+            first["attestation_id"],
+        )
+        self._install_external_proof(rotated_envelope, epoch_number=2)
+        broken_epoch_chain = storage_service.import_storage_cache_ttl_external_attestation(
+            {"signed_envelope": rotated_envelope}
+        )
+        self.assertFalse(broken_epoch_chain["ready"])
+        self.assertEqual(broken_epoch_chain["status"], "trusted_head_key_epoch_invalid")
+
+        rotated_key = Ed25519PrivateKey.generate()
+        rotated_der = rotated_key.public_key().public_bytes(
+            encoding=serialization.Encoding.DER,
+            format=serialization.PublicFormat.SubjectPublicKeyInfo,
+        )
+        self._install_external_proof(
+            rotated_envelope,
+            epoch_number=2,
+            proof_key=rotated_key,
+            fingerprint=hashlib.sha256(rotated_der).hexdigest(),
+        )
+        wrong_rotation = storage_service.import_storage_cache_ttl_external_attestation(
+            {"signed_envelope": rotated_envelope}
+        )
+        self.assertFalse(wrong_rotation["ready"])
+        self.assertEqual(wrong_rotation["status"], "trusted_head_key_epoch_invalid")
+        registry = SQLiteMetaStore(self.db_path).read_packet(external.REGISTRY_PACKET_KEY)
+        self.assertEqual(registry["last_attestation_id"], first["attestation_id"])
+        self.assertEqual(registry["last_monotonic_counter"], 1)
+
+    def test_registry_atomic_write_failure_leaves_registry_consumer_and_pointer_unchanged(self) -> None:
+        self._install_phase_a()
         store = SQLiteMetaStore(self.db_path)
-        sentinel = {"schema_version": "sentinel.v1", "rows": []}
-        store.write_packet(storage_service.CACHE_TTL_REFRESH_EVIDENCE_PACKET_KEY, sentinel)
-        with patch.object(
-            external.SQLiteMetaStore,
-            "promote_packet_atomic",
-            side_effect=RuntimeError("injected_atomic_write_failure"),
-        ):
-            result = storage_service.import_storage_cache_ttl_external_attestation(
-                {
-                    "signed_envelope": self._envelope(
-                        "storage_ttl_resolution", "daily", 1, ""
-                    )
-                }
+        pointer = storage_service.PARQUET_ROOT / "daily" / "current.json"
+        pointer.parent.mkdir(parents=True)
+        pointer.write_text('{"sentinel":true}', encoding="utf-8")
+        envelope = self._envelope("storage_ttl_resolution", "daily", 1, "")
+        self._install_external_proof(envelope)
+        with sqlite3.connect(self.db_path) as connection:
+            connection.execute(
+                """
+                CREATE TRIGGER fail_second_packet_insert
+                BEFORE INSERT ON packets
+                WHEN NEW.packet_key = 'command_center_3_storage_ttl_production_consumer'
+                BEGIN
+                    SELECT RAISE(ABORT, 'injected_second_packet_write_failure');
+                END
+                """
             )
-        self.assertFalse(result["local_integrity_ready"])
-        self.assertFalse(result["writes_performed"])
-        self.assertEqual(result["status"], "external_attestation_registry_write_failed")
-        self.assertIsNone(store.read_packet(external.REGISTRY_PACKET_KEY))
-        self.assertEqual(
-            store.read_packet(storage_service.CACHE_TTL_REFRESH_EVIDENCE_PACKET_KEY), sentinel
+        result = storage_service.import_storage_cache_ttl_external_attestation(
+            {"signed_envelope": envelope}
         )
+        self.assertFalse(result["ready"])
+        self.assertFalse(result["writes_performed"])
+        self.assertEqual(result["status"], "storage_ttl_registry_consumer_atomic_write_failed")
+        self.assertIsNone(store.read_packet(external.REGISTRY_PACKET_KEY))
+        self.assertIsNone(
+            store.read_packet(storage_service.STORAGE_TTL_PRODUCTION_CONSUMER_PACKET_KEY)
+        )
+        self.assertEqual(pointer.read_text(encoding="utf-8"), '{"sentinel":true}')
 
     def test_post_commit_exception_is_reconciled_and_retry_is_idempotent(self) -> None:
         signed = self._envelope("worker_runtime_lineage", "worker-run-retry", 1, "")
