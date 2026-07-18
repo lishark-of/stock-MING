@@ -384,6 +384,59 @@ class MarginEtfFocusBindingTests(unittest.TestCase):
             )
         )
 
+    def test_builder_alias_normalize_rejects_spoofed_identity_and_safety_provenance(self):
+        mutations = {
+            "spoof_etf_key": lambda etf, margin: etf.update(packet_key="spoof_etf"),
+            "spoof_margin_key": lambda etf, margin: margin.update(packet_key="spoof_margin"),
+            "partial_etf_safety": lambda etf, margin: etf.pop("deepseek_called"),
+            "partial_margin_safety": lambda etf, margin: margin.pop("deepseek_called"),
+            "null_etf_marker": lambda etf, margin: etf.update(local_read_safety_provenance=None),
+            "null_margin_marker": lambda etf, margin: margin.update(local_read_safety_provenance=None),
+            "fake_etf_marker": lambda etf, margin: etf.update(local_read_safety_provenance="producer_native"),
+            "fake_margin_marker": lambda etf, margin: margin.update(local_read_safety_provenance="producer_native"),
+        }
+        for name, mutate in mutations.items():
+            with self.subTest(name=name):
+                etf, margin, _ = self._packets()
+                mutate(etf, margin)
+                built_etf = command_center_etf_packet.build_command_center_etf_packet(
+                    {"command_center_etf_packet": etf}
+                )
+                built_margin = command_center_margin_packet.build_command_center_margin_packet(
+                    {"command_center_margin_packet": margin},
+                    target="002008.SZ",
+                )
+                normalized_etf = packet_service._normalize_cached_packet(
+                    "command_center_etf_packet",
+                    built_etf,
+                    source="stock_ming_snapshot",
+                    source_key="etf_packet",
+                )
+                normalized_margin = packet_service._normalize_cached_packet(
+                    "command_center_margin_packet",
+                    built_margin,
+                    source="stock_ming_snapshot",
+                    source_key="margin_packet",
+                )
+                if name == "spoof_margin_key":
+                    self.assertEqual(normalized_margin["packet_key"], "spoof_margin")
+                if name == "spoof_etf_key":
+                    self.assertEqual(normalized_etf["packet_key"], "spoof_etf")
+                if name.startswith("partial_"):
+                    adapted = normalized_etf if "etf" in name else normalized_margin
+                    self.assertFalse(adapted["deepseek_called"])
+                    self.assertEqual(
+                        adapted["local_read_safety_provenance"],
+                        "legacy_builder_inferred_local_read_safety",
+                    )
+                self.assertIsNone(
+                    provenance.build_source_projection(
+                        normalized_etf,
+                        normalized_margin,
+                        target="002008.SZ",
+                    )
+                )
+
     def test_binding_and_provenance_truth_table_fail_closed(self):
         mutations = {
             "missing_task": lambda e, m, f, t: t.clear(),

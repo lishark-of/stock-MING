@@ -406,6 +406,8 @@ def build_command_center_margin_packet(
         "risk_notes": _build_risk_notes(payload, status, leverage_state),
         "manual_required_text": "融资融券来自 Tushare margin_detail 缓存；缺失时必须手动刷新或权限校验，综合中心不会自动请求。",
     }
+    if "packet_key" in payload:
+        packet["packet_key"] = payload["packet_key"]
     packet.update(
         build_legacy_packet_decision_contract(
             payload,
