@@ -124,6 +124,10 @@ def _valid_evaluation() -> dict:
 
 
 class V1LocalRcCloseoutContractTests(unittest.TestCase):
+    def test_ltg04_requires_factor_output_not_generic_candidate_worker_runtime(self):
+        self.assertIn("factor_full_market_research", contract.PRODUCTION_REQUIREMENTS["LTG-04"])
+        self.assertNotIn("full_market_worker_runtime", contract.PRODUCTION_REQUIREMENTS["LTG-04"])
+
     def test_valid_contract_accounts_for_14_ltgs_and_closes_only_ltg12(self):
         result = contract.build_contract(evaluation=_valid_evaluation())
 

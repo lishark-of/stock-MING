@@ -417,6 +417,43 @@ class V1EvidenceCloseoutTests(unittest.TestCase):
                 validation["blockers"],
             )
 
+    def test_candidate_worker_runtime_cannot_close_ltg04_factor_universe(self):
+        version_rows = [
+            {
+                "version": version,
+                "local_direct_evidence_ready": True,
+            }
+            for version in ("v0.1", "v0.2", "v0.3", "v0.4", "v0.5", "v0.6", "v0.7")
+        ]
+        facts = {
+            "full_market_worker_runtime": True,
+            "celery_redis_runtime": True,
+            "production_storage": True,
+            "release_promotion_current_head": True,
+            "factor_full_market_research": False,
+            "candidate_radar_production_replacement": False,
+        }
+
+        rows = {
+            row["id"]: row
+            for row in v1_closeout_service._build_ltg_rows(version_rows, facts)
+        }
+
+        self.assertFalse(rows["LTG-04"]["can_close"])
+        self.assertIn(
+            "factor_full_market_research",
+            rows["LTG-04"]["missing_production_evidence"],
+        )
+        self.assertNotIn(
+            "full_market_worker_runtime",
+            rows["LTG-04"]["required_production_evidence"],
+        )
+        self.assertFalse(rows["LTG-13"]["can_close"])
+        self.assertIn(
+            "candidate_radar_production_replacement",
+            rows["LTG-13"]["missing_production_evidence"],
+        )
+
     def test_migration_get_is_zero_write_and_no_external_call(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir) / "missing"

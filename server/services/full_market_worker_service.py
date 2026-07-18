@@ -43,6 +43,15 @@ CANDIDATE_TASK_NAME = "run_candidate_radar_full_pool_local_scan"
 CANDIDATE_TASK_TYPE = CANDIDATE_TASK_NAME
 CANDIDATE_QUEUE = "command_center_candidate_production"
 RESULT_DATASET = "full_market_candidate_radar_results"
+FACTOR_RESULT_DATASET = "full_market_factor_research_results"
+FACTOR_PACKET_KEY = "command_center_3_factor_full_market_worker_production_acceptance"
+FACTOR_LAST_GOOD_PACKET_KEY = f"{FACTOR_PACKET_KEY}_last_good"
+FACTOR_SCHEMA_VERSION = "factor_full_market_worker_production_acceptance.v1"
+CANDIDATE_CACHE_PACKET_KEY = "command_center_3_candidate_radar_cache"
+CANDIDATE_CACHE_SCHEMA_VERSION = "candidate_radar_cache.v1"
+CANDIDATE_CACHE_REPLACEMENT_SCHEMA_VERSION = (
+    "candidate_radar_full_market_cache_replacement_binding.v1"
+)
 
 DEFAULT_MINIMUM_UNIVERSE_SIZE = 3000
 MAXIMUM_MINIMUM_UNIVERSE_SIZE = 7000
@@ -74,6 +83,30 @@ FEATURE_CONTRACT = {
 }
 FEATURE_CONTRACT_DIGEST = hashlib.sha256(
     json.dumps(FEATURE_CONTRACT, sort_keys=True, separators=(",", ":")).encode("utf-8")
+).hexdigest()
+
+FACTOR_OUTPUT_CONTRACT = {
+    "schema_version": "factor_full_market_output_contract.v1",
+    "output_kind": "factor_full_market_cross_sectional_research",
+    "required_metrics": [
+        "cross_sectional_rank",
+        "cross_sectional_zscore",
+        "industry_neutral_score",
+        "size_neutral_score",
+        "combined_factor_score",
+    ],
+    "requires_full_universe_symbol_coverage": True,
+    "candidate_radar_scores_are_not_factor_outputs": True,
+    "research_only": True,
+    "does_not_execute_trades": True,
+}
+FACTOR_OUTPUT_CONTRACT_DIGEST = hashlib.sha256(
+    json.dumps(
+        FACTOR_OUTPUT_CONTRACT,
+        ensure_ascii=True,
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
 ).hexdigest()
 
 _HEX_64_RE = re.compile(r"^[0-9a-f]{64}$")
@@ -2455,6 +2488,242 @@ def _ledger_sanitized(value: Any) -> bool:
     return True
 
 
+def _candidate_cache_replacement_ready(
+    cache_packet: Mapping[str, Any],
+    worker_packet: Mapping[str, Any],
+    cache_write_task: Mapping[str, Any],
+) -> bool:
+    """Validate that the authoritative Radar cache consumed this exact worker output.
+
+    The full-market worker's Parquet dataset is an upstream candidate artifact.  It
+    is not the cache served by ``GET /api/candidate-radar/cache``.  A replacement
+    claim therefore needs a separately persisted binding in that authoritative
+    cache; a boolean copied into the worker packet cannot close LTG-13.
+    """
+
+    binding = cache_packet.get("full_market_worker_replacement")
+    binding_map = dict(binding) if isinstance(binding, Mapping) else {}
+    task_map = dict(cache_write_task) if isinstance(cache_write_task, Mapping) else {}
+    candidate_rows = [
+        dict(row)
+        for row in cache_packet.get("candidate_rows") or []
+        if isinstance(row, Mapping)
+    ]
+    candidate_symbols, duplicate_count, invalid_count = _normalize_symbols(
+        [row.get("ts_code") for row in candidate_rows]
+    )
+    expected_binding_digest = (
+        _canonical_digest(
+            {
+                key: value
+                for key, value in binding_map.items()
+                if key != "binding_digest"
+            }
+        )
+        if binding_map
+        else ""
+    )
+    expected_task_digest = (
+        _canonical_digest(
+            {
+                key: value
+                for key, value in task_map.items()
+                if key != "task_binding_digest"
+            }
+        )
+        if task_map
+        else ""
+    )
+    return bool(
+        cache_packet.get("packet_key") == CANDIDATE_CACHE_PACKET_KEY
+        and cache_packet.get("schema_version") == CANDIDATE_CACHE_SCHEMA_VERSION
+        and cache_packet.get("status") == "candidate_radar_full_market_replacement_ready"
+        and cache_packet.get("cache_only") is True
+        and cache_packet.get("candidate_is_not_buy_instruction") is True
+        and cache_packet.get("does_not_execute_trades") is True
+        and cache_packet.get("does_not_modify_strategy_action") is True
+        and cache_packet.get("contains_secret") is False
+        and candidate_rows
+        and not duplicate_count
+        and not invalid_count
+        and len(candidate_symbols) == len(candidate_rows)
+        and binding_map.get("schema_version")
+        == CANDIDATE_CACHE_REPLACEMENT_SCHEMA_VERSION
+        and binding_map.get("status") == "authoritative_candidate_cache_replaced"
+        and binding_map.get("global_candidate_cache_overwritten") is True
+        and _normalize_uuid4(binding_map.get("cache_write_task_id"))
+        == binding_map.get("cache_write_task_id")
+        and binding_map.get("acceptance_run_id")
+        == worker_packet.get("acceptance_run_id")
+        and binding_map.get("source_result_dataset") == RESULT_DATASET
+        and binding_map.get("source_result_version_id")
+        == worker_packet.get("result_version_id")
+        and binding_map.get("source_result_artifact_sha256")
+        == worker_packet.get("result_artifact_sha256")
+        and binding_map.get("source_result_output_hash")
+        == worker_packet.get("result_output_hash")
+        and binding_map.get("provider_version_digest")
+        == worker_packet.get("provider_version_digest")
+        and binding_map.get("universe_digest") == worker_packet.get("universe_digest")
+        and _integer(binding_map.get("candidate_row_count")) == len(candidate_rows)
+        and binding_map.get("candidate_rows_digest") == _canonical_digest(candidate_rows)
+        and binding_map.get("binding_digest") == expected_binding_digest
+        and binding_map.get("contains_secret") is False
+        and binding_map.get("does_not_execute_trades") is True
+        and task_map.get("schema_version")
+        == "candidate_radar_full_market_cache_write_task.v1"
+        and task_map.get("task_id") == binding_map.get("cache_write_task_id")
+        and task_map.get("task_type") == "publish_candidate_radar_full_market_cache"
+        and task_map.get("status") == "success"
+        and task_map.get("output_packet_key") == CANDIDATE_CACHE_PACKET_KEY
+        and task_map.get("acceptance_run_id") == worker_packet.get("acceptance_run_id")
+        and task_map.get("source_result_version_id")
+        == worker_packet.get("result_version_id")
+        and task_map.get("source_result_output_hash")
+        == worker_packet.get("result_output_hash")
+        and task_map.get("candidate_rows_digest") == _canonical_digest(candidate_rows)
+        and task_map.get("global_candidate_cache_overwritten") is True
+        and task_map.get("task_binding_digest") == expected_task_digest
+        and task_map.get("external_calls_triggered") is False
+        and task_map.get("does_not_execute_trades") is True
+        and task_map.get("contains_secret") is False
+    )
+
+
+def validate_factor_full_market_research_fact(evidence_root: Path) -> dict[str, Any]:
+    """Validate the independent LTG-04 Factor worker output, fail closed.
+
+    Candidate Radar scoring rows intentionally cannot satisfy this contract.  A
+    future shared map/reduce run may reuse provider reads and transport, but it
+    must persist a separate Factor dataset with rank/zscore, industry and size
+    neutralization, and factor-combination outputs.
+    """
+
+    db_path = evidence_root / "meta.sqlite"
+    packet = _read_packet_no_init(db_path, FACTOR_PACKET_KEY)
+    last_good = _read_packet_no_init(db_path, FACTOR_LAST_GOOD_PACKET_KEY)
+    minimum = _bounded_integer(
+        packet.get("minimum_universe_size"),
+        default=DEFAULT_MINIMUM_UNIVERSE_SIZE,
+        minimum=DEFAULT_MINIMUM_UNIVERSE_SIZE,
+        maximum=MAXIMUM_MINIMUM_UNIVERSE_SIZE,
+    )
+    universe = _authoritative_provider_universe(
+        evidence_root,
+        minimum_universe_size=minimum,
+        include_frames=False,
+    )
+    packet_binding = (
+        _canonical_digest(
+            {
+                key: value
+                for key, value in packet.items()
+                if key != "production_binding_digest"
+            }
+        )
+        if packet
+        else ""
+    )
+    packet_ready = bool(
+        packet
+        and packet == last_good
+        and packet.get("schema_version") == FACTOR_SCHEMA_VERSION
+        and packet.get("status") == "factor_full_market_worker_production_complete"
+        and packet.get("output_kind") == "factor_full_market_cross_sectional_research"
+        and packet.get("factor_output_contract") == FACTOR_OUTPUT_CONTRACT
+        and packet.get("factor_output_contract_digest") == FACTOR_OUTPUT_CONTRACT_DIGEST
+        and packet.get("production_binding_digest") == packet_binding
+        and packet.get("full_market_factor_research") is True
+        and packet.get("full_market_worker_runtime") is True
+        and packet.get("candidate_radar_production_replacement") is False
+        and packet.get("provider_scope_hash") == universe.get("scope_hash")
+        and packet.get("provider_version_digest") == universe.get("version_digest")
+        and packet.get("universe_digest") == universe.get("universe_digest")
+        and _integer(packet.get("universe_count")) == universe.get("universe_count")
+        and packet.get("synthetic_fixture") is False
+        and packet.get("does_not_execute_trades") is True
+        and packet.get("does_not_modify_strategy_action") is True
+        and packet.get("contains_secret") is False
+    )
+
+    pointer = parquet_store.versioned_dataset_pointer(
+        root=evidence_root / "parquet",
+        name=FACTOR_RESULT_DATASET,
+        pointer="current",
+    )
+    last_good_pointer = parquet_store.versioned_dataset_pointer(
+        root=evidence_root / "parquet",
+        name=FACTOR_RESULT_DATASET,
+        pointer="last_good",
+    )
+    result_path = Path(str(pointer.get("artifact_path") or ""))
+    result_rows: list[dict[str, Any]] = []
+    if result_path.is_file():
+        try:
+            import pandas as pd
+
+            result_rows = pd.read_parquet(result_path).to_dict(orient="records")
+        except Exception:
+            result_rows = []
+    result_symbols, duplicate_count, invalid_count = _normalize_symbols(
+        [row.get("ts_code") for row in result_rows]
+    )
+    required_metrics = tuple(FACTOR_OUTPUT_CONTRACT["required_metrics"])
+    result_ready = bool(
+        pointer.get("status") == "ready"
+        and pointer.get("version_id") == packet.get("result_version_id")
+        and pointer.get("artifact_sha256_matches") is True
+        and pointer.get("artifact_sha256") == packet.get("result_artifact_sha256")
+        and last_good_pointer.get("status") == "ready"
+        and last_good_pointer.get("version_id") == pointer.get("version_id")
+        and last_good_pointer.get("artifact_sha256") == pointer.get("artifact_sha256")
+        and result_rows
+        and not duplicate_count
+        and not invalid_count
+        and result_symbols == universe.get("symbols")
+        and len(result_rows) == universe.get("universe_count")
+        and _canonical_digest(result_rows) == packet.get("result_output_hash")
+        and all(
+            all(row.get(metric) is not None for metric in required_metrics)
+            for row in result_rows
+        )
+        and all(row.get("does_not_execute_trades") is True for row in result_rows)
+        and isinstance(pointer.get("lineage"), Mapping)
+        and pointer.get("lineage", {}).get("factor_output_contract_digest")
+        == FACTOR_OUTPUT_CONTRACT_DIGEST
+        and pointer.get("lineage", {}).get("universe_digest")
+        == universe.get("universe_digest")
+        and pointer.get("lineage", {}).get("provider_version_digest")
+        == universe.get("version_digest")
+    )
+    checks = {
+        "upstream_provider_current_last_good_and_artifacts": universe.get("ready") is True,
+        "factor_worker_packet_direct_binding": packet_ready,
+        "trusted_factor_worker_execution_lineage": False,
+        "factor_full_market_rank_zscore_neutralized_output": result_ready,
+    }
+    blockers = [key for key, passed in checks.items() if not passed]
+    ready = not blockers
+    return {
+        "ready": ready,
+        "status": (
+            "factor_full_market_research_fact_verified"
+            if ready
+            else "factor_full_market_research_fact_blocked"
+        ),
+        "full_market_factor_research": ready,
+        "output_kind": "factor_full_market_cross_sectional_research",
+        "candidate_radar_output_accepted_as_factor": False,
+        "blockers": blockers,
+        "provider_blockers": universe.get("blockers", []),
+        "read_only": True,
+        "writes_storage": False,
+        "external_calls_triggered": False,
+        "does_not_execute_trades": True,
+        "contains_secret": False,
+    }
+
+
 def validate_full_market_worker_production_fact(
     evidence_root: Path,
     *,
@@ -2753,6 +3022,19 @@ def validate_full_market_worker_production_fact(
             if isinstance(row, Mapping)
         )
     )
+    candidate_cache_packet = _read_packet_no_init(db_path, CANDIDATE_CACHE_PACKET_KEY)
+    candidate_cache_binding = candidate_cache_packet.get("full_market_worker_replacement")
+    cache_write_task_id = (
+        str(candidate_cache_binding.get("cache_write_task_id") or "")
+        if isinstance(candidate_cache_binding, Mapping)
+        else ""
+    )
+    candidate_cache_write_task = _read_task_no_init(db_path, cache_write_task_id)
+    authoritative_candidate_cache_ready = _candidate_cache_replacement_ready(
+        candidate_cache_packet,
+        packet,
+        candidate_cache_write_task,
+    )
     checks = {
         "upstream_provider_current_last_good_and_artifacts": universe.get("ready") is True,
         "production_packets_direct_binding": packets_ready,
@@ -2765,6 +3047,9 @@ def validate_full_market_worker_production_fact(
     }
     blockers = [key for key, passed in checks.items() if not passed]
     ready = not blockers
+    candidate_radar_replacement_blockers = [] if authoritative_candidate_cache_ready else [
+        "authoritative_candidate_cache_replacement"
+    ]
     return {
         "ready": ready,
         "status": (
@@ -2774,7 +3059,13 @@ def validate_full_market_worker_production_fact(
         ),
         "full_market_worker_runtime": ready,
         "celery_redis_runtime": ready,
-        "candidate_radar_production_replacement": ready,
+        "worker_output_kind": "candidate_radar_full_market_scores",
+        "full_market_factor_research": False,
+        "candidate_radar_production_replacement": bool(
+            ready and authoritative_candidate_cache_ready
+        ),
+        "authoritative_candidate_cache_replacement": authoritative_candidate_cache_ready,
+        "candidate_radar_replacement_blockers": candidate_radar_replacement_blockers,
         "universe_count": universe.get("universe_count", 0),
         "minimum_universe_size": minimum,
         "validated_trade_date": universe.get("validated_trade_date", ""),

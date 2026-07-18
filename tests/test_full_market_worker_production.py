@@ -493,6 +493,109 @@ class FullMarketWorkerProductionTests(unittest.TestCase):
             self.assertFalse(fact["candidate_radar_production_replacement"])
             self.assertIn("bound_worker_task_outputs", fact["blockers"])
 
+    def test_candidate_worker_output_needs_exact_authoritative_cache_binding(self) -> None:
+        worker_packet = {
+            "acceptance_run_id": "runtime-123",
+            "result_version_id": "fmw-runtime-123",
+            "result_artifact_sha256": "a" * 64,
+            "result_output_hash": "b" * 64,
+            "provider_version_digest": "c" * 64,
+            "universe_digest": "d" * 64,
+        }
+        candidate_rows = [{"ts_code": "000001.SZ", "score": 91}]
+        cache_packet = {
+            "packet_key": service.CANDIDATE_CACHE_PACKET_KEY,
+            "schema_version": service.CANDIDATE_CACHE_SCHEMA_VERSION,
+            "status": "candidate_radar_full_market_replacement_ready",
+            "cache_only": True,
+            "candidate_rows": candidate_rows,
+            "candidate_is_not_buy_instruction": True,
+            "does_not_execute_trades": True,
+            "does_not_modify_strategy_action": True,
+            "contains_secret": False,
+            "global_candidate_cache_overwritten": True,
+        }
+        self.assertFalse(
+            service._candidate_cache_replacement_ready(cache_packet, worker_packet, {})
+        )
+
+        cache_write_task_id = uuid.uuid4().hex
+        binding = {
+            "schema_version": service.CANDIDATE_CACHE_REPLACEMENT_SCHEMA_VERSION,
+            "status": "authoritative_candidate_cache_replaced",
+            "global_candidate_cache_overwritten": True,
+            "cache_write_task_id": cache_write_task_id,
+            "acceptance_run_id": worker_packet["acceptance_run_id"],
+            "source_result_dataset": service.RESULT_DATASET,
+            "source_result_version_id": worker_packet["result_version_id"],
+            "source_result_artifact_sha256": worker_packet["result_artifact_sha256"],
+            "source_result_output_hash": worker_packet["result_output_hash"],
+            "provider_version_digest": worker_packet["provider_version_digest"],
+            "universe_digest": worker_packet["universe_digest"],
+            "candidate_row_count": len(candidate_rows),
+            "candidate_rows_digest": service._canonical_digest(candidate_rows),
+            "contains_secret": False,
+            "does_not_execute_trades": True,
+        }
+        binding["binding_digest"] = service._canonical_digest(binding)
+        cache_packet["full_market_worker_replacement"] = binding
+        cache_write_task = {
+            "schema_version": "candidate_radar_full_market_cache_write_task.v1",
+            "task_id": cache_write_task_id,
+            "task_type": "publish_candidate_radar_full_market_cache",
+            "status": "success",
+            "output_packet_key": service.CANDIDATE_CACHE_PACKET_KEY,
+            "acceptance_run_id": worker_packet["acceptance_run_id"],
+            "source_result_version_id": worker_packet["result_version_id"],
+            "source_result_output_hash": worker_packet["result_output_hash"],
+            "candidate_rows_digest": service._canonical_digest(candidate_rows),
+            "global_candidate_cache_overwritten": True,
+            "external_calls_triggered": False,
+            "does_not_execute_trades": True,
+            "contains_secret": False,
+        }
+        cache_write_task["task_binding_digest"] = service._canonical_digest(cache_write_task)
+        self.assertTrue(
+            service._candidate_cache_replacement_ready(
+                cache_packet,
+                worker_packet,
+                cache_write_task,
+            )
+        )
+
+        cache_packet["candidate_rows"][0]["score"] = 92
+        self.assertFalse(
+            service._candidate_cache_replacement_ready(
+                cache_packet,
+                worker_packet,
+                cache_write_task,
+            )
+        )
+
+    def test_candidate_worker_packet_cannot_satisfy_factor_full_market_contract(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            candidate_packet = {
+                "schema_version": service.SCHEMA_VERSION,
+                "status": "full_market_worker_production_complete",
+                "full_market_worker_runtime": True,
+                "candidate_radar_production_replacement": True,
+                "production_worker_complete": True,
+                "does_not_execute_trades": True,
+                "does_not_modify_strategy_action": True,
+                "contains_secret": False,
+            }
+            store = SQLiteMetaStore(root / "meta.sqlite")
+            store.write_packet(service.FACTOR_PACKET_KEY, candidate_packet)
+            store.write_packet(service.FACTOR_LAST_GOOD_PACKET_KEY, candidate_packet)
+
+            fact = service.validate_factor_full_market_research_fact(root)
+
+            self.assertFalse(fact["ready"])
+            self.assertFalse(fact["full_market_factor_research"])
+            self.assertFalse(fact["candidate_radar_output_accepted_as_factor"])
+            self.assertIn("factor_worker_packet_direct_binding", fact["blockers"])
+
     def test_fake_eager_and_patched_inspector_transport_fail(self) -> None:
         self.assertFalse(service._transport_probe(object(), acceptance_run_id="runtime123")["ready"])
         try:

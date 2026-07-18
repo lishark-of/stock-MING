@@ -66,7 +66,7 @@ PRODUCTION_REQUIREMENTS = {
         "release_promotion_current_head",
     ),
     "LTG-04": (
-        "full_market_worker_runtime",
+        "factor_full_market_research",
         "production_storage",
         "release_promotion_current_head",
     ),

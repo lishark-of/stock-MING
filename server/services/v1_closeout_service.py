@@ -221,7 +221,11 @@ _PRODUCTION_REQUIREMENTS = {
     "LTG-01": ("trade_cal_provider_direct", "release_promotion_current_head"),
     "LTG-02": ("full_interface_provider_production", "release_promotion_current_head"),
     "LTG-03": ("factor_small_pool_provider_direct", "factor_production_promotion", "release_promotion_current_head"),
-    "LTG-04": ("full_market_worker_runtime", "production_storage", "release_promotion_current_head"),
+    "LTG-04": (
+        "factor_full_market_research",
+        "production_storage",
+        "release_promotion_current_head",
+    ),
     "LTG-05": ("production_storage", "release_promotion_current_head"),
     "LTG-06": ("celery_redis_runtime", "release_promotion_current_head"),
     "LTG-07": ("governed_model_runtime", "release_promotion_current_head"),
@@ -1276,6 +1280,9 @@ def _build_version_rows(
     full_market_worker_fact = full_market_worker_service.validate_full_market_worker_production_fact(
         evidence_root
     )
+    factor_full_market_fact = full_market_worker_service.validate_factor_full_market_research_fact(
+        evidence_root
+    )
     facts = {
         "trade_cal_provider_direct": _provider_ready(trade_cal, {"trade_cal"}),
         "factor_small_pool_provider_direct": _provider_ready(factor, {"daily", "daily_basic"}),
@@ -1286,6 +1293,9 @@ def _build_version_rows(
         ),
         "production_storage": storage_production_fact_validation.get("ready") is True,
         "full_market_worker_runtime": full_market_worker_fact.get("full_market_worker_runtime") is True,
+        "factor_full_market_research": (
+            factor_full_market_fact.get("full_market_factor_research") is True
+        ),
         "celery_redis_runtime": full_market_worker_fact.get("celery_redis_runtime") is True,
         "governed_model_runtime": _governed_model_runtime_ready(
             governed_model,
