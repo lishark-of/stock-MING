@@ -3761,12 +3761,26 @@ def public_full_market_worker_acceptance_response(
         and fact.get("production_trusted") is True
         and fact.get("snapshot_rollback_resistant") is True
     )
+    consumer_missing = consumer.get("ready") is not True
+    external_state = (
+        "verified"
+        if production_ready
+        else "missing"
+        if consumer_missing
+        else "subject_generation_mismatch"
+        if not exact_consumer
+        else "verification_failed"
+    )
     return {
         **packet,
         "status": (
             "full_market_worker_production_acceptance_external_trust_verified"
             if production_ready
-            else "full_market_worker_local_runtime_complete_external_trust_pending"
+            else "full_market_worker_production_acceptance_external_consumer_missing"
+            if local_ready and consumer_missing
+            else "full_market_worker_production_acceptance_external_consumer_subject_generation_mismatch"
+            if local_ready and not exact_consumer
+            else "full_market_worker_production_acceptance_external_consumer_verification_failed"
             if local_ready
             else packet.get("status") or "full_market_worker_production_acceptance_blocked"
         ),
@@ -3780,7 +3794,10 @@ def public_full_market_worker_acceptance_response(
         "local_celery_redis_runtime": local_ready,
         "local_runtime_fact_ready": fact.get("local_runtime_fact_ready") is True,
         "external_production_consumer": consumer,
+        "external_consumer_state": external_state,
+        "external_consumer_missing": consumer_missing,
         "external_consumer_exact_source_match": exact_consumer,
+        "external_consumer_verified": production_ready,
         "external_trust_verified": production_ready,
         "production_trusted": production_ready,
         "snapshot_rollback_resistant": production_ready,

@@ -53,10 +53,11 @@ def _digest(value: Mapping[str, Any] | list[Any]) -> str:
 
 
 def _safe_int(value: Any) -> int:
-    try:
-        return int(value)
-    except (TypeError, ValueError, OverflowError):
-        return 0
+    return value if type(value) is int and 0 <= value <= (2**63 - 1) else 0
+
+
+def _strict_positive_int(value: Any) -> bool:
+    return type(value) is int and 1 <= value <= (2**63 - 1)
 
 
 def _read_packet(path: Path, key: str) -> dict[str, Any]:
@@ -360,6 +361,7 @@ def _validate_claims(consumer: str, event: Mapping[str, Any], source: Mapping[st
 def _strict_registry_consumer_matches(
     consumer: str,
     registry: Mapping[str, Any],
+    canonical_registry: Mapping[str, Any],
     packet: Mapping[str, Any],
     event: Mapping[str, Any],
 ) -> bool:
@@ -373,18 +375,19 @@ def _strict_registry_consumer_matches(
     }
     consumer_key, _, _ = _consumer_keys(consumer)
     return bool(
-        registry.get("schema_version") == external_trust.REGISTRY_SCHEMA_VERSION
+        dict(registry) == dict(canonical_registry)
+        and registry.get("schema_version") == external_trust.REGISTRY_SCHEMA_VERSION
         and registry.get("packet_key") == external_trust.REGISTRY_PACKET_KEY
         and registry.get("status")
         == "external_attestation_registry_production_trust_verified"
         and registry.get("head_full") == external_trust._current_head_full()
         and registry.get("head_full") == latest.get("head_full")
-        and type(registry.get("event_count")) is int
+        and _strict_positive_int(registry.get("event_count"))
         and registry.get("event_count") == len(events)
         and registry.get("last_attestation_id") == latest.get("attestation_id")
-        and type(registry.get("last_monotonic_counter")) is int
+        and _strict_positive_int(registry.get("last_monotonic_counter"))
         and registry.get("last_monotonic_counter") == latest.get("monotonic_counter")
-        and type(registry.get("head_key_epoch")) is int
+        and _strict_positive_int(registry.get("head_key_epoch"))
         and registry.get("head_key_epoch") == latest.get("head_key_epoch")
         and registry.get("head_key_epoch_digest") == latest.get("head_key_epoch_digest")
         and registry.get("monotonic_anchor_digest") == latest.get("monotonic_anchor_digest")
@@ -400,8 +403,8 @@ def _strict_registry_consumer_matches(
         and registry.get("blockers") == []
         and all(
             row.get("head_full") == registry.get("head_full")
-            and type(row.get("monotonic_counter")) is int
-            and type(row.get("head_key_epoch")) is int
+            and _strict_positive_int(row.get("monotonic_counter"))
+            and _strict_positive_int(row.get("head_key_epoch"))
             and row.get("external_signature_verified") is True
             and row.get("external_trust_verified") is True
             and row.get("production_trusted") is True
@@ -416,11 +419,11 @@ def _strict_registry_consumer_matches(
         and packet.get("packet_key") == consumer_key
         and packet.get("consumer") == consumer
         and packet.get("attestation_id") == event.get("attestation_id")
-        and type(packet.get("monotonic_counter")) is int
-        and type(event.get("monotonic_counter")) is int
+        and _strict_positive_int(packet.get("monotonic_counter"))
+        and _strict_positive_int(event.get("monotonic_counter"))
         and packet.get("monotonic_counter") == event.get("monotonic_counter")
-        and type(packet.get("head_key_epoch")) is int
-        and type(event.get("head_key_epoch")) is int
+        and _strict_positive_int(packet.get("head_key_epoch"))
+        and _strict_positive_int(event.get("head_key_epoch"))
         and packet.get("head_key_epoch") == event.get("head_key_epoch")
         and packet.get("head_key_epoch_digest") == event.get("head_key_epoch_digest")
         and packet.get("monotonic_anchor_digest") == event.get("monotonic_anchor_digest")
@@ -473,6 +476,7 @@ def _previous_current_matches_source_last_good(
 def _stored_pointer_matches(
     consumer: str,
     registry: Mapping[str, Any],
+    canonical_registry: Mapping[str, Any],
     pointer: Mapping[str, Any],
     event: Mapping[str, Any],
     *,
@@ -495,7 +499,13 @@ def _stored_pointer_matches(
         == event.get("attestation_id")
         and pointer.get("generation") == source.get("generation")
         and pointer.get("consumer_packet_digest") == _digest(packet)
-        and _strict_registry_consumer_matches(consumer, registry, packet, event)
+        and _strict_registry_consumer_matches(
+            consumer,
+            registry,
+            canonical_registry,
+            packet,
+            event,
+        )
     )
 
 
@@ -516,6 +526,15 @@ def validate_consumer(
         external_trust.validate_trusted_registry()
         if has_local_consumer_state
         else {"ready": False}
+    )
+    canonical_validation = (
+        external_trust.validate_registry()
+        if has_local_consumer_state
+        else {"canonical_registry": {}}
+    )
+    canonical_registry = canonical_validation.get("canonical_registry")
+    canonical_registry = (
+        dict(canonical_registry) if isinstance(canonical_registry, Mapping) else {}
     )
     registry_source, _ = (
         external_trust._read_registry_no_init()
@@ -572,6 +591,7 @@ def validate_consumer(
         and _stored_pointer_matches(
             consumer,
             registry_source,
+            canonical_registry,
             current,
             event,
             pointer_kind="current",
@@ -583,6 +603,7 @@ def validate_consumer(
         and _stored_pointer_matches(
             consumer,
             registry_source,
+            canonical_registry,
             last_good,
             last_good_event,
             pointer_kind="last_good",
@@ -719,6 +740,7 @@ def import_and_promote_consumer(consumer: str, payload: Any) -> dict[str, Any]:
                 and _stored_pointer_matches(
                     consumer,
                     registry_packet,
+                    registry_packet,
                     previous_current,
                     current_event,
                     pointer_kind="current",
@@ -726,6 +748,7 @@ def import_and_promote_consumer(consumer: str, payload: Any) -> dict[str, Any]:
                 and previous_current.get("generation") == source.get("generation")
                 and _stored_pointer_matches(
                     consumer,
+                    registry_packet,
                     registry_packet,
                     previous_last_good,
                     expected_last_good_event,
@@ -741,6 +764,7 @@ def import_and_promote_consumer(consumer: str, payload: Any) -> dict[str, Any]:
                 registry_current_ready
                 and _stored_pointer_matches(
                     consumer,
+                    registry_packet,
                     registry_packet,
                     previous_current,
                     prior_event,

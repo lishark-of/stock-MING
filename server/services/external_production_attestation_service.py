@@ -1211,6 +1211,43 @@ def validate_registry() -> dict[str, Any]:
         and source.get("last_attestation_id") == validated[-1]["attestation_id"]
         and source.get("last_monotonic_counter") == validated[-1]["monotonic_counter"]
     )
+    canonical_events: list[dict[str, Any]] = []
+    if local_integrity_ready and production_registry:
+        for result in validated:
+            canonical_event = dict(result)
+            for key_name in (
+                "ready",
+                "status",
+                "external_trust_verified",
+                "production_trusted",
+                "snapshot_rollback_resistant",
+                "blockers",
+            ):
+                canonical_event.pop(key_name, None)
+            canonical_event.update(
+                {
+                    "external_trust_verified": True,
+                    "production_trusted": True,
+                    "snapshot_rollback_resistant": True,
+                    "blockers": [],
+                }
+            )
+            canonical_events.append(canonical_event)
+    canonical_registry = (
+        _trusted_registry_packet(
+            canonical_events,
+            verified=canonical_events[-1],
+            epoch={
+                "epoch": canonical_events[-1]["head_key_epoch"],
+                "epoch_digest": canonical_events[-1]["head_key_epoch_digest"],
+            },
+            anchor={
+                "anchor_digest": canonical_events[-1]["monotonic_anchor_digest"],
+            },
+        )
+        if canonical_events
+        else {}
+    )
     return {
         "ready": False,
         "local_integrity_ready": local_integrity_ready,
@@ -1223,6 +1260,7 @@ def validate_registry() -> dict[str, Any]:
         "last_attestation_id": validated[-1]["attestation_id"] if validated else "",
         "last_monotonic_counter": validated[-1]["monotonic_counter"] if validated else 0,
         "events": validated if local_integrity_ready else [],
+        "canonical_registry": canonical_registry,
         "external_signature_verified": local_integrity_ready,
         "external_trust_verified": False,
         "production_trusted": False,

@@ -1759,6 +1759,7 @@ class ExternalProductionAttestationTests(unittest.TestCase):
             registry = SQLiteMetaStore(self.db_path, read_only=True).read_packet(
                 external.REGISTRY_PACKET_KEY
             )
+            canonical_registry = external.validate_registry()["canonical_registry"]
             packet = promoted["current_pointer"]["consumer_packet"]
             event = next(
                 row
@@ -1769,11 +1770,13 @@ class ExternalProductionAttestationTests(unittest.TestCase):
                 phase2_consumers._strict_registry_consumer_matches(
                     consumer,
                     registry,
+                    canonical_registry,
                     packet,
                     event,
                 )
             )
             mutations = {
+                "unexpected_unsigned_field": "tampered",
                 "schema_version": "wrong-schema",
                 "packet_key": "wrong-registry-key",
                 "status": "wrong-status",
@@ -1802,10 +1805,113 @@ class ExternalProductionAttestationTests(unittest.TestCase):
                     phase2_consumers._strict_registry_consumer_matches(
                         consumer,
                         tampered,
+                        canonical_registry,
                         packet,
                         event,
                     ),
                     (consumer, field),
+                )
+            for field in ("last_monotonic_counter", "head_key_epoch"):
+                for bad_value in (False, 0, -1, 2**63):
+                    tampered = json.loads(json.dumps(registry))
+                    tampered[field] = bad_value
+                    self.assertFalse(
+                        phase2_consumers._strict_registry_consumer_matches(
+                            consumer,
+                            tampered,
+                            canonical_registry,
+                            packet,
+                            event,
+                        ),
+                        (consumer, field, bad_value),
+                    )
+            for event_index in range(len(registry["events"])):
+                tampered = json.loads(json.dumps(registry))
+                tampered["events"][event_index]["unsigned_extra"] = "tampered"
+                self.assertFalse(
+                    phase2_consumers._strict_registry_consumer_matches(
+                        consumer,
+                        tampered,
+                        canonical_registry,
+                        packet,
+                        event,
+                    ),
+                    (consumer, "history_or_cross_consumer", event_index),
+                )
+                for field in ("monotonic_counter", "head_key_epoch"):
+                    for bad_value in (True, 0, 2**63):
+                        tampered = json.loads(json.dumps(registry))
+                        tampered["events"][event_index][field] = bad_value
+                        self.assertFalse(
+                            phase2_consumers._strict_registry_consumer_matches(
+                                consumer,
+                                tampered,
+                                canonical_registry,
+                                packet,
+                                event,
+                            ),
+                            (consumer, event_index, field, bad_value),
+                        )
+            for field in ("monotonic_counter", "head_key_epoch"):
+                for bad_value in (True, 0, -1, 2**63):
+                    tampered_packet = json.loads(json.dumps(packet))
+                    tampered_packet[field] = bad_value
+                    self.assertFalse(
+                        phase2_consumers._strict_registry_consumer_matches(
+                            consumer,
+                            registry,
+                            canonical_registry,
+                            tampered_packet,
+                            event,
+                        ),
+                        (consumer, "packet", field, bad_value),
+                    )
+            if len(registry["events"]) > 1:
+                tampered = json.loads(json.dumps(registry))
+                tampered["events"][0]["cross_consumer_unsigned_extra"] = True
+                SQLiteMetaStore(self.db_path).write_packet(
+                    external.REGISTRY_PACKET_KEY,
+                    tampered,
+                )
+                cross_consumer = phase2_consumers.validate_consumer(consumer)
+                self.assertFalse(cross_consumer["ready"], cross_consumer)
+                self.assertFalse(cross_consumer["production_trusted"])
+                SQLiteMetaStore(self.db_path).write_packet(
+                    external.REGISTRY_PACKET_KEY,
+                    registry,
+                )
+                self.assertTrue(phase2_consumers.validate_consumer(consumer)["ready"])
+
+    def test_phase2_source_counts_reject_bool_and_numeric_strings(self) -> None:
+        cases = (
+            ("worker", ("batch_count", True)),
+            ("worker", ("result_row_count", "8")),
+            ("factor", ("universe_count", "3000")),
+            ("radar", ("candidate_row_count", True)),
+        )
+        for consumer, (field, bad_value) in cases:
+            with self.subTest(consumer=consumer, field=field):
+                self._install_phase2_source(consumer)
+                config = phase2_consumers._CONFIG[consumer]
+                store = SQLiteMetaStore(self.db_path)
+                packet = store.read_packet(config["current_key"])
+                if consumer == "radar":
+                    binding = packet["full_market_worker_replacement"]
+                    binding[field] = bad_value
+                    binding["binding_digest"] = phase2_consumers._digest(
+                        {
+                            key: value
+                            for key, value in binding.items()
+                            if key != "binding_digest"
+                        }
+                    )
+                else:
+                    packet[field] = bad_value
+                store.write_packet(config["current_key"], packet)
+                self.assertFalse(
+                    phase2_consumers.build_consumer_attestation_material(consumer)[
+                        "ready"
+                    ]
                 )
 
     def test_worker_production_post_exposes_three_external_trust_states(self) -> None:
@@ -1869,6 +1975,23 @@ class ExternalProductionAttestationTests(unittest.TestCase):
                 )
             data = response.json()["data"]
             expected = state == "ready"
+            expected_status = {
+                "missing": "full_market_worker_production_acceptance_external_consumer_missing",
+                "mismatch": "full_market_worker_production_acceptance_external_consumer_subject_generation_mismatch",
+                "ready": "full_market_worker_production_acceptance_external_trust_verified",
+            }[state]
+            self.assertEqual(data["status"], expected_status)
+            self.assertEqual(
+                data["external_consumer_state"],
+                {
+                    "missing": "missing",
+                    "mismatch": "subject_generation_mismatch",
+                    "ready": "verified",
+                }[state],
+            )
+            self.assertEqual(data["external_consumer_missing"], state == "missing")
+            self.assertEqual(data["external_consumer_exact_source_match"], expected)
+            self.assertEqual(data["external_consumer_verified"], expected)
             self.assertEqual(data["ready"], expected)
             self.assertEqual(data["production_worker_complete"], expected)
             self.assertEqual(data["full_market_worker_runtime"], expected)
