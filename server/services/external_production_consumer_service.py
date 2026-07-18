@@ -367,10 +367,19 @@ def _stored_packet_event_matches(
     source_material = {
         key: value for key, value in source.items() if key != "artifact_digest"
     }
+    consumer_key, _, _ = _consumer_keys(consumer)
     return bool(
         packet.get("schema_version") == CONSUMER_SCHEMA_VERSION
+        and packet.get("packet_key") == consumer_key
         and packet.get("consumer") == consumer
         and packet.get("attestation_id") == event.get("attestation_id")
+        and packet.get("monotonic_counter") == event.get("monotonic_counter")
+        and packet.get("head_key_epoch") == event.get("head_key_epoch")
+        and packet.get("head_key_epoch_digest") == event.get("head_key_epoch_digest")
+        and packet.get("monotonic_anchor_digest") == event.get("monotonic_anchor_digest")
+        and packet.get("production_trusted") is True
+        and packet.get("snapshot_rollback_resistant") is True
+        and packet.get("does_not_execute_trades") is True
         and source.get("consumer") == consumer
         and source.get("schema_version")
         == "command_center_3_external_production_source_binding.v1"
@@ -385,6 +394,26 @@ def _stored_packet_event_matches(
         and event.get("external_trust_verified") is True
         and event.get("production_trusted") is True
         and event.get("snapshot_rollback_resistant") is True
+    )
+
+
+def _previous_current_matches_source_last_good(
+    pointer: Mapping[str, Any],
+    source: Mapping[str, Any],
+) -> bool:
+    packet = pointer.get("consumer_packet")
+    packet = dict(packet) if isinstance(packet, Mapping) else {}
+    previous_source = packet.get("source_binding")
+    previous_source = (
+        dict(previous_source) if isinstance(previous_source, Mapping) else {}
+    )
+    return bool(
+        pointer.get("generation") == source.get("last_good_generation")
+        and previous_source.get("generation") == source.get("last_good_generation")
+        and previous_source.get("source_current_packet_digest")
+        == source.get("source_last_good_packet_digest")
+        and previous_source.get("current_artifact_file_digest")
+        == source.get("last_good_artifact_file_digest")
     )
 
 
@@ -497,7 +526,7 @@ def validate_consumer(
             last_good_event,
             pointer_kind="last_good",
         )
-        and last_good.get("generation") == source.get("last_good_generation")
+        and _previous_current_matches_source_last_good(last_good, source)
     )
     blockers: list[str] = []
     if source.get("ready") is not True:
@@ -635,8 +664,10 @@ def import_and_promote_consumer(consumer: str, payload: Any) -> dict[str, Any]:
                     expected_last_good_event,
                     pointer_kind="last_good",
                 )
-                and previous_last_good.get("generation")
-                == source.get("last_good_generation")
+                and _previous_current_matches_source_last_good(
+                    previous_last_good,
+                    source,
+                )
             )
         elif prior_event:
             history_ready = bool(
@@ -647,8 +678,10 @@ def import_and_promote_consumer(consumer: str, payload: Any) -> dict[str, Any]:
                     prior_event,
                     pointer_kind="current",
                 )
-                and previous_current.get("generation")
-                == source.get("last_good_generation")
+                and _previous_current_matches_source_last_good(
+                    previous_current,
+                    source,
+                )
             )
         else:
             history_ready = bool(
@@ -656,6 +689,10 @@ def import_and_promote_consumer(consumer: str, payload: Any) -> dict[str, Any]:
                 and not previous_current
                 and not previous_last_good
                 and source.get("last_good_generation") == source.get("generation")
+                and source.get("source_last_good_packet_digest")
+                == source.get("source_current_packet_digest")
+                and source.get("last_good_artifact_file_digest")
+                == source.get("current_artifact_file_digest")
             )
         if not history_ready:
             return {

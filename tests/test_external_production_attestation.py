@@ -1513,10 +1513,69 @@ class ExternalProductionAttestationTests(unittest.TestCase):
             counter += 1
             self._install_phase2_source(consumer, generation_number=2)
             second_envelope = self._phase2_envelope(consumer, counter, previous)
-            self._install_external_proof(second_envelope)
             registry_before = SQLiteMetaStore(self.db_path, read_only=True).read_packet(
                 external.REGISTRY_PACKET_KEY
             )
+            source = phase2_consumers.build_consumer_attestation_material(consumer)
+            for digest_field in (
+                "source_last_good_packet_digest",
+                "last_good_artifact_file_digest",
+            ):
+                mismatched_source = json.loads(json.dumps(source))
+                mismatched_source[digest_field] = "b" * 64
+                source_material = {
+                    key: value
+                    for key, value in mismatched_source.items()
+                    if key
+                    not in {
+                        "artifact_digest",
+                        "ready",
+                        "status",
+                        "claims",
+                        "writes_performed",
+                    }
+                }
+                mismatched_source["artifact_digest"] = phase2_consumers._digest(
+                    source_material
+                )
+                mismatched_envelope = self._envelope(
+                    str(mismatched_source["attestation_kind"]),
+                    str(mismatched_source["subject"]),
+                    counter,
+                    previous,
+                    claims=dict(mismatched_source["claims"]),
+                    nonce_seed=digest_field,
+                )
+                mismatched_envelope["statement"].update(
+                    {
+                        "task_id": mismatched_source["task_id"],
+                        "scope_hash": mismatched_source["scope_hash"],
+                        "artifact_digest": mismatched_source["artifact_digest"],
+                    }
+                )
+                self._resign(mismatched_envelope)
+                self._install_external_proof(mismatched_envelope)
+                with patch.object(
+                    phase2_consumers,
+                    "_source_binding",
+                    return_value=mismatched_source,
+                ):
+                    digest_rejected = phase2_consumers.import_and_promote_consumer(
+                        consumer,
+                        {"signed_envelope": mismatched_envelope},
+                    )
+                self.assertFalse(
+                    digest_rejected["ready"],
+                    (consumer, digest_field, digest_rejected),
+                )
+                self.assertFalse(digest_rejected["writes_performed"])
+                self.assertEqual(
+                    SQLiteMetaStore(self.db_path, read_only=True).read_packet(
+                        external.REGISTRY_PACKET_KEY
+                    ),
+                    registry_before,
+                )
+            self._install_external_proof(second_envelope)
             _, current_key, _ = phase2_consumers._consumer_keys(consumer)
             tampered_previous = json.loads(json.dumps(first["current_pointer"]))
             if consumer == "worker":
@@ -1602,6 +1661,14 @@ class ExternalProductionAttestationTests(unittest.TestCase):
                 "embedded_attestation_id",
                 "embedded_generation_reseal",
                 "cross_consumer_reseal",
+                "packet_key",
+                "monotonic_counter",
+                "head_key_epoch",
+                "head_key_epoch_digest",
+                "monotonic_anchor_digest",
+                "production_trusted",
+                "snapshot_rollback_resistant",
+                "does_not_execute_trades",
             ):
                 tampered = json.loads(json.dumps(original))
                 if mismatch == "outer_attestation_id":
@@ -1621,13 +1688,29 @@ class ExternalProductionAttestationTests(unittest.TestCase):
                     tampered["consumer_packet_digest"] = phase2_consumers._digest(
                         tampered["consumer_packet"]
                     )
-                else:
+                elif mismatch == "cross_consumer_reseal":
                     other_consumer = "factor" if consumer != "factor" else "worker"
                     tampered["consumer"] = other_consumer
                     tampered["consumer_packet"]["consumer"] = other_consumer
                     tampered["consumer_packet_digest"] = phase2_consumers._digest(
                         tampered["consumer_packet"]
                     )
+                else:
+                    packet = tampered["consumer_packet"]
+                    if mismatch == "packet_key":
+                        packet["packet_key"] = "wrong-consumer-packet-key"
+                    elif mismatch == "monotonic_counter":
+                        packet["monotonic_counter"] += 100
+                    elif mismatch == "head_key_epoch":
+                        packet["head_key_epoch"] += 100
+                    elif mismatch in {
+                        "head_key_epoch_digest",
+                        "monotonic_anchor_digest",
+                    }:
+                        packet[mismatch] = "d" * 64
+                    else:
+                        packet[mismatch] = False
+                    tampered["consumer_packet_digest"] = phase2_consumers._digest(packet)
                 SQLiteMetaStore(self.db_path).write_packet(last_good_key, tampered)
                 result = phase2_consumers.validate_consumer(consumer)
                 self.assertFalse(result["ready"], (consumer, mismatch, result))
@@ -1635,6 +1718,26 @@ class ExternalProductionAttestationTests(unittest.TestCase):
 
             SQLiteMetaStore(self.db_path).write_packet(last_good_key, original)
             self.assertTrue(phase2_consumers.validate_consumer(consumer)["ready"])
+            source = phase2_consumers.build_consumer_attestation_material(consumer)
+            self.assertTrue(
+                phase2_consumers._previous_current_matches_source_last_good(
+                    original,
+                    source,
+                )
+            )
+            for digest_field in (
+                "source_last_good_packet_digest",
+                "last_good_artifact_file_digest",
+            ):
+                mismatched_source = dict(source)
+                mismatched_source[digest_field] = "c" * 64
+                self.assertFalse(
+                    phase2_consumers._previous_current_matches_source_last_good(
+                        original,
+                        mismatched_source,
+                    ),
+                    (consumer, digest_field),
+                )
 
 
 if __name__ == "__main__":
