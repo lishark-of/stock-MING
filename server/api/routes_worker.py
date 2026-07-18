@@ -72,3 +72,15 @@ def run_full_market_production_acceptance(payload: dict[str, Any] | None = None)
 
     packet = full_market_worker_service.run_full_market_worker_production_acceptance(payload or {})
     return envelope(packet, call_ledger=packet.get("call_ledger"), warnings=packet.get("warnings"))
+
+
+@router.post("/full-market-factor-radar-map-reduce-request")
+def run_full_market_factor_radar_map_reduce_request(
+    payload: dict[str, Any] | None = None,
+) -> dict:
+    from server.services import full_market_research_producer_service
+
+    task = full_market_research_producer_service.run_full_market_factor_radar_map_reduce_request(
+        payload or {}
+    )
+    return envelope(task, call_ledger=task.get("call_ledger"), warnings=task.get("warnings"))
