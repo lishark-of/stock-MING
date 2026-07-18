@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import hashlib
+import json
 import sqlite3
 import tempfile
 import unittest
@@ -824,6 +826,85 @@ class FullMarketResearchProducerTests(unittest.TestCase):
                     for table in ("packets", "task_status", "task_status_history")
                 ]
             self.assertEqual(counts, [3, 3, 3])
+
+    def test_idempotent_reuse_rejects_corrupt_terminal_task_wrapper(self):
+        attacks = (
+            "invalid_created_at",
+            "missing_finished_at",
+            "empty_status_history",
+            "external_task_log",
+        )
+        payload = {"effective_dated_industry_membership_digest": "e" * 64}
+        for attack in attacks:
+            with self.subTest(attack=attack), tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp)
+                meta_path = root / "meta.sqlite"
+                with (
+                    patch.object(service, "SQLITE_META_PATH", meta_path),
+                    patch.object(task_service, "SQLITE_META_PATH", meta_path),
+                    patch.object(
+                        service,
+                        "validate_tushare_full_market_production_version",
+                        return_value=_provider(),
+                    ),
+                ):
+                    first = service.run_full_market_factor_radar_map_reduce_request(
+                        payload, evidence_root=root, meta_path=meta_path
+                    )
+                    with sqlite3.connect(meta_path) as connection:
+                        row = connection.execute(
+                            "SELECT payload_json FROM task_status WHERE task_id = ?",
+                            (first["task_id"],),
+                        ).fetchone()
+                        task = json.loads(str(row[0]))
+                        if attack == "invalid_created_at":
+                            task["created_at"] = "not-a-time"
+                        elif attack == "missing_finished_at":
+                            task["finished_at"] = None
+                        elif attack == "empty_status_history":
+                            task["status_history"] = []
+                        else:
+                            task["task_log"] = [{"external_calls_triggered": True}]
+                        task_json = json.dumps(
+                            task,
+                            ensure_ascii=False,
+                            sort_keys=True,
+                            separators=(",", ":"),
+                        )
+                        task_digest = hashlib.sha256(
+                            task_json.encode("utf-8")
+                        ).hexdigest()
+                        connection.execute(
+                            "UPDATE task_status SET payload_json = ? WHERE task_id = ?",
+                            (task_json, first["task_id"]),
+                        )
+                        connection.execute(
+                            """
+                            UPDATE task_status_history
+                            SET payload_json = ?, payload_digest = ?
+                            WHERE task_id = ?
+                            """,
+                            (task_json, task_digest, first["task_id"]),
+                        )
+                        connection.commit()
+                    with self.assertRaisesRegex(
+                        RuntimeError, "idempotent_bundle_task_binding_invalid"
+                    ):
+                        service.run_full_market_factor_radar_map_reduce_request(
+                            payload, evidence_root=root, meta_path=meta_path
+                        )
+                with sqlite3.connect(meta_path) as connection:
+                    counts = tuple(
+                        connection.execute(
+                            f"SELECT COUNT(*) FROM {table}"
+                        ).fetchone()[0]
+                        for table in (
+                            "packets",
+                            "task_status",
+                            "task_status_history",
+                        )
+                    )
+                self.assertEqual(counts, (3, 3, 3))
 
     def test_task_catalog_exposes_only_the_local_request_boundary(self):
         row = next(

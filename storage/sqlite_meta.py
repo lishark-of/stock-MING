@@ -287,33 +287,79 @@ class SQLiteMetaStore:
             ):
                 raise ValueError("bundle_task_binding_invalid")
 
-        stable_task_fields = (
-            "task_id",
-            "task_type",
-            "input_hash",
-            "idempotency_key",
-            "dedupe_scope",
-            "dedupe_policy",
-            "lock_key",
-            "lock_enforced",
-            "lock_policy",
-            "retry_policy",
-            "status",
-            "progress",
-            "current_step",
-            "error_message_safe",
-            "output_packet_key",
-            "payload_safe",
-            "warnings",
-            "call_ledger",
-            "backend",
-            "external_calls_triggered",
-            "deepseek_called",
-            "tushare_called",
-            "github_called",
-            "does_not_execute_trades",
-            "does_not_modify_strategy_action",
-        )
+        def canonical_terminal_task(task: Any) -> dict[str, Any] | None:
+            if not isinstance(task, dict):
+                return None
+            normalized = json.loads(
+                json.dumps(
+                    task,
+                    ensure_ascii=False,
+                    sort_keys=True,
+                    separators=(",", ":"),
+                    default=str,
+                )
+            )
+            created_at = normalized.get("created_at")
+            started_at = normalized.get("started_at")
+            finished_at = normalized.get("finished_at")
+            if not (
+                isinstance(created_at, str)
+                and created_at == started_at == finished_at
+            ):
+                return None
+            try:
+                parsed_created_at = _dt.datetime.fromisoformat(created_at)
+            except (TypeError, ValueError):
+                return None
+            if parsed_created_at.isoformat(timespec="microseconds") != created_at:
+                return None
+            progress = normalized.get("progress")
+            if not (
+                normalized.get("status") == "success"
+                and type(progress) in {int, float}
+                and float(progress) == 1.0
+                and normalized.get("external_calls_triggered") is False
+                and normalized.get("deepseek_called") is False
+                and normalized.get("tushare_called") is False
+                and normalized.get("github_called") is False
+                and normalized.get("does_not_execute_trades") is True
+                and normalized.get("does_not_modify_strategy_action") is True
+            ):
+                return None
+            status_history = normalized.get("status_history")
+            expected_status_event = {
+                "at": created_at,
+                "current_step": normalized.get("current_step"),
+                "progress": progress,
+                "status": "success",
+            }
+            if status_history != [expected_status_event]:
+                return None
+            task_log = normalized.get("task_log")
+            expected_task_log = {
+                "at": created_at,
+                "contains_secret": False,
+                "current_step": normalized.get("current_step"),
+                "event": "task_created",
+                "external": False,
+                "external_calls_triggered": False,
+                "message_safe": "local task record created without external work",
+                "stack_trace_included": False,
+                "status": "success",
+            }
+            if task_log != [expected_task_log]:
+                return None
+            time_sentinel = "<canonical-terminal-task-time>"
+            normalized["created_at"] = time_sentinel
+            normalized["started_at"] = time_sentinel
+            normalized["finished_at"] = time_sentinel
+            normalized["status_history"][0]["at"] = time_sentinel
+            normalized["task_log"][0]["at"] = time_sentinel
+            return normalized
+
+        for _, _, payload, _ in task_rows:
+            if canonical_terminal_task(json.loads(payload)) is None:
+                raise ValueError("bundle_task_terminal_wrapper_invalid")
 
         now = _dt.datetime.now().isoformat(timespec="microseconds")
         with closing(self._connect()) as conn:
@@ -362,13 +408,27 @@ class SQLiteMetaStore:
                             expected_task = json.loads(expected_payload)
                         except Exception as exc:
                             raise RuntimeError("idempotent_bundle_task_json_invalid") from exc
+                        current_terminal = canonical_terminal_task(current_task)
+                        expected_terminal = canonical_terminal_task(expected_task)
                         if not (
-                            isinstance(current_task, dict)
-                            and isinstance(expected_task, dict)
-                            and all(
-                                current_task.get(field) == expected_task.get(field)
-                                for field in stable_task_fields
-                            )
+                            current_terminal is not None
+                            and expected_terminal is not None
+                            and hashlib.sha256(
+                                json.dumps(
+                                    current_terminal,
+                                    ensure_ascii=False,
+                                    sort_keys=True,
+                                    separators=(",", ":"),
+                                ).encode("utf-8")
+                            ).hexdigest()
+                            == hashlib.sha256(
+                                json.dumps(
+                                    expected_terminal,
+                                    ensure_ascii=False,
+                                    sort_keys=True,
+                                    separators=(",", ":"),
+                                ).encode("utf-8")
+                            ).hexdigest()
                         ):
                             raise RuntimeError("idempotent_bundle_task_binding_invalid")
                         history_rows = existing_histories.get(task_id) or []
