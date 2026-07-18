@@ -4,7 +4,6 @@ import hashlib
 import json
 import re
 import subprocess
-import uuid
 from pathlib import Path
 from typing import Any, Mapping
 
@@ -36,6 +35,7 @@ RADAR_TARGET_DATASET = "full_market_candidate_radar_results"
 
 SCHEMA_VERSION = "full_market_factor_radar_map_reduce_request.v1"
 CHILD_SCHEMA_VERSION = "full_market_map_reduce_child_request.v1"
+BUNDLE_SCHEMA_VERSION = "full_market_factor_radar_request_bundle.v1"
 EXTERNAL_LINEAGE_BLOCKER = "external_trusted_production_lineage_runner_unavailable"
 MINIMUM_UNIVERSE_SIZE = 3000
 _HEX_64 = re.compile(r"^[0-9a-f]{64}$")
@@ -276,17 +276,46 @@ def _exact_value(actual: Any, expected: Any) -> bool:
     return actual == expected
 
 
-def _validate_independent_output_requests(
-    factor_request: Mapping[str, Any],
-    radar_request: Mapping[str, Any],
-    contract: Mapping[str, Any],
-) -> dict[str, Any]:
+def _bundle_identity(contract: Mapping[str, Any]) -> dict[str, str]:
+    request_bundle_id = _digest(
+        {
+            "schema_version": BUNDLE_SCHEMA_VERSION,
+            "head_full": contract.get("head_full"),
+            "shared_scope_hash": contract.get("shared_scope_hash"),
+            "factor_request_digest": contract.get("factor_request_digest"),
+            "radar_request_digest": contract.get("radar_request_digest"),
+        }
+    )
+
+    def task_id(role: str) -> str:
+        return f"local-{_digest({'request_bundle_id': request_bundle_id, 'role': role})[:12]}"
+
+    return {
+        "request_bundle_id": request_bundle_id,
+        "factor_task_id": task_id("factor"),
+        "radar_task_id": task_id("radar"),
+        "coordinator_task_id": task_id("coordinator"),
+    }
+
+
+def _child_packet_digest(packet: Mapping[str, Any]) -> str:
+    return _digest(
+        {
+            key: value
+            for key, value in packet.items()
+            if key not in {"packet_digest", "bundle_digest"}
+        }
+    )
+
+
+def _expected_request_bundle(contract: Mapping[str, Any]) -> dict[str, Any]:
     provider = contract.get("provider") if isinstance(contract.get("provider"), Mapping) else {}
     shared = (
         contract.get("shared_scope_material")
         if isinstance(contract.get("shared_scope_material"), Mapping)
         else {}
     )
+    identity = _bundle_identity(contract)
     expected_common = {
         "schema_version": CHILD_SCHEMA_VERSION,
         "status": (
@@ -296,6 +325,8 @@ def _validate_independent_output_requests(
         ),
         "head_full": contract.get("head_full"),
         "shared_scope_hash": contract.get("shared_scope_hash"),
+        "request_bundle_id": identity["request_bundle_id"],
+        "coordinator_task_id": identity["coordinator_task_id"],
         "provider_scope_hash": provider.get("provider_scope_hash"),
         "provider_version_digest": provider.get("provider_version_digest"),
         "universe_digest": provider.get("universe_digest"),
@@ -324,22 +355,71 @@ def _validate_independent_output_requests(
         "does_not_modify_strategy_action": True,
         "contains_secret": False,
     }
-    expected_factor = {
+    factor_packet = {
         **expected_common,
+        "task_id": identity["factor_task_id"],
         "request_digest": contract.get("factor_request_digest"),
         "output_kind": FACTOR_OUTPUT_CONTRACT["output_kind"],
         "target_dataset": FACTOR_TARGET_DATASET,
         "target_packet_key": FACTOR_TARGET_PACKET_KEY,
         "output_contract_digest": FACTOR_OUTPUT_CONTRACT_DIGEST,
     }
-    expected_radar = {
+    radar_packet = {
         **expected_common,
+        "task_id": identity["radar_task_id"],
         "request_digest": contract.get("radar_request_digest"),
         "output_kind": RADAR_OUTPUT_CONTRACT["output_kind"],
         "target_dataset": RADAR_TARGET_DATASET,
         "target_packet_key": RADAR_TARGET_PACKET_KEY,
         "output_contract_digest": RADAR_OUTPUT_CONTRACT_DIGEST,
     }
+    factor_packet_digest = _child_packet_digest(factor_packet)
+    radar_packet_digest = _child_packet_digest(radar_packet)
+    bundle_material = {
+        "schema_version": BUNDLE_SCHEMA_VERSION,
+        "request_bundle_id": identity["request_bundle_id"],
+        "coordinator_task_id": identity["coordinator_task_id"],
+        "head_full": contract.get("head_full"),
+        "shared_scope_hash": contract.get("shared_scope_hash"),
+        "provider_scope_hash": provider.get("provider_scope_hash"),
+        "provider_version_digest": provider.get("provider_version_digest"),
+        "universe_digest": provider.get("universe_digest"),
+        "artifact_manifest_digest": provider.get("artifact_manifest_digest"),
+        "factor_task_id": identity["factor_task_id"],
+        "factor_request_digest": contract.get("factor_request_digest"),
+        "factor_packet_digest": factor_packet_digest,
+        "radar_task_id": identity["radar_task_id"],
+        "radar_request_digest": contract.get("radar_request_digest"),
+        "radar_packet_digest": radar_packet_digest,
+    }
+    bundle_digest = _digest(bundle_material)
+    factor_packet["bundle_digest"] = bundle_digest
+    factor_packet["packet_digest"] = factor_packet_digest
+    radar_packet["bundle_digest"] = bundle_digest
+    radar_packet["packet_digest"] = radar_packet_digest
+    return {
+        **identity,
+        "bundle_material": bundle_material,
+        "bundle_digest": bundle_digest,
+        "factor_packet": factor_packet,
+        "radar_packet": radar_packet,
+    }
+
+
+def _validate_independent_output_requests(
+    factor_request: Mapping[str, Any],
+    radar_request: Mapping[str, Any],
+    contract: Mapping[str, Any],
+) -> dict[str, Any]:
+    provider = contract.get("provider") if isinstance(contract.get("provider"), Mapping) else {}
+    shared = (
+        contract.get("shared_scope_material")
+        if isinstance(contract.get("shared_scope_material"), Mapping)
+        else {}
+    )
+    expected_bundle = _expected_request_bundle(contract)
+    expected_factor = expected_bundle["factor_packet"]
+    expected_radar = expected_bundle["radar_packet"]
 
     def packet_checks(
         prefix: str,
@@ -347,18 +427,15 @@ def _validate_independent_output_requests(
         expected: Mapping[str, Any],
     ) -> dict[str, bool]:
         task_id = str(packet.get("task_id") or "")
-        expected_keys = set(expected) | {"task_id", "packet_digest"}
         return {
-            f"{prefix}_fields_exact": set(packet) == expected_keys,
+            f"{prefix}_fields_exact": set(packet) == set(expected),
             f"{prefix}_task_id_valid": bool(re.fullmatch(r"local-[0-9a-f]{12}", task_id)),
             f"{prefix}_authoritative_fields_exact": all(
                 _exact_value(packet.get(key), value) for key, value in expected.items()
             ),
             f"{prefix}_packet_digest_exact": (
                 _safe_digest(packet.get("packet_digest"))
-                == _digest(
-                    {key: value for key, value in packet.items() if key != "packet_digest"}
-                )
+                == _child_packet_digest(packet)
             ),
         }
 
@@ -369,6 +446,11 @@ def _validate_independent_output_requests(
         ),
         "shared_scope_recomputed": (
             _safe_digest(contract.get("shared_scope_hash")) == _digest(shared)
+        ),
+        "bundle_digest_recomputed": (
+            _safe_digest(factor_request.get("bundle_digest"))
+            == expected_bundle["bundle_digest"]
+            == _safe_digest(radar_request.get("bundle_digest"))
         ),
         "provider_digests_complete": all(
             _safe_digest(provider.get(key))
@@ -450,51 +532,26 @@ def _request_packet(
     output_contract_digest: str,
     request_digest: str,
 ) -> dict[str, Any]:
-    provider = contract.get("provider") if isinstance(contract.get("provider"), Mapping) else {}
-    packet = {
-        "schema_version": CHILD_SCHEMA_VERSION,
-        "status": (
-            "execution_request_recorded_authoritative_inputs_pending"
-            if contract.get("execution_request_scope_ready") is True
-            else "execution_request_blocked_prerequisites_missing"
-        ),
-        "head_full": contract.get("head_full"),
-        "shared_scope_hash": contract.get("shared_scope_hash"),
-        "request_digest": request_digest,
-        "output_kind": output_kind,
-        "target_dataset": target_dataset,
-        "target_packet_key": target_packet_key,
-        "output_contract_digest": output_contract_digest,
-        "provider_scope_hash": provider.get("provider_scope_hash"),
-        "provider_version_digest": provider.get("provider_version_digest"),
-        "universe_digest": provider.get("universe_digest"),
-        "artifact_manifest_digest": provider.get("artifact_manifest_digest"),
-        "universe_count": provider.get("universe_count"),
-        "required_sessions": REQUIRED_SESSIONS,
-        "validated_trade_date": provider.get("validated_trade_date"),
-        "requested_effective_dated_industry_membership_digest": contract.get(
-            "shared_scope_material", {}
-        ).get("requested_effective_dated_industry_membership_digest"),
-        "effective_dated_industry_membership_verified": False,
-        "blockers": list(contract.get("blockers") or []),
-        "dispatch_allowed": False,
-        "external_trusted_lineage_runner_available": False,
-        "production_complete": False,
-        "writes_target_dataset": False,
-        "writes_target_packet": False,
-        "global_candidate_cache_overwritten": False,
-        "provider_execution_triggered": False,
-        "worker_execution_triggered": False,
-        "external_calls_triggered": False,
-        "tushare_called": False,
-        "deepseek_called": False,
-        "github_called": False,
-        "does_not_execute_trades": True,
-        "does_not_modify_strategy_action": True,
-        "contains_secret": False,
-    }
-    packet["packet_digest"] = _digest(packet)
-    return packet
+    bundle = _expected_request_bundle(contract)
+    factor_exact = (
+        output_kind == FACTOR_OUTPUT_CONTRACT["output_kind"]
+        and target_dataset == FACTOR_TARGET_DATASET
+        and target_packet_key == FACTOR_TARGET_PACKET_KEY
+        and output_contract_digest == FACTOR_OUTPUT_CONTRACT_DIGEST
+        and request_digest == contract.get("factor_request_digest")
+    )
+    radar_exact = (
+        output_kind == RADAR_OUTPUT_CONTRACT["output_kind"]
+        and target_dataset == RADAR_TARGET_DATASET
+        and target_packet_key == RADAR_TARGET_PACKET_KEY
+        and output_contract_digest == RADAR_OUTPUT_CONTRACT_DIGEST
+        and request_digest == contract.get("radar_request_digest")
+    )
+    if factor_exact:
+        return dict(bundle["factor_packet"])
+    if radar_exact:
+        return dict(bundle["radar_packet"])
+    raise ValueError("request_packet_contract_identity_invalid")
 
 
 def _local_request_ledger(api: str, packet: Mapping[str, Any]) -> list[dict[str, Any]]:
@@ -537,33 +594,12 @@ def run_full_market_factor_radar_map_reduce_request(
         payload,
         evidence_root=evidence_root,
     )
-    factor_task_id = f"local-{uuid.uuid4().hex[:12]}"
-    radar_task_id = f"local-{uuid.uuid4().hex[:12]}"
-    coordinator_task_id = f"local-{uuid.uuid4().hex[:12]}"
-    factor_packet = _request_packet(
-        contract,
-        output_kind=str(FACTOR_OUTPUT_CONTRACT["output_kind"]),
-        target_dataset=FACTOR_TARGET_DATASET,
-        target_packet_key=FACTOR_TARGET_PACKET_KEY,
-        output_contract_digest=FACTOR_OUTPUT_CONTRACT_DIGEST,
-        request_digest=str(contract.get("factor_request_digest") or ""),
-    )
-    factor_packet["task_id"] = factor_task_id
-    factor_packet["packet_digest"] = _digest(
-        {key: value for key, value in factor_packet.items() if key != "packet_digest"}
-    )
-    radar_packet = _request_packet(
-        contract,
-        output_kind=str(RADAR_OUTPUT_CONTRACT["output_kind"]),
-        target_dataset=RADAR_TARGET_DATASET,
-        target_packet_key=RADAR_TARGET_PACKET_KEY,
-        output_contract_digest=RADAR_OUTPUT_CONTRACT_DIGEST,
-        request_digest=str(contract.get("radar_request_digest") or ""),
-    )
-    radar_packet["task_id"] = radar_task_id
-    radar_packet["packet_digest"] = _digest(
-        {key: value for key, value in radar_packet.items() if key != "packet_digest"}
-    )
+    bundle = _expected_request_bundle(contract)
+    factor_task_id = str(bundle["factor_task_id"])
+    radar_task_id = str(bundle["radar_task_id"])
+    coordinator_task_id = str(bundle["coordinator_task_id"])
+    factor_packet = dict(bundle["factor_packet"])
+    radar_packet = dict(bundle["radar_packet"])
     independence = _validate_independent_output_requests(factor_packet, radar_packet, contract)
     if independence.get("ready") is not True:
         raise RuntimeError("independent_output_request_integrity_failed")
@@ -594,6 +630,10 @@ def run_full_market_factor_radar_map_reduce_request(
     coordinator_payload = {
         **dict(contract),
         "task_id": coordinator_task_id,
+        "request_bundle_id": bundle["request_bundle_id"],
+        "bundle_schema_version": BUNDLE_SCHEMA_VERSION,
+        "bundle_material": bundle["bundle_material"],
+        "bundle_digest": bundle["bundle_digest"],
         "factor_task_id": factor_task_id,
         "factor_request_packet_key": FACTOR_REQUEST_PACKET_KEY,
         "factor_request_packet_digest": factor_packet.get("packet_digest"),
@@ -628,14 +668,23 @@ def run_full_market_factor_radar_map_reduce_request(
         call_ledger=coordinator_ledger,
     )
     store = SQLiteMetaStore(Path(meta_path or SQLITE_META_PATH))
-    store.write_packet_task_bundle_atomic(
+    write_result = store.write_packet_task_bundle_atomic(
         packets={
             FACTOR_REQUEST_PACKET_KEY: factor_packet,
             RADAR_REQUEST_PACKET_KEY: radar_packet,
             COORDINATOR_PACKET_KEY: coordinator_payload,
         },
         tasks=[factor_task, radar_task, coordinator],
+        request_bundle_id=str(bundle["request_bundle_id"]),
+        bundle_digest=str(bundle["bundle_digest"]),
     )
+    if write_result.get("status") == "packet_task_bundle_reused":
+        persisted = SQLiteMetaStore(
+            Path(meta_path or SQLITE_META_PATH), read_only=True
+        ).read_task_status(coordinator_task_id)
+        if not isinstance(persisted, dict):
+            raise RuntimeError("idempotent_bundle_coordinator_readback_failed")
+        coordinator = persisted
     coordinator["payload_safe"] = coordinator_payload
     coordinator["external_calls_triggered"] = False
     coordinator["tushare_called"] = False

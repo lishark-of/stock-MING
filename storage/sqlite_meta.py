@@ -196,6 +196,8 @@ class SQLiteMetaStore:
         *,
         packets: Mapping[str, Any],
         tasks: Sequence[Mapping[str, Any]],
+        request_bundle_id: str,
+        bundle_digest: str,
     ) -> dict[str, Any]:
         """Atomically persist request packets and their terminal task records."""
 
@@ -237,19 +239,132 @@ class SQLiteMetaStore:
             )
         packet_keys = [row[0] for row in packet_rows]
         task_ids = [row[0] for row in task_rows]
+        request_bundle_id = str(request_bundle_id or "").lower()
+        bundle_digest = str(bundle_digest or "").lower()
+
+        def sha256_text(value: str) -> bool:
+            return len(value) == 64 and all(character in "0123456789abcdef" for character in value)
+
         if (
             not packet_rows
             or not task_rows
             or any(not key for key in packet_keys)
             or len(set(packet_keys)) != len(packet_keys)
             or len(set(task_ids)) != len(task_ids)
+            or not sha256_text(request_bundle_id)
+            or not sha256_text(bundle_digest)
         ):
             raise ValueError("bundle_packet_or_task_identity_invalid")
+
+        stable_task_fields = (
+            "task_id",
+            "task_type",
+            "input_hash",
+            "idempotency_key",
+            "lock_key",
+            "status",
+            "progress",
+            "current_step",
+            "output_packet_key",
+            "payload_safe",
+            "warnings",
+            "call_ledger",
+            "backend",
+            "external_calls_triggered",
+            "deepseek_called",
+            "tushare_called",
+            "github_called",
+            "does_not_execute_trades",
+            "does_not_modify_strategy_action",
+        )
 
         now = _dt.datetime.now().isoformat(timespec="microseconds")
         with closing(self._connect()) as conn:
             try:
                 conn.execute("BEGIN IMMEDIATE")
+                existing_packets = {
+                    packet_key: (
+                        conn.execute(
+                            "SELECT payload_json FROM packets WHERE packet_key = ?",
+                            (packet_key,),
+                        ).fetchone()
+                        or (None,)
+                    )[0]
+                    for packet_key in packet_keys
+                }
+                packets_exact = all(
+                    existing_packets.get(packet_key) == payload
+                    for packet_key, payload in packet_rows
+                )
+                existing_tasks = {
+                    task_id: conn.execute(
+                        "SELECT payload_json FROM task_status WHERE task_id = ?",
+                        (task_id,),
+                    ).fetchone()
+                    for task_id in task_ids
+                }
+                if packets_exact:
+                    for packet_key, payload in packet_rows:
+                        try:
+                            decoded_packet = json.loads(payload)
+                        except Exception as exc:
+                            raise RuntimeError("idempotent_bundle_packet_json_invalid") from exc
+                        if not (
+                            isinstance(decoded_packet, dict)
+                            and decoded_packet.get("request_bundle_id") == request_bundle_id
+                            and decoded_packet.get("bundle_digest") == bundle_digest
+                        ):
+                            raise RuntimeError("idempotent_bundle_packet_binding_invalid")
+                    for task_id, task_type, expected_payload, _ in task_rows:
+                        row = existing_tasks.get(task_id)
+                        if row is None:
+                            raise RuntimeError("idempotent_bundle_task_missing")
+                        try:
+                            current_task = json.loads(str(row[0]))
+                            expected_task = json.loads(expected_payload)
+                        except Exception as exc:
+                            raise RuntimeError("idempotent_bundle_task_json_invalid") from exc
+                        if not (
+                            isinstance(current_task, dict)
+                            and isinstance(expected_task, dict)
+                            and all(
+                                current_task.get(field) == expected_task.get(field)
+                                for field in stable_task_fields
+                            )
+                        ):
+                            raise RuntimeError("idempotent_bundle_task_binding_invalid")
+                        history_row = conn.execute(
+                            """
+                            SELECT task_type, payload_json, payload_digest
+                            FROM task_status_history
+                            WHERE task_id = ?
+                            ORDER BY history_id DESC
+                            LIMIT 1
+                            """,
+                            (task_id,),
+                        ).fetchone()
+                        current_payload = str(row[0])
+                        if not (
+                            history_row is not None
+                            and str(history_row[0]) == task_type
+                            and str(history_row[1]) == current_payload
+                            and str(history_row[2])
+                            == hashlib.sha256(current_payload.encode("utf-8")).hexdigest()
+                        ):
+                            raise RuntimeError("idempotent_bundle_history_binding_invalid")
+                    conn.rollback()
+                    return {
+                        "status": "packet_task_bundle_reused",
+                        "request_bundle_id": request_bundle_id,
+                        "bundle_digest": bundle_digest,
+                        "packet_keys": packet_keys,
+                        "task_ids": task_ids,
+                        "transaction_committed": False,
+                        "idempotent_reuse": True,
+                        "writes_performed": 0,
+                    }
+                if any(row is not None for row in existing_tasks.values()):
+                    raise RuntimeError("idempotent_bundle_partial_or_conflicting_state")
                 for packet_key, payload in packet_rows:
                     conn.execute(
                         """
@@ -294,11 +409,14 @@ class SQLiteMetaStore:
                 raise
         return {
             "status": "packet_task_bundle_committed",
+            "request_bundle_id": request_bundle_id,
+            "bundle_digest": bundle_digest,
             "packet_keys": packet_keys,
             "task_ids": task_ids,
             "updated_at": now,
             "transaction_committed": True,
             "readback_verified_before_commit": True,
+            "idempotent_reuse": False,
         }
 
     def restore_packet_pair_and_delete_event_atomic(
