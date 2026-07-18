@@ -28,11 +28,15 @@ CAPITAL_EVIDENCE_POLICY = {
 _PRO_CLIENT = None
 _INIT_ERROR = None
 _TRANSPORT_RECEIPTS = {}
-TRANSPORT_RECEIPT_VERSION = "tushare_runtime_transport_receipt.v1"
+TRANSPORT_RECEIPT_VERSION = "tushare_runtime_transport_receipt.v2"
 
 
 def _now():
     return datetime.datetime.now().isoformat(timespec="seconds")
+
+
+def _now_utc():
+    return datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="microseconds").replace("+00:00", "Z")
 
 
 def _result(api, ok=False, data=None, error=None, transport_call_id=""):
@@ -125,6 +129,7 @@ def _call_pro(api, **params):
     except AttributeError:
         return _result(api, error=f"Tushare pro_api 不支持接口：{api}")
 
+    issued_at_utc = _now_utc()
     try:
         data = method(**cleaned)
         if pd is not None and not isinstance(data, pd.DataFrame):
@@ -141,11 +146,12 @@ def _call_pro(api, **params):
             "schema_version": TRANSPORT_RECEIPT_VERSION,
             "call_id": call_id,
             "api": api,
-            "provider": SOURCE_NAME,
+            "request_params_safe": cleaned,
             "sdk_method_invoked": True,
             "provider_response_received": True,
             "official_client_identity_verified": official_client_identity_verified,
-            "issued_at": _now(),
+            "issued_at_utc": issued_at_utc,
+            "completed_at_utc": _now_utc(),
         }
         return _result(api, ok=True, data=data, transport_call_id=call_id)
     except Exception as exc:

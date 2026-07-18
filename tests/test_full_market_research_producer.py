@@ -5,6 +5,7 @@ import json
 import sqlite3
 import tempfile
 import unittest
+from contextlib import ExitStack
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from unittest.mock import patch
@@ -17,6 +18,7 @@ from server.services import task_service
 from storage.sqlite_meta import SQLiteMetaStore
 from tests.test_full_market_industry_membership import (
     _symbols as _industry_symbols,
+    _install_semantic_authority,
     _write_evidence,
 )
 
@@ -955,6 +957,13 @@ class FullMarketResearchProducerTests(unittest.TestCase):
 
 
 class FullMarketResearchProducerIndustryIntegrationTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.stack = ExitStack()
+        _install_semantic_authority(self.stack)
+
+    def tearDown(self) -> None:
+        self.stack.close()
+
     def test_real_pointer_binds_both_producer_requests_end_to_end(self) -> None:
         symbols = _industry_symbols()
         provider = {

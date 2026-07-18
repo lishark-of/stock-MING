@@ -5,17 +5,25 @@ from pathlib import Path
 from typing import Any
 
 from .full_market_industry_service import (
-    MINIMUM_ELIGIBLE_SYMBOLS, PROJECT_ROOT, REQUIRED_EXCHANGES, SOURCE_API,
-    _SYMBOL, _date, _digest, _exchange, _interval_blockers, _symbols,
+    MINIMUM_ELIGIBLE_SYMBOLS,
+    PROJECT_ROOT,
+    PROVIDER_RAW_FIELDS,
+    SOURCE_API,
+    _date,
+    _digest,
+    _exchange,
+    _interval_blockers,
+    _normalized_provider_row,
+    _provider_raw_row,
+    _symbols,
+    _transport_receipt_blockers,
 )
 
 PROVIDER_PAGE_SIZE = 2000
 PROVIDER_MAX_PAGES_PER_PARTITION = 100
 PROVIDER_IS_NEW_PARTITIONS = ("Y", "N")
-PROVIDER_RAW_FIELDS = (
-    "l1_code", "l1_name", "l2_code", "l2_name", "l3_code", "l3_name",
-    "ts_code", "name", "in_date", "out_date", "is_new",
-)
+
+
 def _provider_failure_mode(value: Any) -> str:
     text = str(value or "").lower()
     if any(marker in text for marker in ("permission", "权限", "积分", "access denied")):
@@ -51,6 +59,7 @@ def _provider_rows(value: Any) -> tuple[list[dict[str, Any]], int]:
             )
     return [], 1
 
+
 def _load_official_index_member_client() -> Any:
     import tushare_adapter
 
@@ -60,6 +69,7 @@ def _load_official_index_member_client() -> Any:
     if not callable(method) or actual.resolve() != expected.resolve():
         raise RuntimeError("official_index_member_all_adapter_unavailable")
     return tushare_adapter
+
 
 def _current_provider_matches_request(
     evidence_root: Path,
@@ -121,54 +131,19 @@ def _normalize_provider_rows(
     seen_raw: set[str] = set()
     seen_normalized: set[str] = set()
     for source in rows:
-        if any(
-            isinstance(source.get(field), (Mapping, list, tuple, set))
-            for field in PROVIDER_RAW_FIELDS
-        ):
+        raw = _provider_raw_row(source)
+        if raw is None:
             blockers.append("provider_row_schema_invalid")
             continue
-        raw = {
-            field: (
-                None
-                if source.get(field) is None
-                else str(source.get(field)).strip()
-            )
-            for field in PROVIDER_RAW_FIELDS
-        }
         raw_digest = _digest(raw)
         if raw_digest in seen_raw:
             blockers.append("provider_duplicate_raw_row")
         seen_raw.add(raw_digest)
         raw_rows.append(raw)
-        symbol = str(raw.get("ts_code") or "").upper()
-        effective_from = _date(raw.get("in_date"))
-        raw_out_date = raw.get("out_date")
-        effective_to = _date(raw_out_date) if raw_out_date else None
-        industry_code = next(
-            (
-                str(raw.get(key) or "").strip()
-                for key in ("l3_code", "l2_code", "l1_code")
-                if str(raw.get(key) or "").strip()
-            ),
-            "",
-        )
-        if (
-            not _SYMBOL.fullmatch(symbol)
-            or not effective_from
-            or (raw_out_date and not effective_to)
-            or not industry_code
-            or raw.get("is_new") not in PROVIDER_IS_NEW_PARTITIONS
-            or raw.get("is_new") != source.get("__query_is_new")
-        ):
+        normalized = _normalized_provider_row(raw)
+        if normalized is None or raw.get("is_new") != source.get("__query_is_new"):
             blockers.append("provider_row_schema_invalid")
             continue
-        normalized = {
-            "effective_from": effective_from,
-            "effective_to": effective_to,
-            "industry_code": industry_code,
-            "source_api": SOURCE_API,
-            "ts_code": symbol,
-        }
         normalized_digest = _digest(normalized)
         if normalized_digest in seen_normalized:
             blockers.append("provider_duplicate_normalized_row")
@@ -196,6 +171,7 @@ def _collect_provider_pages(client: Any) -> tuple[list[dict[str, Any]], list[dic
     rows: list[dict[str, Any]] = []
     ledger: list[dict[str, Any]] = []
     blockers: list[str] = []
+    seen_call_ids: set[str] = set()
     for partition in PROVIDER_IS_NEW_PARTITIONS:
         offset = 0
         terminal_page_observed = False
@@ -224,6 +200,9 @@ def _collect_provider_pages(client: Any) -> tuple[list[dict[str, Any]], list[dic
                 "error": "provider_result_type_invalid",
             }
             page_rows, non_objects = _provider_rows(result.get("data"))
+            page_raw = [_provider_raw_row(row) for row in page_rows]
+            invalid_raw = any(row is None for row in page_raw)
+            canonical_page = [row for row in page_raw if row is not None]
             failure_mode = (
                 "none"
                 if result.get("ok") is True and not non_objects
@@ -240,16 +219,20 @@ def _collect_provider_pages(client: Any) -> tuple[list[dict[str, Any]], list[dic
             except Exception:
                 transport = None
             transport = dict(transport) if isinstance(transport, Mapping) else {}
-            transport_ready = bool(
-                transport_call_id
-                and transport.get("api") == SOURCE_API
-                and transport.get("sdk_method_invoked") is True
-                and transport.get("provider_response_received") is True
-                and transport.get("official_client_identity_verified") is True
+            receipt_blockers = _transport_receipt_blockers(
+                transport,
+                expected_call_id=transport_call_id,
+                expected_params=params,
+                seen_call_ids=seen_call_ids,
             )
+            transport_ready = not receipt_blockers
+            if receipt_blockers and result.get("ok") is True:
+                failure_mode = "transport_receipt_invalid"
+            elif invalid_raw and result.get("ok") is True:
+                failure_mode = "provider_result_type_invalid"
             call_status = (
                 "success"
-                if result.get("ok") is True and page_rows and not non_objects and transport_ready
+                if result.get("ok") is True and page_rows and not non_objects and not invalid_raw and transport_ready
                 else "no_data"
                 if result.get("ok") is True and not page_rows and not non_objects and transport_ready
                 else "permission_denied"
@@ -259,28 +242,35 @@ def _collect_provider_pages(client: Any) -> tuple[list[dict[str, Any]], list[dic
             ledger.append(
                 {
                     "api": SOURCE_API,
+                    "call_id": transport_call_id,
                     "request_params_safe": params,
                     "partition": partition,
                     "page_index": page_index,
                     "row_count": len(page_rows),
+                    "raw_start_index": len(rows),
+                    "raw_end_index": len(rows) + len(page_rows),
+                    "page_rows_digest": _digest(canonical_page),
                     "call_status": call_status,
                     "failure_mode": failure_mode,
                     "permission_denied": call_status == "permission_denied",
                     "no_data": call_status == "no_data",
                     "provider_transport_verified": transport_ready,
+                    "transport_receipt": transport,
                     "transport_receipt_digest": _digest(transport) if transport else "",
-                    "external": True,
                     "external_calls_triggered": True,
                     "tushare_called": True,
-                    "deepseek_called": False,
-                    "github_called": False,
                     "contains_secret": False,
                     "does_not_execute_trades": True,
                     "does_not_modify_strategy_action": True,
                 }
             )
             if call_status not in {"success", "no_data"}:
-                blockers.append(f"provider_page_{call_status}")
+                blockers.extend(receipt_blockers)
+                blockers.append(
+                    "provider_page_rows_invalid"
+                    if invalid_raw or non_objects
+                    else f"provider_page_{call_status}"
+                )
                 return rows, ledger, blockers
             rows.extend({**row, "__query_is_new": partition} for row in page_rows)
             if len(page_rows) < PROVIDER_PAGE_SIZE:

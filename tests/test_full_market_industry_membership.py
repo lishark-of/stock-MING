@@ -1,6 +1,11 @@
 from __future__ import annotations
 
+import base64
+from contextlib import ExitStack
+from datetime import datetime, timedelta, timezone
+import hashlib
 import json
+import os
 import tempfile
 import threading
 import time
@@ -9,11 +14,16 @@ import uuid
 from pathlib import Path
 from unittest.mock import patch
 
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from fastapi.testclient import TestClient
 
 from server.main import app
 from server.services import full_market_industry_provider_service as provider_service
+from server.services import full_market_industry_provider_collector as provider_collector
+from server.services import full_market_industry_evidence_writer as evidence_writer
 from server.services import full_market_industry_service as service
+from server.services import external_production_attestation_service as external_trust
 from server.services import task_service
 from storage.sqlite_meta import SQLiteMetaStore
 
@@ -37,6 +47,84 @@ def _upstream(symbols: list[str]) -> dict:
         "validated_trade_date": "20260717",
         "blockers": [],
     }
+
+
+def _semantic_statement() -> dict:
+    content = {
+        "field": "out_date",
+        "interval_convention": "effective_from_inclusive_effective_to_exclusive",
+        "non_null_boundary": "first_excluded_trade_date",
+        "null_meaning": "membership_current_at_validated_trade_date",
+    }
+    now = datetime.now(timezone.utc)
+    return {
+        "schema_version": service.SEMANTIC_AUTHORITY_STATEMENT_SCHEMA_VERSION,
+        "status": "externally_attested",
+        "authority": "independent_production_semantic_authority",
+        "source_api": service.SOURCE_API,
+        "source_scope": service.SOURCE_SCOPE,
+        "source_reference": "provider-official-contract:index_member_all.out_date:v2026-07",
+        "endpoint_field": "out_date",
+        "resolved_semantics": service.RESOLVED_OUT_DATE_SEMANTICS,
+        "content": content,
+        "content_digest": service._digest(content),
+        "issued_at_utc": (now - timedelta(minutes=1)).isoformat().replace("+00:00", "Z"),
+        "expires_at_utc": (now + timedelta(days=30)).isoformat().replace("+00:00", "Z"),
+    }
+
+
+def _install_semantic_authority(stack: ExitStack) -> tuple[Path, Path]:
+    trust_parent = Path(stack.enter_context(tempfile.TemporaryDirectory()))
+    trust_root = trust_parent / "operator-trust"
+    trust_root.mkdir()
+    private_key = Ed25519PrivateKey.generate()
+    public_key = private_key.public_key()
+    pem = public_key.public_bytes(
+        serialization.Encoding.PEM,
+        serialization.PublicFormat.SubjectPublicKeyInfo,
+    )
+    der = public_key.public_bytes(
+        serialization.Encoding.DER,
+        serialization.PublicFormat.SubjectPublicKeyInfo,
+    )
+    fingerprint = hashlib.sha256(der).hexdigest()
+    key_path = trust_root / "ed25519-public.pem"
+    fingerprint_path = trust_root / "ed25519-public.sha256"
+    authority_path = trust_root / "industry-out-date-authority.json"
+    key_path.write_bytes(pem)
+    fingerprint_path.write_text(fingerprint + "\n", encoding="ascii")
+    statement = _semantic_statement()
+    authority = {
+        "schema_version": service.SEMANTIC_AUTHORITY_ENVELOPE_SCHEMA_VERSION,
+        "algorithm": "Ed25519",
+        "key_fingerprint_sha256": fingerprint,
+        "statement": statement,
+        "signature_base64": base64.b64encode(
+            private_key.sign(service._canonical_bytes(statement))
+        ).decode("ascii"),
+    }
+    authority_path.write_bytes(service._canonical_bytes(authority))
+    for path in (key_path, fingerprint_path, authority_path):
+        path.chmod(0o444)
+    trust_root.chmod(0o555)
+    stack.enter_context(
+        patch.multiple(
+            external_trust,
+            TRUST_ROOT=trust_root,
+            TRUST_ANCHOR=trust_parent,
+            PUBLIC_KEY_PATH=key_path,
+            FINGERPRINT_PATH=fingerprint_path,
+            TRUSTED_OWNER_UIDS=frozenset({os.getuid()}),
+        )
+    )
+    stack.enter_context(
+        patch.multiple(
+            service,
+            SEMANTIC_AUTHORITY_PATH=authority_path,
+            SEMANTIC_AUTHORITY_TRUSTED_OWNER_UIDS=frozenset({os.getuid()}),
+        )
+    )
+    return trust_root, authority_path
 
 
 def _write_evidence(
@@ -69,25 +157,7 @@ def _write_evidence(
     }
     artifact_path.write_bytes(service._canonical_bytes(artifact))
     artifact_sha256 = service._file_digest(artifact_path)
-    semantic_content = {
-        "field": "out_date",
-        "interval_convention": "effective_from_inclusive_effective_to_exclusive",
-        "non_null_boundary": "first_excluded_trade_date",
-        "null_meaning": "membership_current_at_validated_trade_date",
-    }
-    semantic = {
-        "schema_version": service.SEMANTIC_EVIDENCE_SCHEMA_VERSION,
-        "status": "independently_validated",
-        "source_api": service.SOURCE_API,
-        "source_scope": service.SOURCE_SCOPE,
-        "source_reference": "local-test-provider-contract:index_member_all.out_date",
-        "endpoint_field": "out_date",
-        "resolved_semantics": service.RESOLVED_OUT_DATE_SEMANTICS,
-        "validation_method": "independent_local_documentation_and_fixture_review",
-        "content": semantic_content,
-        "content_digest": service._digest(semantic_content),
-    }
-    semantic_path.write_bytes(service._canonical_bytes(semantic))
+    semantic_path.write_bytes(service.SEMANTIC_AUTHORITY_PATH.read_bytes())
     semantic_sha256 = service._file_digest(semantic_path)
     scope = {
         "schema_version": service.SCOPE_SCHEMA_VERSION,
@@ -215,6 +285,13 @@ def _reseal_evidence(paths: dict[str, Path]) -> None:
 
 
 class FullMarketIndustryMembershipTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.stack = ExitStack()
+        self.trust_root, self.authority_path = _install_semantic_authority(self.stack)
+
+    def tearDown(self) -> None:
+        self.stack.close()
+
     def test_exact_full_market_effective_dated_pointer_is_read_only_and_ready(self) -> None:
         symbols = _symbols()
         with tempfile.TemporaryDirectory() as directory:
@@ -524,7 +601,7 @@ class FullMarketIndustryMembershipTests(unittest.TestCase):
             self.assertFalse(result["ready"])
             self.assertIn("industry_version_id_invalid", result["blockers"])
             self.assertIn(
-                "industry_out_date_semantic_evidence_invalid",
+                "industry_out_date_semantic_evidence_binding_invalid",
                 result["blockers"],
             )
 
@@ -551,10 +628,18 @@ class FullMarketIndustryMembershipTests(unittest.TestCase):
 
 
 class _PagedIndustryClient:
-    def __init__(self, rows_by_partition: dict[str, list[dict]], *, failure_call: int = 0, failure: str = ""):
+    def __init__(
+        self,
+        rows_by_partition: dict[str, list[dict]],
+        *,
+        failure_call: int = 0,
+        failure: str = "",
+        receipt_attack: str = "",
+    ):
         self.rows_by_partition = rows_by_partition
         self.failure_call = failure_call
         self.failure = failure
+        self.receipt_attack = receipt_attack
         self.calls: list[dict] = []
         self.receipts: dict[str, dict] = {}
 
@@ -565,13 +650,28 @@ class _PagedIndustryClient:
             return {"ok": False, "data": None, "error": self.failure}
         rows = self.rows_by_partition.get(params["is_new"], [])
         page = rows[params["offset"] : params["offset"] + params["limit"]]
-        call_id = f"fake-{ordinal}"
-        self.receipts[call_id] = {
+        call_id = "fake-call-reused" if self.receipt_attack == "duplicate" else f"fake-call-{ordinal:04d}"
+        completed = datetime.now(timezone.utc)
+        if self.receipt_attack == "stale":
+            completed -= timedelta(hours=1)
+        receipt = {
+            "schema_version": service.TRANSPORT_RECEIPT_SCHEMA_VERSION,
+            "call_id": call_id,
             "api": service.SOURCE_API,
+            "request_params_safe": dict(params),
             "sdk_method_invoked": True,
             "provider_response_received": True,
             "official_client_identity_verified": True,
+            "issued_at_utc": (completed - timedelta(milliseconds=1)).isoformat().replace("+00:00", "Z"),
+            "completed_at_utc": completed.isoformat().replace("+00:00", "Z"),
         }
+        if self.receipt_attack == "wrong_params":
+            receipt["request_params_safe"] = {**params, "offset": params["offset"] + 1}
+        elif self.receipt_attack == "wrong_api":
+            receipt["api"] = "daily"
+        elif self.receipt_attack == "missing_field":
+            receipt.pop("completed_at_utc")
+        self.receipts[call_id] = receipt
         return {
             "ok": True,
             "data": page,
@@ -603,34 +703,14 @@ def _provider_rows(symbols: list[str]) -> list[dict]:
     ]
 
 
-def _write_semantic_only(evidence_root: Path) -> str:
-    root = evidence_root / service.INDUSTRY_ROOT_RELATIVE
-    relative = "semantics/out-date-v1.json"
-    path = root / relative
-    path.parent.mkdir(parents=True, exist_ok=True)
-    content = {
-        "field": "out_date",
-        "interval_convention": "effective_from_inclusive_effective_to_exclusive",
-        "non_null_boundary": "first_excluded_trade_date",
-        "null_meaning": "membership_current_at_validated_trade_date",
-    }
-    evidence = {
-        "schema_version": service.SEMANTIC_EVIDENCE_SCHEMA_VERSION,
-        "status": "independently_validated",
-        "source_api": service.SOURCE_API,
-        "source_scope": service.SOURCE_SCOPE,
-        "source_reference": "independent-local-provider-contract:index_member_all.out_date",
-        "endpoint_field": "out_date",
-        "resolved_semantics": service.RESOLVED_OUT_DATE_SEMANTICS,
-        "validation_method": "independent_local_documentation_and_fixture_review",
-        "content": content,
-        "content_digest": service._digest(content),
-    }
-    path.write_bytes(service._canonical_bytes(evidence))
-    return relative
-
-
 class FullMarketIndustryProviderRunnerTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.stack = ExitStack()
+        self.trust_root, self.authority_path = _install_semantic_authority(self.stack)
+
+    def tearDown(self) -> None:
+        self.stack.close()
+
     def _request(self, root: Path, symbols: list[str]):
         upstream = _upstream(symbols)
         meta_path = root / "meta.sqlite"
@@ -649,13 +729,12 @@ class FullMarketIndustryProviderRunnerTests(unittest.TestCase):
         return task, upstream, meta_path
 
     @staticmethod
-    def _run(root: Path, meta_path: Path, task: dict, upstream: dict, client, semantic_file: str):
+    def _run(root: Path, meta_path: Path, task: dict, upstream: dict, client):
         payload = {
             "request_task_id": task["task_id"],
             "execute_provider_request": True,
             "acknowledge_external_tushare_call": True,
             "provider_api": service.SOURCE_API,
-            "semantic_evidence_file": semantic_file,
         }
         with patch(
             "server.services.tushare_production_store.validate_tushare_full_market_production_version",
@@ -671,14 +750,13 @@ class FullMarketIndustryProviderRunnerTests(unittest.TestCase):
                 meta_path=meta_path,
             )
 
-    def test_paginated_success_writes_verified_v3_current_and_last_good(self):
+    def test_paginated_success_writes_verified_atomic_generation_pointer(self):
         symbols = _symbols()
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            semantic_file = _write_semantic_only(root)
             task, upstream, meta_path = self._request(root, symbols)
             client = _PagedIndustryClient({"Y": _provider_rows(symbols), "N": []})
-            result = self._run(root, meta_path, task, upstream, client, semantic_file)
+            result = self._run(root, meta_path, task, upstream, client)
             receipt = result["payload_safe"]
             verified = service.validate_full_market_industry_membership(
                 root,
@@ -689,13 +767,12 @@ class FullMarketIndustryProviderRunnerTests(unittest.TestCase):
             pointer = json.loads(
                 (root / service.INDUSTRY_ROOT_RELATIVE / service.POINTER_FILE).read_text()
             )
-            last_good = json.loads(
-                (root / service.INDUSTRY_ROOT_RELATIVE / "last_good.json").read_text()
-            )
+            legacy_last_good = root / service.INDUSTRY_ROOT_RELATIVE / "last_good.json"
         self.assertEqual(result["status"], "success", result)
         self.assertTrue(receipt["production_pointer_written"])
         self.assertTrue(verified["ready"], verified["blockers"])
-        self.assertEqual(pointer, last_good)
+        self.assertEqual(pointer["current_generation"], pointer["last_good_generation"])
+        self.assertFalse(legacy_last_good.exists())
         self.assertEqual(pointer["schema_version"], service.PRODUCED_POINTER_SCHEMA_VERSION)
         self.assertEqual([row["row_count"] for row in result["call_ledger"]], [2000, 1000, 0])
         self.assertEqual({row["api"] for row in result["call_ledger"]}, {service.SOURCE_API})
@@ -706,12 +783,11 @@ class FullMarketIndustryProviderRunnerTests(unittest.TestCase):
         for attack in attacks:
             with self.subTest(attack=attack), tempfile.TemporaryDirectory() as directory:
                 root = Path(directory)
-                semantic_file = _write_semantic_only(root)
                 first_task, upstream, meta_path = self._request(root, symbols)
                 first_client = _PagedIndustryClient({"Y": _provider_rows(symbols), "N": []})
-                first = self._run(root, meta_path, first_task, upstream, first_client, semantic_file)
+                first = self._run(root, meta_path, first_task, upstream, first_client)
                 self.assertEqual(first["status"], "success", first)
-                pointer_path = root / service.INDUSTRY_ROOT_RELATIVE / "last_good.json"
+                pointer_path = root / service.INDUSTRY_ROOT_RELATIVE / service.POINTER_FILE
                 before = pointer_path.read_bytes()
                 second_task, upstream, meta_path = self._request(root, symbols)
                 rows = _provider_rows(symbols)
@@ -731,7 +807,7 @@ class FullMarketIndustryProviderRunnerTests(unittest.TestCase):
                     if attack == "partial"
                     else _PagedIndustryClient({"Y": rows, "N": []})
                 )
-                result = self._run(root, meta_path, second_task, upstream, client, semantic_file)
+                result = self._run(root, meta_path, second_task, upstream, client)
                 self.assertEqual(result["status"], "failed", result)
                 self.assertEqual(pointer_path.read_bytes(), before)
                 self.assertFalse(result["payload_safe"]["production_pointer_written"])
@@ -742,15 +818,21 @@ class FullMarketIndustryProviderRunnerTests(unittest.TestCase):
         symbols = _symbols()
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            semantic_file = _write_semantic_only(root)
             task, upstream, meta_path = self._request(root, symbols)
             first_client = _PagedIndustryClient({"Y": _provider_rows(symbols), "N": []})
-            first = self._run(root, meta_path, task, upstream, first_client, semantic_file)
+            first = self._run(root, meta_path, task, upstream, first_client)
             self.assertEqual(first["status"], "success", first)
+            pointer_path = root / service.INDUSTRY_ROOT_RELATIVE / service.POINTER_FILE
+            pointer_before = pointer_path.read_bytes()
+            ledger_before = list(first["call_ledger"])
+            database_before = meta_path.read_bytes()
             replay_client = _PagedIndustryClient({"Y": [], "N": []})
-            replay = self._run(root, meta_path, task, upstream, replay_client, semantic_file)
+            replay = self._run(root, meta_path, task, upstream, replay_client)
             self.assertEqual(replay["status"], "success", replay)
-            self.assertTrue(replay["payload_safe"]["replay"])
+            self.assertEqual(replay["task_id"], first["task_id"])
+            self.assertEqual(replay["call_ledger"], ledger_before)
+            self.assertEqual(pointer_path.read_bytes(), pointer_before)
+            self.assertEqual(meta_path.read_bytes(), database_before)
             self.assertEqual(replay_client.calls, [])
 
             second_task, upstream, meta_path = self._request(root, symbols)
@@ -763,7 +845,8 @@ class FullMarketIndustryProviderRunnerTests(unittest.TestCase):
                         "request_task_id": second_task["task_id"],
                         "execute_provider_request": True,
                         "acknowledge_external_tushare_call": True,
-                        "semantic_evidence_file": "../outside.json",
+                        "provider_api": service.SOURCE_API,
+                        "unexpected_path": "../outside.json",
                     },
                     evidence_root=root,
                     meta_path=meta_path,
@@ -783,7 +866,6 @@ class FullMarketIndustryProviderRunnerTests(unittest.TestCase):
                     second_task,
                     upstream,
                     loader,
-                    semantic_file,
                 )
             self.assertEqual(blocked["status"], "failed")
             loader.assert_not_called()
@@ -792,7 +874,6 @@ class FullMarketIndustryProviderRunnerTests(unittest.TestCase):
         symbols = _symbols()
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            semantic_file = _write_semantic_only(root)
             task, upstream, meta_path = self._request(root, symbols)
             client = _PagedIndustryClient({"Y": _provider_rows(symbols), "N": []})
             entered = threading.Event()
@@ -808,7 +889,7 @@ class FullMarketIndustryProviderRunnerTests(unittest.TestCase):
             results: list[dict] = []
 
             def invoke():
-                results.append(self._run(root, meta_path, task, upstream, client, semantic_file))
+                results.append(self._run(root, meta_path, task, upstream, client))
 
             first = threading.Thread(target=invoke)
             first.start()
@@ -847,6 +928,213 @@ class FullMarketIndustryProviderRunnerTests(unittest.TestCase):
             self.assertEqual(response.status_code, 200)
             self.assertEqual(response.json()["data"]["task"]["status"], "failed")
             loader.assert_not_called()
+
+    def test_missing_or_forged_external_semantic_authority_never_loads_client(self):
+        symbols = _symbols()
+        authority_bytes = self.authority_path.read_bytes()
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            task, upstream, meta_path = self._request(root, symbols)
+            for attack in ("missing", "forged"):
+                with self.subTest(attack=attack):
+                    self.trust_root.chmod(0o755)
+                    if self.authority_path.exists():
+                        self.authority_path.chmod(0o644)
+                    self.authority_path.write_bytes(authority_bytes)
+                    if attack == "missing":
+                        self.authority_path.unlink()
+                    else:
+                        envelope = json.loads(authority_bytes)
+                        envelope["signature_base64"] = base64.b64encode(b"x" * 64).decode("ascii")
+                        self.authority_path.write_bytes(service._canonical_bytes(envelope))
+                        self.authority_path.chmod(0o444)
+                    self.trust_root.chmod(0o555)
+                    with patch(
+                        "server.services.tushare_production_store.validate_tushare_full_market_production_version",
+                        return_value=upstream,
+                    ), patch.object(provider_service, "_load_official_index_member_client") as loader:
+                        result = provider_service.run_full_market_industry_membership_provider_execution(
+                            {
+                                "request_task_id": task["task_id"],
+                                "execute_provider_request": True,
+                                "acknowledge_external_tushare_call": True,
+                                "provider_api": service.SOURCE_API,
+                            },
+                            evidence_root=root,
+                            meta_path=meta_path,
+                        )
+                    self.assertEqual(result["status"], "failed")
+                    loader.assert_not_called()
+            self.trust_root.chmod(0o755)
+            if self.authority_path.exists():
+                self.authority_path.chmod(0o644)
+            self.authority_path.write_bytes(authority_bytes)
+            self.authority_path.chmod(0o444)
+            self.trust_root.chmod(0o555)
+
+    def test_receipt_reuse_staleness_wrong_endpoint_params_and_shape_block(self):
+        symbols = _symbols()
+        for attack in ("duplicate", "stale", "wrong_params", "wrong_api", "missing_field"):
+            with self.subTest(attack=attack), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                task, upstream, meta_path = self._request(root, symbols)
+                client = _PagedIndustryClient(
+                    {"Y": _provider_rows(symbols), "N": []},
+                    receipt_attack=attack,
+                )
+                result = self._run(root, meta_path, task, upstream, client)
+                self.assertEqual(result["status"], "failed", result)
+                self.assertFalse(
+                    (root / service.INDUSTRY_ROOT_RELATIVE / service.POINTER_FILE).exists()
+                )
+
+    def test_stage_replays_complete_ledger_and_raw_to_normalized_lineage(self):
+        symbols = _symbols()
+        for attack in ("fewer_ledger", "extra_ledger", "raw_mismatch", "normalized_mismatch"):
+            with self.subTest(attack=attack), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                task, upstream, _ = self._request(root, symbols)
+                client = _PagedIndustryClient({"Y": _provider_rows(symbols), "N": []})
+                collected, ledger, blockers = provider_collector._collect_provider_pages(client)
+                self.assertEqual(blockers, [])
+                raw_rows, normalized_rows, blockers = provider_collector._normalize_provider_rows(
+                    collected,
+                    symbols=symbols,
+                    validated_trade_date=upstream["validated_trade_date"],
+                )
+                self.assertEqual(blockers, [])
+                if attack == "fewer_ledger":
+                    ledger = ledger[:-1]
+                elif attack == "extra_ledger":
+                    ledger.append(dict(ledger[-1]))
+                elif attack == "raw_mismatch":
+                    raw_rows[0] = {**raw_rows[0], "l3_code": "809999"}
+                else:
+                    normalized_rows[0] = {**normalized_rows[0], "industry_code": "809999"}
+                promotion = evidence_writer._promote_provider_evidence(
+                    evidence_root=root,
+                    request_task_id=task["task_id"],
+                    request=task["payload_safe"]["execution_request"],
+                    provider={**upstream, "version_digest": upstream["version_digest"]},
+                    semantic=service._validated_semantic_authority(),
+                    raw_rows=raw_rows,
+                    normalized_rows=normalized_rows,
+                    call_ledger=ledger,
+                )
+                self.assertFalse(promotion["ready"], promotion)
+                self.assertFalse(
+                    (root / service.INDUSTRY_ROOT_RELATIVE / service.POINTER_FILE).exists()
+                )
+
+    def test_typed_request_tamper_writes_failed_task_without_provider_or_500(self):
+        symbols = _symbols()
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            task, upstream, meta_path = self._request(root, symbols)
+            tampered = json.loads(json.dumps(task))
+            request = tampered["payload_safe"]["execution_request"]
+            request["scope"]["eligible_symbol_count"] = "3000"
+            request["scope_digest"] = service._digest(request["scope"])
+            request["request_digest"] = service._execution_request_digest(request)
+            SQLiteMetaStore(meta_path).write_task_status(tampered)
+            client = _PagedIndustryClient({"Y": _provider_rows(symbols), "N": []})
+            result = self._run(root, meta_path, tampered, upstream, client)
+            self.assertEqual(result["status"], "failed", result)
+            self.assertEqual(client.calls, [])
+            persisted = SQLiteMetaStore(meta_path, read_only=True).read_task_status(result["task_id"])
+            self.assertEqual(persisted["status"], "failed")
+
+    def test_pointer_swap_failure_preserves_prior_generation_and_fails_closed(self):
+        symbols = _symbols()
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            first_task, upstream, meta_path = self._request(root, symbols)
+            first = self._run(
+                root,
+                meta_path,
+                first_task,
+                upstream,
+                _PagedIndustryClient({"Y": _provider_rows(symbols), "N": []}),
+            )
+            self.assertEqual(first["status"], "success")
+            pointer_path = root / service.INDUSTRY_ROOT_RELATIVE / service.POINTER_FILE
+            pointer_before = pointer_path.read_bytes()
+            second_task, upstream, meta_path = self._request(root, symbols)
+            with patch.object(evidence_writer, "_atomic_write_bytes", side_effect=OSError("crash")):
+                failed = self._run(
+                    root,
+                    meta_path,
+                    second_task,
+                    upstream,
+                    _PagedIndustryClient({"Y": _provider_rows(symbols), "N": []}),
+                )
+            self.assertEqual(failed["status"], "failed")
+            self.assertEqual(pointer_path.read_bytes(), pointer_before)
+            recovered = service.validate_full_market_industry_membership(
+                root,
+                expected_symbols=symbols,
+                expected_universe_digest=upstream["universe_digest"],
+                expected_validated_trade_date=upstream["validated_trade_date"],
+            )
+            self.assertTrue(recovered["ready"], recovered["blockers"])
+
+            third_task, upstream, meta_path = self._request(root, symbols)
+            promoted = self._run(
+                root,
+                meta_path,
+                third_task,
+                upstream,
+                _PagedIndustryClient({"Y": _provider_rows(symbols), "N": []}),
+            )
+            self.assertEqual(promoted["status"], "success", promoted)
+            promoted_pointer = json.loads(pointer_path.read_text())
+            self.assertNotEqual(
+                promoted_pointer["current_generation"],
+                promoted_pointer["last_good_generation"],
+            )
+            prior_manifest_path = (
+                root
+                / service.INDUSTRY_ROOT_RELATIVE
+                / promoted_pointer["last_good_manifest_file"]
+            )
+            prior_manifest = json.loads(prior_manifest_path.read_text())
+            prior_raw_path = (
+                root
+                / service.INDUSTRY_ROOT_RELATIVE
+                / prior_manifest["raw_artifact_file"]
+            )
+            prior_raw_bytes = prior_raw_path.read_bytes()
+            prior_raw_path.write_bytes(prior_raw_bytes + b" ")
+            damaged_recovery = service.validate_full_market_industry_membership(
+                root,
+                expected_symbols=symbols,
+                expected_universe_digest=upstream["universe_digest"],
+                expected_validated_trade_date=upstream["validated_trade_date"],
+            )
+            self.assertFalse(damaged_recovery["ready"])
+            self.assertIn(
+                "industry_generation_pointer_recovery_invalid",
+                damaged_recovery["blockers"],
+            )
+            prior_raw_path.write_bytes(prior_raw_bytes)
+
+            split = json.loads(pointer_path.read_text())
+            split["last_good_manifest_digest"] = "0" * 64
+            split["pointer_digest"] = service._digest(
+                {key: value for key, value in split.items() if key != "pointer_digest"}
+            )
+            pointer_path.write_bytes(service._canonical_bytes(split))
+            blocked = service.validate_full_market_industry_membership(
+                root,
+                expected_symbols=symbols,
+                expected_universe_digest=upstream["universe_digest"],
+                expected_validated_trade_date=upstream["validated_trade_date"],
+            )
+            self.assertFalse(blocked["ready"])
+            self.assertIn(
+                "industry_generation_pointer_recovery_binding_invalid",
+                blocked["blockers"],
+            )
 
 
 if __name__ == "__main__":
