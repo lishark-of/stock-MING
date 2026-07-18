@@ -46,7 +46,6 @@ TRUSTED_OWNER_UIDS = frozenset({0})
 PRODUCTION_TRUST_BLOCKERS = (
     "external_monotonic_anchor_unavailable",
     "trusted_head_key_epoch_unavailable",
-    "production_consumer_not_wired",
 )
 CANONICAL_STORAGE_TTL_SECONDS = {
     "factor_values": 6 * 60 * 60,
@@ -1802,6 +1801,9 @@ def external_attestation_contract() -> dict[str, Any]:
         ],
         "production_consumers_wired": [
             "storage_ttl",
+            "worker",
+            "factor",
+            "candidate_radar",
             "tushare_provider_execution_authorization",
         ],
         "post_accepts_signed_envelope_only": True,

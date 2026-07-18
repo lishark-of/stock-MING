@@ -3414,7 +3414,6 @@ TASK_CONTROL_PLANE_POST_ROUTES = [
         "structural_production_blockers": [
             "external_monotonic_anchor_unavailable",
             "trusted_head_key_epoch_unavailable",
-            "production_consumer_not_wired",
         ],
         "call_ledger_required": True,
         "does_not_execute_trades": True,
@@ -3498,7 +3497,6 @@ TASK_CONTROL_PLANE_POST_ROUTES = [
         "structural_production_blockers": [
             "external_monotonic_anchor_unavailable",
             "trusted_head_key_epoch_unavailable",
-            "production_consumer_not_wired",
         ],
         "call_ledger_required": True,
         "does_not_execute_trades": True,

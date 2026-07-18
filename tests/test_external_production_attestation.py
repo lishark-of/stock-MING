@@ -1054,7 +1054,17 @@ class ExternalProductionAttestationTests(unittest.TestCase):
         )
         self.assertEqual(
             contract["production_consumers_wired"],
-            ["storage_ttl", "tushare_provider_execution_authorization"],
+            [
+                "storage_ttl",
+                "worker",
+                "factor",
+                "candidate_radar",
+                "tushare_provider_execution_authorization",
+            ],
+        )
+        self.assertNotIn(
+            "production_consumer_not_wired",
+            contract["production_blockers"],
         )
         self.assertFalse(contract["application_generates_private_key"])
         self.assertTrue(contract["caller_boolean_cannot_promote"])
