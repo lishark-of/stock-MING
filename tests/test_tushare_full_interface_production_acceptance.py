@@ -579,6 +579,14 @@ class TushareFullInterfaceProductionAcceptanceTests(unittest.TestCase):
         )
         receipt = packet["receipt"]
         self.assertTrue(receipt["full_interface_production_execution_request_ready"])
+        self.assertEqual(receipt["blocking_criterion_count"], 0)
+        self.assertTrue(
+            next(
+                row
+                for row in receipt["rows"]
+                if row["criterion"] == "target_payload_safe"
+            )["passed"]
+        )
         self.assertEqual(receipt["producer_head_full"], tushare_task_service._current_head_full())
         self.assertTrue(receipt["trade_cal_repeat_acknowledged"])
         payload = dict(receipt["target_payload_safe"])

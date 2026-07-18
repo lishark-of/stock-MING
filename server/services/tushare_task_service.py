@@ -3116,6 +3116,24 @@ def _provider_target_sample_execution_request_receipt(
         if payload_safe.get(key) not in (None, ""):
             target_payload_safe[key] = payload_safe.get(key)
 
+    authorization_prefix = "tushare-provider-request-"
+    authorization_identifier_is_safe = bool(
+        execution_request_authorization_id.startswith(authorization_prefix)
+        and len(execution_request_authorization_id) == len(authorization_prefix) + 32
+        and all(
+            character in "0123456789abcdef"
+            for character in execution_request_authorization_id[len(authorization_prefix) :]
+        )
+        and target_payload_safe.get("execution_request_authorization_id")
+        == execution_request_authorization_id
+    )
+    target_payload_marker_scan = dict(target_payload_safe)
+    if authorization_identifier_is_safe:
+        # This generated identifier binds a request to its approval scope; it
+        # is not an authorization credential.  Keep the generic secret-key
+        # detector strict for every caller-controlled field.
+        target_payload_marker_scan.pop("execution_request_authorization_id", None)
+
     checks = [
         (
             "latest_execution_recipe_visible",
@@ -3165,7 +3183,11 @@ def _provider_target_sample_execution_request_receipt(
         ),
         (
             "target_payload_safe",
-            bool(selected_apis and not _has_sensitive_key(target_payload_safe)),
+            bool(
+                selected_apis
+                and (not full_interface_recipe_scope or authorization_identifier_is_safe)
+                and not _has_sensitive_key(target_payload_marker_scan)
+            ),
             "future provider payload contains only selected APIs, known target groups, and safe date/symbol context",
         ),
         (
@@ -3241,7 +3263,10 @@ def _provider_target_sample_execution_request_receipt(
     else:
         status = "target_sample_execution_request_ready_manual_provider_task_pending"
         allowed_next_step = "manually_submit_refresh_tushare_facts_provider_target_sample_task"
-    ready = status == "target_sample_execution_request_ready_manual_provider_task_pending"
+    ready = bool(
+        status == "target_sample_execution_request_ready_manual_provider_task_pending"
+        and blocker_count == 0
+    )
     full_interface_production_execution_request_ready = bool(
         ready
         and full_interface_recipe_ready
