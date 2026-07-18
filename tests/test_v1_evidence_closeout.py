@@ -439,6 +439,60 @@ class V1EvidenceCloseoutTests(unittest.TestCase):
             self.assertFalse(ltg02["production_complete"])
             self.assertFalse(ltg02["can_close"])
 
+    def test_ltg03_promotion_uses_authoritative_production_version_not_small_pool_boolean(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir) / "evidence"
+            small_pool = {
+                "status": "success",
+                "call_count": 2,
+                "success_count": 2,
+                "failed_count": 0,
+                "blocked_count": 0,
+                "selected_apis": ["daily", "daily_basic"],
+                "tushare_called": True,
+                "production_tushare_pipeline_complete": True,
+                **_safe_boundary(external=True, tushare=True),
+            }
+            _write_packets(
+                root / "meta.sqlite",
+                {
+                    "command_center_factor_test_provider_small_pool_tushare_packet": small_pool,
+                },
+            )
+            expected_head = "a" * 40
+
+            with patch.object(
+                v1_closeout_service,
+                "validate_tushare_full_market_production_version",
+                return_value={"ready": False, "blockers": ["authoritative_version_missing"]},
+            ):
+                _, blocked_facts, _ = v1_closeout_service._build_version_rows(
+                    root,
+                    expected_head_full=expected_head,
+                )
+            self.assertTrue(blocked_facts["factor_small_pool_provider_direct"])
+            self.assertFalse(blocked_facts["factor_production_promotion"])
+
+            small_pool.pop("production_tushare_pipeline_complete")
+            (root / "meta.sqlite").unlink()
+            _write_packets(
+                root / "meta.sqlite",
+                {
+                    "command_center_factor_test_provider_small_pool_tushare_packet": small_pool,
+                },
+            )
+            with patch.object(
+                v1_closeout_service,
+                "validate_tushare_full_market_production_version",
+                return_value={"ready": True, "blockers": []},
+            ):
+                _, ready_facts, _ = v1_closeout_service._build_version_rows(
+                    root,
+                    expected_head_full=expected_head,
+                )
+            self.assertTrue(ready_facts["factor_small_pool_provider_direct"])
+            self.assertTrue(ready_facts["factor_production_promotion"])
+
     def test_single_storage_boolean_cannot_create_production_fact(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir) / "evidence"

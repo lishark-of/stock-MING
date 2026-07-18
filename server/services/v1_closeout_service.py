@@ -1334,10 +1334,11 @@ def _build_version_rows(
         "trade_cal_provider_direct": _provider_ready(trade_cal, {"trade_cal"}),
         "factor_small_pool_provider_direct": _provider_ready(factor, {"daily", "daily_basic"}),
         "full_interface_provider_production": production_version.get("ready") is True,
-        "factor_production_promotion": bool(
-            isinstance(factor, Mapping)
-            and factor.get("production_tushare_pipeline_complete") is True
-        ),
+        # LTG-03 combines its independently verified small-pool sample with the
+        # same immutable, current-HEAD provider promotion used by LTG-02.  The
+        # small-pool packet has no production writer for a promotion boolean;
+        # accepting one here would let a local sample self-promote.
+        "factor_production_promotion": production_version.get("ready") is True,
         "production_storage": storage_production_fact_validation.get("ready") is True,
         "full_market_worker_runtime": full_market_worker_fact.get("full_market_worker_runtime") is True,
         "factor_full_market_research": (
