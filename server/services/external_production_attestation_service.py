@@ -38,6 +38,29 @@ FINGERPRINT_PATH = TRUST_ROOT / "ed25519-public.sha256"
 IMPORT_LOCK_PATH = PROJECT_ROOT / ".stock_ming_3" / "external_trust" / "import.lock"
 TRUSTED_OWNER_UIDS = frozenset({0})
 
+PRODUCTION_TRUST_BLOCKERS = (
+    "external_monotonic_anchor_unavailable",
+    "trusted_head_key_epoch_unavailable",
+    "production_consumer_not_wired",
+)
+CANONICAL_STORAGE_DATASETS = frozenset(
+    {"factor_values", "daily", "daily_basic", "moneyflow", "trade_cal", "backtest_results"}
+)
+FACTOR_RESULT_DATASET = "factor_values"
+CANDIDATE_RADAR_PACKET_KEY = "command_center_3_candidate_radar_cache"
+
+
+def _local_only_trust_state(*, local_integrity_ready: bool = False) -> dict[str, Any]:
+    return {
+        "ready": False,
+        "local_integrity_ready": local_integrity_ready,
+        "external_signature_verified": local_integrity_ready,
+        "external_trust_verified": False,
+        "production_trusted": False,
+        "snapshot_rollback_resistant": False,
+        "blockers": list(PRODUCTION_TRUST_BLOCKERS),
+    }
+
 ALLOWED_KINDS = frozenset(
     {
         "storage_ttl_resolution",
@@ -155,6 +178,11 @@ def _sha256_bytes(value: bytes) -> str:
 
 def _sha256(value: Mapping[str, Any]) -> str:
     return _sha256_bytes(_canonical_bytes(value))
+
+
+def _digest_ready(value: Any) -> bool:
+    text = str(value or "").lower()
+    return bool(_HEX_64.fullmatch(text) and text != "0" * 64)
 
 
 def _current_head_full() -> str:
@@ -321,14 +349,16 @@ def _claims_ready(kind: str, claims: Any, *, subject: str) -> bool:
             return False
         if isinstance(value, str) and any(fragment in value.lower() for fragment in _SENSITIVE_KEY_FRAGMENTS):
             return False
-        if key in _CLAIM_DIGEST_FIELDS and not _HEX_64.fullmatch(str(value).lower()):
+        if key in _CLAIM_DIGEST_FIELDS and not _digest_ready(value):
             return False
         if isinstance(value, int) and value < 0:
             return False
     if claims.get("does_not_execute_trades") is not True:
         return False
     if kind == "storage_ttl_resolution":
-        if claims.get("dataset") != subject:
+        if claims.get("dataset") != subject or subject not in CANONICAL_STORAGE_DATASETS:
+            return False
+        if _parse_utc(claims.get("fetched_at")) is None:
             return False
         resolution = claims.get("resolution")
         if resolution == "fresh_no_refresh_required":
@@ -351,7 +381,8 @@ def _claims_ready(kind: str, claims: Any, *, subject: str) -> bool:
         return False
     if kind == "factor_full_market_lineage":
         return bool(
-            claims.get("result_version_id") == subject
+            claims.get("result_dataset") == FACTOR_RESULT_DATASET
+            and claims.get("result_version_id") == subject
             and claims.get("universe_count", 0) >= 3000
             and claims.get("full_market_factor_research") is True
         )
@@ -364,7 +395,8 @@ def _claims_ready(kind: str, claims: Any, *, subject: str) -> bool:
         )
     if kind == "candidate_radar_lineage":
         return bool(
-            claims.get("candidate_cache_packet_key") == subject
+            subject == CANDIDATE_RADAR_PACKET_KEY
+            and claims.get("candidate_cache_packet_key") == subject
             and claims.get("candidate_row_count", 0) > 0
             and claims.get("candidate_radar_production_replacement") is True
             and claims.get("candidate_is_not_buy_instruction") is True
@@ -377,6 +409,7 @@ def _verify_envelope(
     *,
     prior_events: list[dict[str, Any]],
     enforce_freshness: bool,
+    enforce_current_head: bool = True,
     expected_kind: str | None = None,
 ) -> dict[str, Any]:
     if not isinstance(envelope, Mapping) or set(envelope) != _ENVELOPE_KEYS:
@@ -403,10 +436,10 @@ def _verify_envelope(
         and kind in ALLOWED_KINDS
         and (expected_kind is None or kind == expected_kind)
         and _HEX_40.fullmatch(head_full)
-        and head_full == _current_head_full()
-        and _HEX_64.fullmatch(nonce_digest)
-        and _HEX_64.fullmatch(scope_hash)
-        and _HEX_64.fullmatch(artifact_digest)
+        and (not enforce_current_head or head_full == _current_head_full())
+        and _digest_ready(nonce_digest)
+        and _digest_ready(scope_hash)
+        and _digest_ready(artifact_digest)
         and _SAFE_ID.fullmatch(task_id)
         and _SAFE_ID.fullmatch(subject)
         and not any(fragment in task_id.lower() for fragment in _SENSITIVE_KEY_FRAGMENTS)
@@ -423,7 +456,14 @@ def _verify_envelope(
             kind != "storage_ttl_resolution"
             or statement.get("claims", {}).get("refresh_task_id") == task_id
         )
+        and (
+            kind != "candidate_radar_lineage"
+            or statement.get("claims", {}).get("cache_write_task_id") == task_id
+        )
     ):
+        return {"ready": False, "status": "signed_statement_contract_invalid"}
+    fetched_at = _parse_utc(statement.get("claims", {}).get("fetched_at"))
+    if fetched_at is not None and issued_at is not None and fetched_at > issued_at:
         return {"ready": False, "status": "signed_statement_contract_invalid"}
     if enforce_freshness:
         now = datetime.now(timezone.utc)
@@ -479,7 +519,12 @@ def _verify_envelope(
         "key_fingerprint_sha256": trust["key_fingerprint_sha256"],
         "signature_sha256": _sha256_bytes(signature),
         "signed_envelope": dict(envelope),
-        "external_trust_verified": True,
+        "local_integrity_ready": True,
+        "external_trust_verified": False,
+        "external_signature_verified": True,
+        "production_trusted": False,
+        "snapshot_rollback_resistant": False,
+        "blockers": list(PRODUCTION_TRUST_BLOCKERS),
         "private_key_generated": False,
         "private_key_loaded": False,
         "contains_secret": False,
@@ -504,6 +549,7 @@ def validate_registry() -> dict[str, Any]:
             event["signed_envelope"],
             prior_events=validated,
             enforce_freshness=False,
+            enforce_current_head=False,
         )
         if not result.get("ready") or result.get("attestation_id") != event.get("attestation_id"):
             return {
@@ -514,7 +560,7 @@ def validate_registry() -> dict[str, Any]:
                 "writes_performed": False,
             }
         validated.append(result)
-    ready = bool(
+    local_integrity_ready = bool(
         source.get("schema_version") == REGISTRY_SCHEMA_VERSION
         and read_status == "packet_present"
         and events
@@ -523,15 +569,22 @@ def validate_registry() -> dict[str, Any]:
         and source.get("last_monotonic_counter") == validated[-1]["monotonic_counter"]
     )
     return {
-        "ready": ready,
-        "status": "external_attestation_registry_verified" if ready else "external_attestation_registry_missing_or_empty",
+        "ready": False,
+        "local_integrity_ready": local_integrity_ready,
+        "status": "external_attestation_registry_local_integrity_verified"
+        if local_integrity_ready
+        else "external_attestation_registry_missing_or_empty",
         "read_status": read_status,
         "head_full": _current_head_full(),
         "event_count": len(validated),
         "last_attestation_id": validated[-1]["attestation_id"] if validated else "",
         "last_monotonic_counter": validated[-1]["monotonic_counter"] if validated else 0,
-        "events": validated if ready else [],
-        "external_trust_verified": ready,
+        "events": validated if local_integrity_ready else [],
+        "external_signature_verified": local_integrity_ready,
+        "external_trust_verified": False,
+        "production_trusted": False,
+        "snapshot_rollback_resistant": False,
+        "blockers": list(PRODUCTION_TRUST_BLOCKERS),
         "private_key_generated": False,
         "private_key_loaded": False,
         "writes_performed": False,
@@ -543,7 +596,7 @@ def validate_registry() -> dict[str, Any]:
 def import_signed_attestation(payload: Any, *, expected_kind: str | None = None) -> dict[str, Any]:
     if not isinstance(payload, Mapping) or set(payload) != {"signed_envelope"}:
         return {
-            "ready": False,
+            **_local_only_trust_state(),
             "status": "signed_envelope_only_required",
             "writes_performed": False,
             "external_calls_triggered": False,
@@ -554,19 +607,22 @@ def import_signed_attestation(payload: Any, *, expected_kind: str | None = None)
     with IMPORT_LOCK_PATH.open("a+b") as lock_handle:
         fcntl.flock(lock_handle.fileno(), fcntl.LOCK_EX)
         registry = validate_registry()
-        prior_events = registry.get("events") if registry.get("ready") is True else []
+        prior_events = registry.get("events") if registry.get("local_integrity_ready") is True else []
         if registry.get("read_status") not in {"meta_missing", "packet_missing", "packet_present"}:
             return {
-                "ready": False,
+                **_local_only_trust_state(),
                 "status": "external_attestation_registry_fail_closed",
                 "writes_performed": False,
                 "external_calls_triggered": False,
                 "contains_secret": False,
                 "does_not_execute_trades": True,
             }
-        if registry.get("read_status") == "packet_present" and registry.get("ready") is not True:
+        if (
+            registry.get("read_status") == "packet_present"
+            and registry.get("local_integrity_ready") is not True
+        ):
             return {
-                "ready": False,
+                **_local_only_trust_state(),
                 "status": "external_attestation_registry_existing_state_invalid",
                 "writes_performed": False,
                 "external_calls_triggered": False,
@@ -593,7 +649,7 @@ def import_signed_attestation(payload: Any, *, expected_kind: str | None = None)
                 if existing:
                     if expected_kind is not None and existing.get("attestation_kind") != expected_kind:
                         return {
-                            "ready": False,
+                            **_local_only_trust_state(),
                             "status": "external_production_attestation_kind_mismatch",
                             "writes_performed": False,
                             "external_calls_triggered": False,
@@ -602,8 +658,14 @@ def import_signed_attestation(payload: Any, *, expected_kind: str | None = None)
                         }
                     return {
                         **existing,
-                        "ready": True,
-                        "status": "external_production_attestation_already_imported",
+                        "ready": False,
+                        "local_integrity_ready": True,
+                        "external_signature_verified": True,
+                        "external_trust_verified": False,
+                        "production_trusted": False,
+                        "snapshot_rollback_resistant": False,
+                        "blockers": list(PRODUCTION_TRUST_BLOCKERS),
+                        "status": "external_attestation_already_imported_local_integrity_only",
                         "writes_performed": False,
                     }
         verified = _verify_envelope(
@@ -615,7 +677,7 @@ def import_signed_attestation(payload: Any, *, expected_kind: str | None = None)
         if verified.get("ready") is not True:
             return {
                 **verified,
-                "ready": False,
+                **_local_only_trust_state(),
                 "writes_performed": False,
                 "external_calls_triggered": False,
                 "contains_secret": False,
@@ -628,13 +690,17 @@ def import_signed_attestation(payload: Any, *, expected_kind: str | None = None)
         packet = {
             "schema_version": REGISTRY_SCHEMA_VERSION,
             "packet_key": REGISTRY_PACKET_KEY,
-            "status": "external_attestation_registry_verified",
+            "status": "external_attestation_registry_local_integrity_verified",
             "head_full": _current_head_full(),
             "event_count": len(events),
             "last_attestation_id": verified["attestation_id"],
             "last_monotonic_counter": verified["monotonic_counter"],
             "events": events,
-            "external_trust_verified": True,
+            "external_signature_verified": True,
+            "external_trust_verified": False,
+            "production_trusted": False,
+            "snapshot_rollback_resistant": False,
+            "blockers": list(PRODUCTION_TRUST_BLOCKERS),
             "private_key_generated": False,
             "private_key_loaded": False,
             "external_calls_triggered": False,
@@ -642,10 +708,10 @@ def import_signed_attestation(payload: Any, *, expected_kind: str | None = None)
             "does_not_execute_trades": True,
         }
         try:
-            SQLiteMetaStore(SQLITE_META_PATH).write_packet(REGISTRY_PACKET_KEY, packet)
+            SQLiteMetaStore(SQLITE_META_PATH).promote_packet_atomic(REGISTRY_PACKET_KEY, packet)
         except Exception:
             return {
-                "ready": False,
+                **_local_only_trust_state(),
                 "status": "external_attestation_registry_write_failed",
                 "writes_performed": False,
                 "external_calls_triggered": False,
@@ -654,12 +720,12 @@ def import_signed_attestation(payload: Any, *, expected_kind: str | None = None)
             }
         readback = validate_registry()
         if not (
-            readback.get("ready") is True
+            readback.get("local_integrity_ready") is True
             and readback.get("last_attestation_id") == verified["attestation_id"]
             and readback.get("last_monotonic_counter") == verified["monotonic_counter"]
         ):
             return {
-                "ready": False,
+                **_local_only_trust_state(),
                 "status": "external_attestation_registry_readback_failed",
                 "writes_performed": True,
                 "external_calls_triggered": False,
@@ -668,7 +734,14 @@ def import_signed_attestation(payload: Any, *, expected_kind: str | None = None)
             }
         return {
             **verified,
-            "status": "external_production_attestation_imported",
+            "ready": False,
+            "local_integrity_ready": True,
+            "external_signature_verified": True,
+            "external_trust_verified": False,
+            "production_trusted": False,
+            "snapshot_rollback_resistant": False,
+            "blockers": list(PRODUCTION_TRUST_BLOCKERS),
+            "status": "external_attestation_imported_local_integrity_only",
             "writes_performed": True,
             "external_calls_triggered": False,
         }
@@ -690,9 +763,9 @@ def validate_attested_lineage(
     bindings_ready = bool(
         attestation_kind in ALLOWED_KINDS
         and _SAFE_ID.fullmatch(subject)
-        and _HEX_64.fullmatch(scope_hash)
+        and _digest_ready(scope_hash)
         and _SAFE_ID.fullmatch(task_id)
-        and _HEX_64.fullmatch(artifact_digest)
+        and _digest_ready(artifact_digest)
     )
     registry = validate_registry()
     event = next(
@@ -704,17 +777,22 @@ def validate_attested_lineage(
         ),
         None,
     )
-    expected_ready = bool(
+    current_head = _current_head_full()
+    local_integrity_ready = bool(
         bindings_ready
         and event
+        and event.get("head_full") == current_head
         and event.get("scope_hash") == scope_hash
         and event.get("task_id") == task_id
         and event.get("artifact_digest") == artifact_digest
     )
     return {
-        "ready": bool(registry.get("ready") is True and expected_ready),
-        "status": "external_attested_lineage_verified"
-        if expected_ready
+        "ready": False,
+        "local_integrity_ready": bool(
+            registry.get("local_integrity_ready") is True and local_integrity_ready
+        ),
+        "status": "external_attested_lineage_local_integrity_only"
+        if local_integrity_ready
         else (
             "external_attested_lineage_exact_bindings_required"
             if not bindings_ready
@@ -728,7 +806,13 @@ def validate_attested_lineage(
         "task_id": event.get("task_id") if isinstance(event, Mapping) else "",
         "artifact_digest": event.get("artifact_digest") if isinstance(event, Mapping) else "",
         "claims": dict(event.get("claims") or {}) if isinstance(event, Mapping) else {},
-        "external_trust_verified": bool(registry.get("ready") is True and expected_ready),
+        "external_signature_verified": bool(
+            registry.get("local_integrity_ready") is True and local_integrity_ready
+        ),
+        "external_trust_verified": False,
+        "production_trusted": False,
+        "snapshot_rollback_resistant": False,
+        "blockers": list(PRODUCTION_TRUST_BLOCKERS),
         "private_key_generated": False,
         "private_key_loaded": False,
         "writes_performed": False,
@@ -744,15 +828,24 @@ def read_external_attestation_status() -> dict[str, Any]:
         "packet_key": REGISTRY_PACKET_KEY,
         "schema_version": REGISTRY_SCHEMA_VERSION,
         "status": registry.get("status"),
-        "ready": registry.get("ready") is True,
+        "ready": False,
+        "local_integrity_ready": registry.get("local_integrity_ready") is True,
         "head_full": registry.get("head_full") or _current_head_full(),
         "event_count": int(registry.get("event_count") or 0),
         "last_monotonic_counter": int(registry.get("last_monotonic_counter") or 0),
         "attestation_kinds": sorted(
-            {str(row.get("attestation_kind") or "") for row in registry.get("events") or [] if row.get("attestation_kind")}
+            {
+                str(row.get("attestation_kind") or "")
+                for row in registry.get("events") or []
+                if row.get("attestation_kind")
+            }
         ),
         "get_writes_performed": False,
-        "external_trust_verified": registry.get("ready") is True,
+        "external_signature_verified": registry.get("local_integrity_ready") is True,
+        "external_trust_verified": False,
+        "production_trusted": False,
+        "snapshot_rollback_resistant": False,
+        "blockers": list(PRODUCTION_TRUST_BLOCKERS),
         "private_key_generated": False,
         "private_key_loaded": False,
         "external_calls_triggered": False,
@@ -783,10 +876,15 @@ def external_attestation_contract() -> dict[str, Any]:
             kind: sorted(schema)
             for kind, schema in sorted(_CLAIM_SCHEMAS.items())
         },
-        "shared_consumers": ["storage", "worker", "factor", "candidate_radar"],
+        "planned_consumers": ["storage", "worker", "factor", "candidate_radar"],
+        "production_consumers_wired": [],
         "post_accepts_signed_envelope_only": True,
         "caller_boolean_cannot_promote": True,
         "local_hmac_cannot_promote": True,
+        "external_signature_is_local_integrity_only": True,
+        "production_trusted": False,
+        "snapshot_rollback_resistant": False,
+        "production_blockers": list(PRODUCTION_TRUST_BLOCKERS),
         "application_generates_private_key": False,
         "application_loads_private_key": False,
         "get_writes_performed": False,

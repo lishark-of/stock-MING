@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+from concurrent.futures import ThreadPoolExecutor
 from contextlib import ExitStack
 from datetime import datetime, timedelta, timezone
 import hashlib
@@ -139,6 +140,8 @@ class ExternalProductionAttestationTests(unittest.TestCase):
             "task_id": (
                 str(resolved_claims["refresh_task_id"])
                 if kind == "storage_ttl_resolution"
+                else str(resolved_claims["cache_write_task_id"])
+                if kind == "candidate_radar_lineage"
                 else f"task-{counter}-{subject}"
             ),
             "subject": subject,
@@ -164,6 +167,12 @@ class ExternalProductionAttestationTests(unittest.TestCase):
             expected_kind=kind,
         )
 
+    def _resign(self, envelope: dict) -> dict:
+        envelope["signature_base64"] = base64.b64encode(
+            self.private_key.sign(external._canonical_bytes(envelope["statement"]))
+        ).decode("ascii")
+        return envelope
+
     def test_get_is_zero_write_and_missing_key_never_self_seals(self) -> None:
         self.trust_root.chmod(0o755)
         (self.trust_root / "ed25519-public.pem").unlink()
@@ -185,14 +194,18 @@ class ExternalProductionAttestationTests(unittest.TestCase):
     def test_valid_import_is_idempotent_and_caller_boolean_is_rejected(self) -> None:
         signed = self._envelope("worker_runtime_lineage", "worker-run-1", 1, "")
         imported = self._import(signed)
-        self.assertTrue(imported["ready"])
-        self.assertTrue(imported["external_trust_verified"])
+        self.assertFalse(imported["ready"])
+        self.assertTrue(imported["local_integrity_ready"])
+        self.assertTrue(imported["external_signature_verified"])
+        self.assertFalse(imported["external_trust_verified"])
+        self.assertFalse(imported["production_trusted"])
         self.assertTrue(imported["writes_performed"])
         database_before = self.db_path.read_bytes()
 
         replay = self._import(signed)
-        self.assertTrue(replay["ready"])
-        self.assertEqual(replay["status"], "external_production_attestation_already_imported")
+        self.assertFalse(replay["ready"])
+        self.assertTrue(replay["local_integrity_ready"])
+        self.assertEqual(replay["status"], "external_attestation_already_imported_local_integrity_only")
         self.assertFalse(replay["writes_performed"])
         self.assertEqual(self.db_path.read_bytes(), database_before)
 
@@ -255,7 +268,7 @@ class ExternalProductionAttestationTests(unittest.TestCase):
 
         first_envelope = self._envelope("worker_runtime_lineage", "worker-run-1", 1, "")
         first = self._import(first_envelope)
-        self.assertTrue(first["ready"])
+        self.assertTrue(first["local_integrity_ready"])
         replay_nonce = self._envelope(
             "worker_runtime_lineage",
             "worker-run-1",
@@ -303,7 +316,7 @@ class ExternalProductionAttestationTests(unittest.TestCase):
         first = self._import(
             self._envelope("worker_runtime_lineage", "worker-run-1", 1, "")
         )
-        self.assertTrue(first["ready"])
+        self.assertTrue(first["local_integrity_ready"])
         store = SQLiteMetaStore(self.db_path)
         packet = store.read_packet(external.REGISTRY_PACKET_KEY)
         packet["events"][0]["attestation_id"] = "0" * 64
@@ -326,8 +339,9 @@ class ExternalProductionAttestationTests(unittest.TestCase):
         self.assertEqual(unchanged["events"][0]["attestation_id"], "0" * 64)
         self.assertEqual(len(unchanged["events"]), 1)
 
-    def test_storage_requires_all_six_external_attestations(self) -> None:
+    def test_storage_imports_are_local_integrity_only_and_never_write_consumer(self) -> None:
         previous = ""
+        imported_rows: list[dict] = []
         for counter, dataset in enumerate(storage_service.CANONICAL_PARQUET_DATASETS, start=1):
             signed = self._envelope(
                 "storage_ttl_resolution",
@@ -338,22 +352,72 @@ class ExternalProductionAttestationTests(unittest.TestCase):
             result = storage_service.import_storage_cache_ttl_external_attestation(
                 {"signed_envelope": signed}
             )
-            self.assertTrue(result["ready"])
+            self.assertFalse(result["ready"])
+            self.assertTrue(result["local_integrity_ready"])
+            self.assertFalse(result["production_trusted"])
+            self.assertFalse(result["storage_packet_written"])
+            self.assertTrue(result["consumer_state_unchanged"])
+            imported_rows.append(result)
             previous = result["attestation_id"]
-            if counter < len(storage_service.CANONICAL_PARQUET_DATASETS):
-                self.assertFalse(result["production_ttl_evidence_ready"])
         validation = storage_service.storage_cache_ttl_refresh_evidence()
-        self.assertTrue(validation["production_ttl_evidence_ready"])
-        self.assertTrue(validation["production_trust_boundary_satisfied"])
-        self.assertEqual(
-            validation["external_attestation_verified_dataset_count"],
-            len(storage_service.CANONICAL_PARQUET_DATASETS),
+        self.assertFalse(validation["production_ttl_evidence_ready"])
+        self.assertFalse(validation["production_trust_boundary_satisfied"])
+        self.assertEqual(validation["external_attestation_verified_dataset_count"], 0)
+        self.assertFalse(
+            SQLiteMetaStore(self.db_path).read_packet(
+                storage_service.CACHE_TTL_REFRESH_EVIDENCE_PACKET_KEY
+            )
         )
-        self.assertEqual(validation["unresolved_datasets"], [])
+        registry = external.validate_registry()
+        self.assertTrue(registry["local_integrity_ready"])
+        self.assertFalse(registry["production_trusted"])
+        self.assertEqual(registry["last_monotonic_counter"], len(storage_service.CANONICAL_PARQUET_DATASETS))
         self.assertFalse(validation["refresh_executed_by_validator"])
         self.assertFalse(validation["external_calls_triggered_by_validator"])
 
-    def test_worker_factor_and_radar_use_one_sanitized_lineage_contract(self) -> None:
+        rows = []
+        for imported in imported_rows:
+            claims = imported["claims"]
+            row = {
+                "dataset": claims["dataset"],
+                "resolution": claims["resolution"],
+                "refresh_task_id": claims["refresh_task_id"],
+                "refresh_scope_hash": imported["scope_hash"],
+                "artifact_sha256": imported["artifact_digest"],
+                "before_ttl_state": claims["before_ttl_state"],
+                "after_ttl_state": claims["after_ttl_state"],
+                "refresh_executed": claims["refresh_executed"],
+                "provider_call_count": claims["provider_call_count"],
+                "fetched_at": claims["fetched_at"],
+                "external_calls_triggered": claims["external_calls_triggered"],
+                "does_not_execute_trades": claims["does_not_execute_trades"],
+                "external_attestation_id": imported["attestation_id"],
+            }
+            row["payload_digest"] = storage_service._json_sha256(
+                storage_service._storage_cache_ttl_resolution_material(
+                    row, imported["head_full"]
+                )
+            )
+            rows.append(row)
+        SQLiteMetaStore(self.db_path).write_packet(
+            storage_service.CACHE_TTL_REFRESH_EVIDENCE_PACKET_KEY,
+            {
+                "schema_version": storage_service.CACHE_TTL_REFRESH_EVIDENCE_SCHEMA_VERSION,
+                "head_full": imported_rows[-1]["head_full"],
+                "rows": rows,
+            },
+        )
+        caller_wired = storage_service.storage_cache_ttl_refresh_evidence()
+        self.assertEqual(
+            caller_wired["external_attestation_verified_dataset_count"],
+            len(storage_service.CANONICAL_PARQUET_DATASETS),
+        )
+        self.assertFalse(caller_wired["production_ttl_evidence_ready"])
+        self.assertFalse(caller_wired["production_trust_boundary_satisfied"])
+        self.assertFalse(caller_wired["production_trusted"])
+        self.assertIn("production_consumer_not_wired", caller_wired["production_blockers"])
+
+    def test_worker_factor_and_radar_lineages_stay_local_integrity_only(self) -> None:
         previous = ""
         rows = (
             ("worker_runtime_lineage", "worker-run-1"),
@@ -362,7 +426,8 @@ class ExternalProductionAttestationTests(unittest.TestCase):
         )
         for counter, (kind, subject) in enumerate(rows, start=1):
             result = self._import(self._envelope(kind, subject, counter, previous))
-            self.assertTrue(result["ready"])
+            self.assertFalse(result["ready"])
+            self.assertTrue(result["local_integrity_ready"])
             previous = result["attestation_id"]
             lineage = external.validate_attested_lineage(
                 attestation_kind=kind,
@@ -371,7 +436,9 @@ class ExternalProductionAttestationTests(unittest.TestCase):
                 task_id=result["task_id"],
                 artifact_digest=result["artifact_digest"],
             )
-            self.assertTrue(lineage["ready"])
+            self.assertFalse(lineage["ready"])
+            self.assertTrue(lineage["local_integrity_ready"])
+            self.assertFalse(lineage["production_trusted"])
             self.assertFalse(lineage["writes_performed"])
             self.assertFalse(lineage["contains_secret"])
             missing_binding = external.validate_attested_lineage(
@@ -385,11 +452,220 @@ class ExternalProductionAttestationTests(unittest.TestCase):
             )
         contract = external.external_attestation_contract()
         self.assertEqual(
-            contract["shared_consumers"],
+            contract["planned_consumers"],
             ["storage", "worker", "factor", "candidate_radar"],
         )
+        self.assertEqual(contract["production_consumers_wired"], [])
         self.assertFalse(contract["application_generates_private_key"])
         self.assertTrue(contract["caller_boolean_cannot_promote"])
+
+    def test_registry_rollback_is_detected_as_local_only_not_production_trust(self) -> None:
+        first_envelope = self._envelope("worker_runtime_lineage", "worker-run-1", 1, "")
+        first = self._import(first_envelope)
+        self.assertTrue(first["local_integrity_ready"])
+        store = SQLiteMetaStore(self.db_path)
+        snapshot = store.read_packet(external.REGISTRY_PACKET_KEY)
+        second = self._import(
+            self._envelope(
+                "factor_full_market_lineage",
+                "factor-version-1",
+                2,
+                first["attestation_id"],
+            )
+        )
+        self.assertTrue(second["local_integrity_ready"])
+        store.write_packet(external.REGISTRY_PACKET_KEY, snapshot)
+
+        rolled_back = external.validate_registry()
+        self.assertTrue(rolled_back["local_integrity_ready"])
+        self.assertFalse(rolled_back["ready"])
+        self.assertFalse(rolled_back["production_trusted"])
+        self.assertFalse(rolled_back["snapshot_rollback_resistant"])
+        self.assertEqual(rolled_back["last_monotonic_counter"], 1)
+        self.assertIn("external_monotonic_anchor_unavailable", rolled_back["blockers"])
+
+    def test_concurrent_branches_commit_at_most_one_atomic_successor(self) -> None:
+        first = self._import(
+            self._envelope("worker_runtime_lineage", "worker-run-1", 1, "")
+        )
+        branches = (
+            self._envelope(
+                "worker_runtime_lineage",
+                "worker-run-2a",
+                2,
+                first["attestation_id"],
+                nonce_seed="a",
+            ),
+            self._envelope(
+                "worker_runtime_lineage",
+                "worker-run-2b",
+                2,
+                first["attestation_id"],
+                nonce_seed="b",
+            ),
+        )
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            results = list(executor.map(self._import, branches))
+        self.assertEqual(sum(row.get("local_integrity_ready") is True for row in results), 1)
+        self.assertEqual(sum(row.get("writes_performed") is True for row in results), 1)
+        registry = external.validate_registry()
+        self.assertTrue(registry["local_integrity_ready"])
+        self.assertEqual(registry["last_monotonic_counter"], 2)
+        self.assertEqual(registry["event_count"], 2)
+        self.assertFalse(registry["production_trusted"])
+
+    def test_new_head_can_continue_local_chain_without_claiming_key_epoch_trust(self) -> None:
+        first = self._import(
+            self._envelope("worker_runtime_lineage", "worker-run-1", 1, "")
+        )
+        new_head = "a" * 40 if external._current_head_full() != "a" * 40 else "b" * 40
+        with patch.object(external, "_current_head_full", return_value=new_head):
+            second = self._import(
+                self._envelope(
+                    "worker_runtime_lineage",
+                    "worker-run-2",
+                    2,
+                    first["attestation_id"],
+                    head_full=new_head,
+                )
+            )
+            self.assertTrue(second["local_integrity_ready"])
+            self.assertFalse(second["production_trusted"])
+            registry = external.validate_registry()
+            self.assertTrue(registry["local_integrity_ready"])
+            self.assertEqual(registry["last_monotonic_counter"], 2)
+            lineage = external.validate_attested_lineage(
+                attestation_kind="worker_runtime_lineage",
+                subject="worker-run-2",
+                scope_hash=second["scope_hash"],
+                task_id=second["task_id"],
+                artifact_digest=second["artifact_digest"],
+            )
+            self.assertTrue(lineage["local_integrity_ready"])
+            self.assertFalse(lineage["ready"])
+            self.assertIn("trusted_head_key_epoch_unavailable", lineage["blockers"])
+
+    def test_storage_update_retry_and_invalid_semantics_never_touch_consumer_packet(self) -> None:
+        store = SQLiteMetaStore(self.db_path)
+        sentinel = {"schema_version": "sentinel.v1", "head_full": external._current_head_full(), "rows": []}
+        store.write_packet(storage_service.CACHE_TTL_REFRESH_EVIDENCE_PACKET_KEY, sentinel)
+        first_envelope = self._envelope("storage_ttl_resolution", "daily", 1, "")
+        first = storage_service.import_storage_cache_ttl_external_attestation(
+            {"signed_envelope": first_envelope}
+        )
+        self.assertTrue(first["local_integrity_ready"])
+        self.assertEqual(
+            store.read_packet(storage_service.CACHE_TTL_REFRESH_EVIDENCE_PACKET_KEY), sentinel
+        )
+        replay = storage_service.import_storage_cache_ttl_external_attestation(
+            {"signed_envelope": first_envelope}
+        )
+        self.assertTrue(replay["local_integrity_ready"])
+        self.assertFalse(replay["writes_performed"])
+
+        refreshed = self._claims("storage_ttl_resolution", "daily")
+        refreshed.update(
+            {
+                "resolution": "refreshed",
+                "refresh_task_id": "refresh-daily-v2",
+                "before_ttl_state": "stale",
+                "after_ttl_state": "fresh",
+                "refresh_executed": True,
+                "provider_call_count": 1,
+                "external_calls_triggered": True,
+            }
+        )
+        second = storage_service.import_storage_cache_ttl_external_attestation(
+            {
+                "signed_envelope": self._envelope(
+                    "storage_ttl_resolution",
+                    "daily",
+                    2,
+                    first["attestation_id"],
+                    claims=refreshed,
+                )
+            }
+        )
+        self.assertTrue(second["local_integrity_ready"])
+        self.assertFalse(second["storage_packet_written"])
+        self.assertEqual(
+            store.read_packet(storage_service.CACHE_TTL_REFRESH_EVIDENCE_PACKET_KEY), sentinel
+        )
+        before_registry = store.read_packet(external.REGISTRY_PACKET_KEY)
+        invalid = storage_service.import_storage_cache_ttl_external_attestation(
+            {
+                "signed_envelope": self._envelope(
+                    "storage_ttl_resolution",
+                    "unknown_dataset",
+                    3,
+                    second["attestation_id"],
+                )
+            }
+        )
+        self.assertFalse(invalid["local_integrity_ready"])
+        self.assertFalse(invalid["writes_performed"])
+        self.assertEqual(store.read_packet(external.REGISTRY_PACKET_KEY), before_registry)
+        self.assertEqual(
+            store.read_packet(storage_service.CACHE_TTL_REFRESH_EVIDENCE_PACKET_KEY), sentinel
+        )
+
+    def test_registry_atomic_write_failure_leaves_registry_and_consumer_unchanged(self) -> None:
+        store = SQLiteMetaStore(self.db_path)
+        sentinel = {"schema_version": "sentinel.v1", "rows": []}
+        store.write_packet(storage_service.CACHE_TTL_REFRESH_EVIDENCE_PACKET_KEY, sentinel)
+        with patch.object(
+            external.SQLiteMetaStore,
+            "promote_packet_atomic",
+            side_effect=RuntimeError("injected_atomic_write_failure"),
+        ):
+            result = storage_service.import_storage_cache_ttl_external_attestation(
+                {
+                    "signed_envelope": self._envelope(
+                        "storage_ttl_resolution", "daily", 1, ""
+                    )
+                }
+            )
+        self.assertFalse(result["local_integrity_ready"])
+        self.assertFalse(result["writes_performed"])
+        self.assertEqual(result["status"], "external_attestation_registry_write_failed")
+        self.assertIsNone(store.read_packet(external.REGISTRY_PACKET_KEY))
+        self.assertEqual(
+            store.read_packet(storage_service.CACHE_TTL_REFRESH_EVIDENCE_PACKET_KEY), sentinel
+        )
+
+    def test_semantic_relationship_attacks_are_rejected_before_write(self) -> None:
+        attacks: list[dict] = []
+        bad_time = self._claims("storage_ttl_resolution", "daily")
+        bad_time["fetched_at"] = "not-a-timestamp"
+        attacks.append(
+            self._envelope("storage_ttl_resolution", "daily", 1, "", claims=bad_time)
+        )
+        bad_factor = self._claims("factor_full_market_lineage", "factor-version-1")
+        bad_factor["result_dataset"] = "unrelated_dataset"
+        attacks.append(
+            self._envelope(
+                "factor_full_market_lineage", "factor-version-1", 1, "", claims=bad_factor
+            )
+        )
+        bad_radar = self._envelope(
+            "candidate_radar_lineage",
+            external.CANDIDATE_RADAR_PACKET_KEY,
+            1,
+            "",
+        )
+        bad_radar["statement"]["task_id"] = "different-task"
+        attacks.append(self._resign(bad_radar))
+        zero_scope = self._envelope("worker_runtime_lineage", "worker-run-1", 1, "")
+        zero_scope["statement"]["scope_hash"] = "0" * 64
+        attacks.append(self._resign(zero_scope))
+
+        for envelope in attacks:
+            with self.subTest(kind=envelope["statement"]["attestation_kind"]):
+                result = self._import(envelope)
+                self.assertFalse(result["local_integrity_ready"])
+                self.assertFalse(result["writes_performed"])
+                self.assertEqual(result["status"], "signed_statement_contract_invalid")
+                self.assertFalse(self.db_path.exists())
 
     def test_get_and_post_routes_preserve_zero_write_and_exact_envelope_boundary(self) -> None:
         client = TestClient(app)
@@ -410,7 +686,9 @@ class ExternalProductionAttestationTests(unittest.TestCase):
             json={"signed_envelope": signed},
         )
         self.assertEqual(accepted.status_code, 200)
-        self.assertTrue(accepted.json()["data"]["ready"])
+        self.assertFalse(accepted.json()["data"]["ready"])
+        self.assertTrue(accepted.json()["data"]["local_integrity_ready"])
+        self.assertFalse(accepted.json()["data"]["production_trusted"])
 
 
 if __name__ == "__main__":
