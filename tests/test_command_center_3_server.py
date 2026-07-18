@@ -46861,9 +46861,10 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertEqual(packet["counts"]["candidate_radar_production_promotion_dry_run_ready"], True)
         self.assertEqual(packet["counts"]["candidate_radar_production_promotion_dry_run_local_blocker_count"], 0)
         self.assertGreaterEqual(packet["counts"]["candidate_radar_production_promotion_dry_run_production_blocker_count"], 4)
-        self.assertTrue(
-            any(row["api"] == "local_candidate_radar_production_promotion_dry_run" for row in packet["call_ledger"])
-        )
+        cache_ledger_apis = {row["api"] for row in packet["call_ledger"]}
+        self.assertIn("local_candidate_radar_cache", cache_ledger_apis)
+        self.assertIn("local_candidate_radar_production_activation_receipt", cache_ledger_apis)
+        self.assertNotIn("local_candidate_radar_production_promotion_dry_run", cache_ledger_apis)
 
         rebuild = self.client.post(
             "/api/candidate-radar/provider-parity-dry-run",
@@ -47056,9 +47057,10 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertEqual(packet["counts"]["candidate_radar_legacy_retirement_review_ready"], True)
         self.assertEqual(packet["counts"]["candidate_radar_legacy_retirement_review_local_blocker_count"], 0)
         self.assertGreaterEqual(packet["counts"]["candidate_radar_legacy_retirement_review_production_blocker_count"], 3)
-        self.assertTrue(
-            any(row["api"] == "local_candidate_radar_legacy_retirement_review" for row in packet["call_ledger"])
-        )
+        cache_ledger_apis = {row["api"] for row in packet["call_ledger"]}
+        self.assertIn("local_candidate_radar_cache", cache_ledger_apis)
+        self.assertIn("local_candidate_radar_production_activation_receipt", cache_ledger_apis)
+        self.assertNotIn("local_candidate_radar_legacy_retirement_review", cache_ledger_apis)
         self.assertNotIn("SHOULD_DROP", json.dumps(cache, ensure_ascii=False))
         self.assertNotIn("REAL_TUSHARE_SECRET_VALUE", json.dumps(cache, ensure_ascii=False))
         self.assertNotIn("REAL_DEEPSEEK_SECRET_VALUE", json.dumps(cache, ensure_ascii=False))
@@ -47263,9 +47265,10 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertEqual(packet["counts"]["candidate_radar_production_promotion_review_ready"], True)
         self.assertEqual(packet["counts"]["candidate_radar_production_promotion_review_local_blocker_count"], 0)
         self.assertGreaterEqual(packet["counts"]["candidate_radar_production_promotion_review_production_blocker_count"], 4)
-        self.assertTrue(
-            any(row["api"] == "local_candidate_radar_production_promotion_review" for row in packet["call_ledger"])
-        )
+        cache_ledger_apis = {row["api"] for row in packet["call_ledger"]}
+        self.assertIn("local_candidate_radar_cache", cache_ledger_apis)
+        self.assertIn("local_candidate_radar_production_activation_receipt", cache_ledger_apis)
+        self.assertNotIn("local_candidate_radar_production_promotion_review", cache_ledger_apis)
         self.assertNotIn("SHOULD_DROP", json.dumps(cache, ensure_ascii=False))
         self.assertNotIn("REAL_TUSHARE_SECRET_VALUE", json.dumps(cache, ensure_ascii=False))
         self.assertNotIn("REAL_DEEPSEEK_SECRET_VALUE", json.dumps(cache, ensure_ascii=False))
@@ -50657,7 +50660,10 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertFalse(packet["github_called"])
         self.assertTrue(packet["does_not_execute_trades"])
         self.assertTrue(packet["does_not_modify_strategy_action"])
-        self.assertTrue(any(row["api"] == "local_candidate_radar_full_pool_worker_fallback" for row in packet["call_ledger"]))
+        cache_ledger_apis = {row["api"] for row in packet["call_ledger"]}
+        self.assertIn("local_candidate_radar_cache", cache_ledger_apis)
+        self.assertIn("local_candidate_radar_production_activation_receipt", cache_ledger_apis)
+        self.assertNotIn("local_candidate_radar_full_pool_worker_fallback", cache_ledger_apis)
         self.assertNotIn("SHOULD_DROP", json.dumps(cache, ensure_ascii=False))
         self.assertNotIn("REAL_TUSHARE_SECRET_VALUE", json.dumps(cache, ensure_ascii=False))
         self.assertNotIn("REAL_DEEPSEEK_SECRET_VALUE", json.dumps(cache, ensure_ascii=False))
@@ -50854,7 +50860,10 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertFalse(packet["github_called"])
         self.assertTrue(packet["does_not_execute_trades"])
         self.assertTrue(packet["does_not_modify_strategy_action"])
-        self.assertTrue(any(row["api"] == "local_candidate_radar_deep_scan_worker_fallback" for row in packet["call_ledger"]))
+        cache_ledger_apis = {row["api"] for row in packet["call_ledger"]}
+        self.assertIn("local_candidate_radar_cache", cache_ledger_apis)
+        self.assertIn("local_candidate_radar_production_activation_receipt", cache_ledger_apis)
+        self.assertNotIn("local_candidate_radar_deep_scan_worker_fallback", cache_ledger_apis)
         self.assertNotIn("SHOULD_DROP", json.dumps(cache, ensure_ascii=False))
         self.assertNotIn("REAL_TUSHARE_SECRET_VALUE", json.dumps(cache, ensure_ascii=False))
         self.assertNotIn("REAL_DEEPSEEK_SECRET_VALUE", json.dumps(cache, ensure_ascii=False))
@@ -51573,7 +51582,7 @@ class CommandCenter3FastAPITests(unittest.TestCase):
             expected_direct_count=len(ltg13_direct_keys),
         )
 
-    def test_candidate_radar_persisted_packet_exposes_expected_trade_date_for_data_health(self):
+    def test_candidate_radar_persisted_packet_stays_isolated_from_data_health_until_freshness_refresh(self):
         self._with_meta_store()
         clear_task_statuses_for_tests(clear_persisted=True)
         self._with_snapshot_cache(
@@ -51621,11 +51630,21 @@ class CommandCenter3FastAPITests(unittest.TestCase):
             row["producer"]: row for row in data_health_packet["current_evidence_producer_coverage_rows"]
         }
         candidate_row = producer_rows["candidate_radar"]
-        self.assertEqual(candidate_row["status"], "passed_read_only_contract")
-        self.assertEqual(candidate_row["expected_trade_date"], "2026-06-12")
-        self.assertEqual(candidate_row["data_date"], "2026-06-12")
-        self.assertTrue(candidate_row["date_matches_expected_trade_date"])
-        self.assertNotIn("expected_trade_date", candidate_row["missing_fields"])
+        self.assertEqual(candidate_row["status"], "not_observed")
+        self.assertEqual(
+            candidate_row["observed_path"],
+            "command_center_3_candidate_radar_freshness_cache.data_freshness",
+        )
+        self.assertFalse(candidate_row["packet_observed"])
+        self.assertFalse(candidate_row["freshness_mapping_observed"])
+        self.assertFalse(candidate_row["required_for_current_evidence"])
+        self.assertIsNone(candidate_row["expected_trade_date"])
+        self.assertIsNone(candidate_row["data_date"])
+        self.assertFalse(candidate_row["date_matches_expected_trade_date"])
+        self.assertEqual(
+            candidate_row["missing_fields"],
+            ["expected_trade_date", "data_date", "freshness_state"],
+        )
         self.assertFalse(data_health_packet["external_calls_triggered"])
         self.assertFalse(data_health_packet["tushare_called"])
         self.assertFalse(data_health_packet["deepseek_called"])
