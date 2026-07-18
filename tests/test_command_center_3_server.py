@@ -5795,7 +5795,10 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
             "cd desktop && npm run tauri dev",
         ])
         self.assertEqual(desktop["production_launch_plan"][0]["command"], "cd desktop && npm run build")
-        self.assertEqual(desktop["production_launch_plan"][1]["command"], "cd desktop && npm run tauri build")
+        self.assertEqual(
+            desktop["production_launch_plan"][1]["command"],
+            ".venv/bin/python scripts/tauri_production_build.py",
+        )
         self.assertTrue(all(row["manual"] for row in desktop["dev_launch_plan"]))
         self.assertTrue(all(row["manual"] for row in desktop["production_launch_plan"]))
         self.assertTrue(all(row["external_calls_triggered"] is False for row in desktop["dev_launch_plan"]))
@@ -43993,7 +43996,7 @@ class CommandCenter3FastAPITests(unittest.TestCase):
             json={
                 "operator": "local-build-review",
                 "explicit_tauri_build_completed": True,
-                "build_command": "npm run tauri build",
+                "build_command": ".venv/bin/python scripts/tauri_production_build.py",
                 "authorization": "Bearer SHOULD_DROP",
             },
         ).json()
@@ -44017,7 +44020,7 @@ class CommandCenter3FastAPITests(unittest.TestCase):
             ["release_binary_artifact_qa", "tauri_build_repeatability"],
         )
         self.assertTrue(review["explicit_tauri_build_completed_before_review"])
-        self.assertEqual(review["build_command_reviewed_safe"], "npm run tauri build")
+        self.assertEqual(review["build_command_reviewed_safe"], ".venv/bin/python scripts/tauri_production_build.py")
         self.assertTrue(review["tauri_build_repeatability_done"])
         self.assertFalse(review["tauri_build_repeatability_is_completion"])
         self.assertFalse(review["production_package_complete"])
@@ -44042,7 +44045,7 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertEqual(ltg09["production_blocker_count"], 6)
         self.assertTrue(ltg09["release_binary_artifact_qa_done"])
         self.assertTrue(ltg09["tauri_build_repeatability_done"])
-        self.assertEqual(ltg09["tauri_build_command_reviewed_safe"], "npm run tauri build")
+        self.assertEqual(ltg09["tauri_build_command_reviewed_safe"], ".venv/bin/python scripts/tauri_production_build.py")
         self.assertFalse(ltg09["production_package_complete"])
         self.assertFalse(ltg09["packaged_runtime_qa_done"])
         self.assertFalse(ltg09["app_bundle_detected"])
@@ -44083,7 +44086,7 @@ class CommandCenter3FastAPITests(unittest.TestCase):
             json={
                 "operator": "local-app-bundle-review",
                 "explicit_tauri_build_completed": True,
-                "build_command": "npm run tauri build",
+                "build_command": ".venv/bin/python scripts/tauri_production_build.py",
                 "authorization": "Bearer SHOULD_DROP",
             },
         ).json()
@@ -44221,7 +44224,7 @@ class CommandCenter3FastAPITests(unittest.TestCase):
             json={
                 "operator": "local-launch-seed",
                 "explicit_tauri_build_completed": True,
-                "build_command": "npm run tauri build",
+                "build_command": ".venv/bin/python scripts/tauri_production_build.py",
             },
         ).json()
         self.assertTrue(artifact_response["ok"])
@@ -44375,7 +44378,7 @@ class CommandCenter3FastAPITests(unittest.TestCase):
             json={
                 "operator": "local-offline-ux-seed",
                 "explicit_tauri_build_completed": True,
-                "build_command": "npm run tauri build",
+                "build_command": ".venv/bin/python scripts/tauri_production_build.py",
             },
         ).json()
         self.assertTrue(artifact_response["ok"])
@@ -44539,7 +44542,7 @@ class CommandCenter3FastAPITests(unittest.TestCase):
             json={
                 "operator": "local-startup-runtime-seed",
                 "explicit_tauri_build_completed": True,
-                "build_command": "npm run tauri build",
+                "build_command": ".venv/bin/python scripts/tauri_production_build.py",
             },
         ).json()
         self.assertTrue(artifact_response["ok"])
@@ -44718,7 +44721,7 @@ class CommandCenter3FastAPITests(unittest.TestCase):
                 json={
                     "operator": "local-config-log-seed",
                     "explicit_tauri_build_completed": True,
-                    "build_command": "npm run tauri build",
+                    "build_command": ".venv/bin/python scripts/tauri_production_build.py",
                 },
             ).json()["ok"]
         )
@@ -44921,7 +44924,7 @@ class CommandCenter3FastAPITests(unittest.TestCase):
                 json={
                     "operator": "local-signing-seed",
                     "explicit_tauri_build_completed": True,
-                    "build_command": "npm run tauri build",
+                    "build_command": ".venv/bin/python scripts/tauri_production_build.py",
                 },
             ).json()["ok"]
         )
@@ -45164,7 +45167,7 @@ class CommandCenter3FastAPITests(unittest.TestCase):
                 json={
                     "operator": "local-promotion-artifact",
                     "explicit_tauri_build_completed": True,
-                    "build_command": "npm run tauri build",
+                    "build_command": ".venv/bin/python scripts/tauri_production_build.py",
                 },
             ).json()["ok"]
         )

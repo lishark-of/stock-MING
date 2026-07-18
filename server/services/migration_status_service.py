@@ -7884,7 +7884,8 @@ def _latest_tauri_package_direct_evidence_summary() -> dict[str, Any]:
         and review.get("explicit_tauri_build_completed_before_review") is True
         and review.get("tauri_build_repeatability_done") is True
         and review.get("tauri_build_repeatability_is_completion") is False
-        and review.get("build_command_reviewed_safe") in {"npm run tauri build", "cd desktop && npm run tauri build"}
+        and review.get("build_command_reviewed_safe")
+        == ".venv/bin/python scripts/tauri_production_build.py"
         and review.get("release_binary_modified_at")
     )
     app_bundle_ready = bool(

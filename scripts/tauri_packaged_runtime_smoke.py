@@ -371,6 +371,7 @@ def _dmg_mounted_app_observation(
 
 def _record_existing_reviews(
     *,
+    build_command: str = "",
     offline_screenshot_sha256: str = "",
     signing_observation: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
@@ -380,7 +381,7 @@ def _record_existing_reviews(
         {
             "requested_from": "tauri_packaged_runtime_smoke",
             "explicit_tauri_build_completed": True,
-            "build_command": "npm run tauri build",
+            "build_command": build_command,
         }
     )
     launch_task = desktop_service.run_tauri_packaged_runtime_launch_review_task(
@@ -716,6 +717,7 @@ def run_smoke(args: argparse.Namespace) -> dict[str, Any]:
     }
     if passed and args.record_reviews:
         result["review_tasks"] = _record_existing_reviews(
+            build_command=str(build_receipt.get("build_command") or ""),
             offline_screenshot_sha256=args.offline_screenshot_sha256 if offline_passed else "",
             signing_observation=codesign_observation,
         )

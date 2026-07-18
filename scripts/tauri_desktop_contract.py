@@ -715,7 +715,9 @@ def build_contract() -> dict[str, Any]:
         _row(
             "tauri_task_policy_does_not_run_build_or_runtime",
             "tauri_dev_command=cd desktop && npm run tauri dev" in preflight_script
-            and "tauri_build_command=cd desktop && npm run tauri build" in preflight_script
+            and "tauri_local_unsigned_build_command=cd desktop && npm run tauri build" in preflight_script
+            and "tauri_production_build_command=.venv/bin/python scripts/tauri_production_build.py"
+            in preflight_script
             and "production_package_build_attempted=false" in preflight_script
             and "tauri_package_build_required_for_production=true" in preflight_script
             and runtime.get("tauri_build_attempted") is False

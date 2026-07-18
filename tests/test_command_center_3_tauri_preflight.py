@@ -90,7 +90,11 @@ class CommandCenter3TauriPreflightTests(unittest.TestCase):
         self.assertIn("tauri_dev_command=cd desktop && npm run tauri dev", source)
         self.assertIn("tauri_dev_before_dev_command=COMMAND_CENTER_3_LAUNCHER_SKIP_OPEN=1 ../scripts/start_command_center_3.command", source)
         self.assertIn("tauri_dev_starts_fastapi_via_local_launcher=true", source)
-        self.assertIn("tauri_build_command=cd desktop && npm run tauri build", source)
+        self.assertIn("tauri_local_unsigned_build_command=cd desktop && npm run tauri build", source)
+        self.assertIn(
+            "tauri_production_build_command=.venv/bin/python scripts/tauri_production_build.py",
+            source,
+        )
         self.assertIn("backend_autostart=tauri_app_open_local_fastapi", source)
         self.assertIn("tauri_app_open_fastapi_autostart=true", source)
         self.assertIn("tauri_app_open_autostart_scope=local_fastapi_only", source)
@@ -124,7 +128,11 @@ class CommandCenter3TauriPreflightTests(unittest.TestCase):
         self.assertIn("cargo_lock=", output)
         self.assertIn("tauri_icon=", output)
         self.assertIn("fastapi_dev_command=scripts/dev_server.sh", output)
-        self.assertIn("tauri_build_command=cd desktop && npm run tauri build", output)
+        self.assertIn("tauri_local_unsigned_build_command=cd desktop && npm run tauri build", output)
+        self.assertIn(
+            "tauri_production_build_command=.venv/bin/python scripts/tauri_production_build.py",
+            output,
+        )
         self.assertIn("tauri_dev_before_dev_command=COMMAND_CENTER_3_LAUNCHER_SKIP_OPEN=1 ../scripts/start_command_center_3.command", output)
         self.assertIn("tauri_dev_starts_fastapi_via_local_launcher=true", output)
         self.assertIn("backend_autostart=tauri_app_open_local_fastapi", output)

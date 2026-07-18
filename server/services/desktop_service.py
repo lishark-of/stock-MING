@@ -2334,9 +2334,9 @@ def _production_launch_plan(api_base: str) -> list[dict[str, Any]]:
         },
         {
             "step": "2",
-            "name": "打包 Tauri 桌面应用",
-            "command": "cd desktop && npm run tauri build",
-            "required_for": "生产桌面包；需要 Rust/Cargo",
+            "name": "签名并打包 Tauri 生产桌面应用",
+            "command": ".venv/bin/python scripts/tauri_production_build.py",
+            "required_for": "生产桌面包；需要 Rust/Cargo、已批准 Developer ID 与公证凭据",
             "manual": True,
             "external_calls_triggered": False,
             "loads_token_or_key": False,
@@ -3660,10 +3660,9 @@ def _tauri_package_artifact_review_contract(
         and tauri_build_artifact.get("contains_secret") is False
     )
     local_ready = bool(explicit_review and release_binary_ready and boundary_ready)
-    accepted_build_command = build_command_reviewed_safe in {
-        "npm run tauri build",
-        "cd desktop && npm run tauri build",
-    }
+    accepted_build_command = (
+        build_command_reviewed_safe == ".venv/bin/python scripts/tauri_production_build.py"
+    )
     build_repeatability_ready = bool(local_ready and explicit_tauri_build_completed and accepted_build_command)
     app_bundle_ready = bool(
         local_ready
@@ -6629,10 +6628,10 @@ def run_tauri_package_artifact_review_task(payload: Any = None) -> dict[str, Any
     payload_map = payload if isinstance(payload, dict) else {}
     explicit_tauri_build_completed = payload_map.get("explicit_tauri_build_completed") is True
     requested_command = str(payload_map.get("build_command") or "").strip()
-    build_command_reviewed_safe = requested_command if requested_command in {
-        "npm run tauri build",
-        "cd desktop && npm run tauri build",
-    } else ("npm run tauri build" if explicit_tauri_build_completed else "")
+    production_build_command = ".venv/bin/python scripts/tauri_production_build.py"
+    build_command_reviewed_safe = (
+        requested_command if requested_command == production_build_command else ""
+    )
     task = create_task_record(
         TAURI_PACKAGE_ARTIFACT_REVIEW_TASK_TYPE,
         output_packet_key=PACKET_KEY,

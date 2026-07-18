@@ -1364,9 +1364,11 @@ def _build_version_rows(
             tauri_package_verification.get("production_package_complete") is True
         ),
         "developer_signing_notarization": bool(
-            isinstance(online_desktop, Mapping)
-            and online_desktop.get("developer_id_signing_verified") is True
-            and online_desktop.get("notarization_ticket_detected") is True
+            tauri_package_verification.get("production_package_complete") is True
+            and tauri_package_verification.get("developer_id_signing_verified") is True
+            and tauri_package_verification.get("notarization_ticket_detected") is True
+            and tauri_package_verification.get("app_gatekeeper_accepted") is True
+            and tauri_package_verification.get("dmg_gatekeeper_accepted") is True
         ),
         "motion_production_promoted": bool(
             motion_validation.get("motion_current_head_pair_verified") is True
