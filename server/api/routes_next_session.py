@@ -5,8 +5,8 @@ from typing import Any
 from fastapi import APIRouter
 
 from server.api.task_response import task_envelope
-from server.schemas.packets import cache_envelope, cache_read_call_ledger, cache_read_packet
-from server.services import next_session_service
+from server.schemas.packets import cache_envelope, cache_read_call_ledger, cache_read_packet, envelope
+from server.services import next_session_replacement_promotion_service, next_session_service
 
 
 router = APIRouter(prefix="/api/next-session")
@@ -53,3 +53,48 @@ def review_next_session_streamlit_parity(payload: dict[str, Any] | None = None) 
 def review_next_session_production_promotion(payload: dict[str, Any] | None = None) -> dict:
     task = next_session_service.run_next_session_production_promotion_review_task(payload)
     return task_envelope(task)
+
+
+def _replacement_promotion_ledger(packet: dict[str, Any], *, request_method: str) -> list[dict[str, Any]]:
+    return [
+        {
+            "api": "local_next_session_production_replacement_journal",
+            "endpoint": f"{request_method} /api/next-session/production-replacement",
+            "request_method": request_method,
+            "mode": "read_only_validation" if request_method == "GET" else "explicit_literal_approval_write",
+            "call_status": packet.get("status") or "next_session_production_replacement_blocked",
+            "row_count": 1 if packet.get("production_replacement_complete") is True else 0,
+            "promotion_written": packet.get("promotion_written") is True,
+            "idempotent_replay": packet.get("idempotent_replay") is True,
+            "external": False,
+            "external_calls_triggered": False,
+            "tushare_called": False,
+            "deepseek_called": False,
+            "github_called": False,
+            "github_api_called": False,
+            "does_not_execute_trades": True,
+            "does_not_modify_strategy_action": True,
+            "does_not_modify_operation_zones": True,
+            "contains_secret": False,
+        }
+    ]
+
+
+@router.get("/production-replacement")
+def get_next_session_production_replacement() -> dict:
+    packet = next_session_replacement_promotion_service.validate_next_session_production_replacement()
+    return envelope(
+        packet,
+        call_ledger=_replacement_promotion_ledger(packet, request_method="GET"),
+        warnings=packet.get("blockers"),
+    )
+
+
+@router.post("/production-replacement")
+def promote_next_session_production_replacement(payload: dict[str, Any] | None = None) -> dict:
+    packet = next_session_replacement_promotion_service.promote_next_session_production_replacement(payload)
+    return envelope(
+        packet,
+        call_ledger=_replacement_promotion_ledger(packet, request_method="POST"),
+        warnings=packet.get("blockers"),
+    )

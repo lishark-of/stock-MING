@@ -18,6 +18,7 @@ from typing import Any
 from server.services import (
     full_market_worker_service,
     motion_evidence_service,
+    next_session_replacement_promotion_service,
     release_promotion_service,
     storage_service,
     streamlit_retirement_evidence_service,
@@ -1304,6 +1305,13 @@ def _build_version_rows(
             tauri_package_verification=tauri_package_verification,
         )
     )
+    next_session_replacement = (
+        next_session_replacement_promotion_service.validate_next_session_production_replacement(
+            evidence_root,
+            expected_head_full=expected_head_full,
+            project_root=evidence_root.parent if evidence_root.name == ".stock_ming_3" else PROJECT_ROOT,
+        )
+    )
     full_market_worker_fact = full_market_worker_service.validate_full_market_worker_production_fact(
         evidence_root
     )
@@ -1343,8 +1351,7 @@ def _build_version_rows(
             governed_model_task_status,
         ),
         "next_session_production_replacement": bool(
-            isinstance(next_session, Mapping)
-            and next_session.get("production_replacement_complete") is True
+            next_session_replacement.get("production_replacement_complete") is True
         ),
         "candidate_radar_production_replacement": (
             full_market_worker_fact.get("candidate_radar_production_replacement") is True
@@ -1449,6 +1456,29 @@ def _build_version_rows(
                 "route_matrix_digest",
                 "blockers",
                 "trust_boundary",
+                "read_only",
+                "writes_storage",
+                "external_calls_triggered",
+                "does_not_execute_trades",
+                "contains_secret",
+            )
+        },
+        "next_session_production_replacement": {
+            key: next_session_replacement.get(key)
+            for key in (
+                "schema_version",
+                "status",
+                "head_full",
+                "production_replacement_complete",
+                "event_id",
+                "sequence_no",
+                "next_packet_digest",
+                "motion_pair_digest",
+                "streamlit_retirement_digest",
+                "remote_ci_digest",
+                "remote_run_id",
+                "remote_artifact_digest",
+                "blockers",
                 "read_only",
                 "writes_storage",
                 "external_calls_triggered",
@@ -1596,6 +1626,9 @@ def build_v1_closeout_evaluation(
         ],
         "motion_current_head_evidence_summary": context["motion_current_head_evidence_summary"],
         "streamlit_primary_retirement_summary": context["streamlit_primary_retirement"],
+        "next_session_production_replacement_summary": context[
+            "next_session_production_replacement"
+        ],
         "tushare_production_version": context["tushare_production_version"],
         "cache_only": True,
         "read_only": True,
