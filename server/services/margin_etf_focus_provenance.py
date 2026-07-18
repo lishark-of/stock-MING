@@ -45,6 +45,7 @@ FALSE_SAFETY_FIELDS = (
     "contains_secret",
 )
 TRUE_SAFETY_FIELDS = ("does_not_execute_trades", "does_not_modify_strategy_action")
+INFERRED_SAFETY_PROVENANCE_FIELD = "local_read_safety_provenance"
 _IDENTITY_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:/-]*$")
 _TARGET_RE = re.compile(r"^\d{6}\.(?:SH|SZ|BJ)$")
 _ETF_RE = re.compile(r"^\d{6}\.(?:SH|SZ)$")
@@ -579,6 +580,8 @@ def strict_decimal_text(value: Any, *, minimum: float, maximum: float) -> str:
 
 
 def safety_projection(packet: Mapping[str, Any]) -> dict[str, bool] | None:
+    if INFERRED_SAFETY_PROVENANCE_FIELD in packet:
+        return None
     explicit_fields = packet.get("cache_api_explicit_safety_fields")
     required_fields = {*FALSE_SAFETY_FIELDS, *TRUE_SAFETY_FIELDS}
     if explicit_fields is not None and (
@@ -622,6 +625,8 @@ def build_source_projection(
     target: Any,
 ) -> dict[str, Any] | None:
     if not isinstance(etf_packet, Mapping) or not isinstance(margin_packet, Mapping):
+        return None
+    if any(INFERRED_SAFETY_PROVENANCE_FIELD in packet for packet in (etf_packet, margin_packet)):
         return None
     target_text = strict_target(target)
     etf_safety = safety_projection(etf_packet)

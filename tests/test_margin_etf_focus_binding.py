@@ -236,7 +236,12 @@ class MarginEtfFocusBindingTests(unittest.TestCase):
     def test_hand_json_missing_safety_and_explicit_deepseek_true_fail_closed(self):
         etf, margin, freshness = self._packets()
         for packet, builder in (
-            (etf, command_center_etf_packet._apply_etf_packet_contract),
+            (
+                etf,
+                lambda value: command_center_etf_packet.build_command_center_etf_packet(
+                    {"command_center_etf_packet": value}
+                ),
+            ),
             (margin, lambda value: command_center_margin_packet.build_command_center_margin_packet({"command_center_margin_packet": value}, target="002008.SZ")),
         ):
             manual = copy.deepcopy(packet)
@@ -245,7 +250,12 @@ class MarginEtfFocusBindingTests(unittest.TestCase):
             manual.pop("warnings", None)
             adapted = builder(manual)
             self.assertNotIn("warnings", adapted)
-            self.assertNotIn("deepseek_called", adapted)
+            self.assertFalse(adapted["deepseek_called"])
+            self.assertEqual(
+                adapted["local_read_safety_provenance"],
+                "legacy_builder_inferred_local_read_safety",
+            )
+            self.assertIsNone(provenance.safety_projection(adapted))
         etf["deepseek_called"] = True
         self.assertNotIn("margin_etf_focus_binding", self._attach(etf, margin, freshness, task={}, record=False)[0])
 
@@ -257,6 +267,122 @@ class MarginEtfFocusBindingTests(unittest.TestCase):
         self.assertFalse(normalized["deepseek_called"])
         self.assertNotIn("deepseek_called", normalized["cache_api_explicit_safety_fields"])
         self.assertIsNone(provenance.build_source_projection(normalized, margin, target="002008.SZ"))
+
+    def test_legacy_builder_inferred_safety_provenance_survives_snapshot_alias_normalize(self):
+        legacy_etf, legacy_margin, _ = self._packets()
+        for packet in (legacy_etf, legacy_margin):
+            packet.pop("packet_key")
+            for field in (*provenance.FALSE_SAFETY_FIELDS, *provenance.TRUE_SAFETY_FIELDS):
+                packet.pop(field)
+
+        built_etf = command_center_etf_packet.build_command_center_etf_packet(
+            {"command_center_etf_packet": legacy_etf}
+        )
+        built_margin = command_center_margin_packet.build_command_center_margin_packet(
+            {"command_center_margin_packet": legacy_margin},
+            target="002008.SZ",
+        )
+        for packet in (built_etf, built_margin):
+            self.assertFalse(packet["deepseek_called"])
+            self.assertEqual(
+                packet["local_read_safety_provenance"],
+                "legacy_builder_inferred_local_read_safety",
+            )
+            self.assertIsNone(provenance.safety_projection(packet))
+
+        snapshot_cache = {"etf_packet": built_etf, "margin_packet": built_margin}
+        normalized_etf = packet_service._read_snapshot_packet(
+            "command_center_etf_packet", snapshot_cache
+        )
+        normalized_margin = packet_service._read_snapshot_packet(
+            "command_center_margin_packet", snapshot_cache
+        )
+        self.assertIsNotNone(normalized_etf)
+        self.assertIsNotNone(normalized_margin)
+        for packet in (normalized_etf, normalized_margin):
+            self.assertFalse(packet["deepseek_called"])
+            self.assertEqual(
+                packet["local_read_safety_provenance"],
+                "legacy_builder_inferred_local_read_safety",
+            )
+            self.assertEqual(
+                set(packet["cache_api_explicit_safety_fields"]),
+                {*provenance.FALSE_SAFETY_FIELDS, *provenance.TRUE_SAFETY_FIELDS},
+            )
+            self.assertIsNone(provenance.safety_projection(packet))
+        self.assertIsNone(
+            provenance.build_source_projection(
+                normalized_etf,
+                normalized_margin,
+                target="002008.SZ",
+            )
+        )
+
+    def test_canonical_native_safety_survives_builder_and_snapshot_alias_normalize(self):
+        native_etf, native_margin, _ = self._packets()
+        built_etf = command_center_etf_packet.build_command_center_etf_packet(
+            {"command_center_etf_packet": native_etf}
+        )
+        built_margin = command_center_margin_packet.build_command_center_margin_packet(
+            {"command_center_margin_packet": native_margin},
+            target="002008.SZ",
+        )
+        snapshot_cache = {"etf_packet": built_etf, "margin_packet": built_margin}
+        normalized_etf = packet_service._read_snapshot_packet(
+            "command_center_etf_packet", snapshot_cache
+        )
+        normalized_margin = packet_service._read_snapshot_packet(
+            "command_center_margin_packet", snapshot_cache
+        )
+        self.assertIsNotNone(normalized_etf)
+        self.assertIsNotNone(normalized_margin)
+        for packet in (normalized_etf, normalized_margin):
+            self.assertNotIn("local_read_safety_provenance", packet)
+            self.assertIsNotNone(provenance.safety_projection(packet))
+        self.assertIsNotNone(
+            provenance.build_source_projection(
+                normalized_etf,
+                normalized_margin,
+                target="002008.SZ",
+            )
+        )
+
+    def test_canonical_packet_key_does_not_bless_builder_inferred_safety(self):
+        hand_etf, hand_margin, _ = self._packets()
+        for packet in (hand_etf, hand_margin):
+            for field in (*provenance.FALSE_SAFETY_FIELDS, *provenance.TRUE_SAFETY_FIELDS):
+                packet.pop(field)
+
+        built_etf = command_center_etf_packet.build_command_center_etf_packet(
+            {"command_center_etf_packet": hand_etf}
+        )
+        built_margin = command_center_margin_packet.build_command_center_margin_packet(
+            {"command_center_margin_packet": hand_margin},
+            target="002008.SZ",
+        )
+        for packet in (built_etf, built_margin):
+            self.assertFalse(packet["deepseek_called"])
+            self.assertEqual(
+                packet["local_read_safety_provenance"],
+                "legacy_builder_inferred_local_read_safety",
+            )
+        self.assertIsNone(
+            provenance.build_source_projection(
+                packet_service._normalize_cached_packet(
+                    "command_center_etf_packet",
+                    built_etf,
+                    source="stock_ming_snapshot",
+                    source_key="etf_packet",
+                ),
+                packet_service._normalize_cached_packet(
+                    "command_center_margin_packet",
+                    built_margin,
+                    source="stock_ming_snapshot",
+                    source_key="margin_packet",
+                ),
+                target="002008.SZ",
+            )
+        )
 
     def test_binding_and_provenance_truth_table_fail_closed(self):
         mutations = {
@@ -270,6 +396,7 @@ class MarginEtfFocusBindingTests(unittest.TestCase):
             "packet_warning": lambda e, m, f, t: e.update(warnings=["unsafe"]),
             "missing_warning_field": lambda e, m, f, t: e.pop("warnings"),
             "packet_deepseek": lambda e, m, f, t: e.update(deepseek_called=True),
+            "inferred_safety_marker_even_null": lambda e, m, f, t: e.update(local_read_safety_provenance=None),
             "wrong_etf_packet_key": lambda e, m, f, t: e.update(packet_key="manual_etf_packet"),
             "wrong_margin_packet_key": lambda e, m, f, t: m.update(packet_key="manual_margin_packet"),
             "data_status_alias_only": lambda e, m, f, t: (e.pop("data_status"), e.update(cache_state="ready")),

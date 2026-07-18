@@ -26,6 +26,8 @@ LOCAL_READ_FALSE_SAFETY_FIELDS = (
     "contains_secret",
 )
 LOCAL_READ_TRUE_SAFETY_FIELDS = ("does_not_execute_trades", "does_not_modify_strategy_action")
+LOCAL_READ_SAFETY_PROVENANCE_FIELD = "local_read_safety_provenance"
+LEGACY_ADAPTER_SAFETY_PROVENANCE = "legacy_builder_inferred_local_read_safety"
 
 
 def as_mapping(value: Any) -> dict:
@@ -423,7 +425,11 @@ def build_command_center_margin_packet(
             packet[field] = payload[field]
         else:
             packet.pop(field, None)
-    if payload.get("packet_key") != "command_center_margin_packet":
+    if LOCAL_READ_SAFETY_PROVENANCE_FIELD in payload:
+        packet[LOCAL_READ_SAFETY_PROVENANCE_FIELD] = payload[LOCAL_READ_SAFETY_PROVENANCE_FIELD]
+    required_fields = (*LOCAL_READ_FALSE_SAFETY_FIELDS, *LOCAL_READ_TRUE_SAFETY_FIELDS)
+    if not all(field in payload for field in required_fields):
         packet.update({field: False for field in LOCAL_READ_FALSE_SAFETY_FIELDS})
         packet.update({field: True for field in LOCAL_READ_TRUE_SAFETY_FIELDS})
+        packet[LOCAL_READ_SAFETY_PROVENANCE_FIELD] = LEGACY_ADAPTER_SAFETY_PROVENANCE
     return packet

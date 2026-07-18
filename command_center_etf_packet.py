@@ -33,6 +33,8 @@ LOCAL_READ_FALSE_SAFETY_FIELDS = (
     "contains_secret",
 )
 LOCAL_READ_TRUE_SAFETY_FIELDS = ("does_not_execute_trades", "does_not_modify_strategy_action")
+LOCAL_READ_SAFETY_PROVENANCE_FIELD = "local_read_safety_provenance"
+LEGACY_ADAPTER_SAFETY_PROVENANCE = "legacy_builder_inferred_local_read_safety"
 
 
 def as_mapping(value: Any) -> dict:
@@ -569,17 +571,18 @@ def _apply_etf_packet_contract(packet: Any = None) -> dict:
 def _finalize_legacy_local_read_safety(packet: dict, source: Mapping[str, Any]) -> dict:
     """Expose deterministic GET safety flags without blessing canonical packets.
 
-    Canonical producer packets must carry their own complete safety projection; a
-    missing field there stays missing so the Margin/ETF provenance gate fails
-    closed.  Older local inputs have no canonical packet identity, so their
-    adapted public packet reports what this local builder actually did: no
-    provider, model, worker, GitHub, or trading call.
+    A producer-native packet is identified by the complete safety fields it
+    supplied, never by a source label or packet key.  When this adapter has to
+    infer any safety field for an older local input, it records that fact beside
+    the deterministic UI flags so evidence projections can fail closed.
     """
 
-    if source.get("packet_key") == "command_center_etf_packet":
+    required_fields = (*LOCAL_READ_FALSE_SAFETY_FIELDS, *LOCAL_READ_TRUE_SAFETY_FIELDS)
+    if all(field in source for field in required_fields):
         return packet
     packet.update({field: False for field in LOCAL_READ_FALSE_SAFETY_FIELDS})
     packet.update({field: True for field in LOCAL_READ_TRUE_SAFETY_FIELDS})
+    packet[LOCAL_READ_SAFETY_PROVENANCE_FIELD] = LEGACY_ADAPTER_SAFETY_PROVENANCE
     return packet
 
 
