@@ -462,6 +462,7 @@ class NextSessionExternalPromotionTests(unittest.TestCase):
                 format=serialization.PublicFormat.SubjectPublicKeyInfo,
             )
         ).hexdigest()
+        self.key_history = {(1, self.fingerprint): self.public_key}
         self.patches = [
             patch.object(external_promotion, "APPROVAL_PATH", self.approval_path),
             patch.object(external_promotion, "HIGH_WATER_PATH", self.high_water_path),
@@ -481,13 +482,7 @@ class NextSessionExternalPromotionTests(unittest.TestCase):
             patch.object(
                 external_promotion.external_trust,
                 "_load_trusted_event_public_key",
-                return_value=(
-                    self.public_key,
-                    {
-                        "status": "external_public_key_verified",
-                        "key_fingerprint_sha256": self.fingerprint,
-                    },
-                ),
+                side_effect=self._load_event_key,
             ),
         ]
         for item in self.patches:
@@ -515,12 +510,22 @@ class NextSessionExternalPromotionTests(unittest.TestCase):
             item.stop()
         self.temp.cleanup()
 
+    def _load_event_key(self, *, epoch: object, fingerprint: object) -> tuple:
+        key = self.key_history.get((epoch, fingerprint))
+        if key is None:
+            return None, {"status": "trusted_key_history_material_unavailable_or_untrusted"}
+        return key, {
+            "status": "trusted_historical_public_key_verified",
+            "key_fingerprint_sha256": fingerprint,
+        }
+
     def _sign(self, schema: str, statement: dict) -> dict:
         signature = self.private_key.sign(external_promotion._canonical_bytes(statement))
         return {
             "schema_version": schema,
             "algorithm": "Ed25519",
             "key_fingerprint_sha256": self.fingerprint,
+            "key_epoch": statement["key_epoch"],
             "statement": statement,
             "signature_base64": base64.b64encode(signature).decode("ascii"),
         }
@@ -532,9 +537,12 @@ class NextSessionExternalPromotionTests(unittest.TestCase):
         sequence_no: int = 1,
         previous: str = "",
         issued: datetime | None = None,
+        high_water_issued: datetime | None = None,
+        key_epoch: int = 1,
     ) -> tuple[dict, dict]:
         proposal = external_promotion.build_proposal(self.prerequisites, self.evidence)
         issued = issued or datetime.now(timezone.utc).replace(microsecond=0)
+        high_water_issued = high_water_issued or issued
         approval = {
             "schema_version": external_promotion.APPROVAL_STATEMENT_SCHEMA,
             "status": "next_session_replacement_approved",
@@ -547,6 +555,7 @@ class NextSessionExternalPromotionTests(unittest.TestCase):
             "approved_by_user": True,
             "issued_at": issued.isoformat().replace("+00:00", "Z"),
             "expires_at": (issued + timedelta(minutes=5)).isoformat().replace("+00:00", "Z"),
+            "key_epoch": key_epoch,
         }
         approval["approval_id"] = external_promotion._digest(
             {key: approval[key] for key in sorted(approval) if key != "approval_id"}
@@ -572,7 +581,8 @@ class NextSessionExternalPromotionTests(unittest.TestCase):
             "previous_event_id": previous,
             "approval_id": approval["approval_id"],
             "nonce_digest": nonce,
-            "issued_at": issued.isoformat().replace("+00:00", "Z"),
+            "issued_at": high_water_issued.isoformat().replace("+00:00", "Z"),
+            "key_epoch": key_epoch,
         }
         approval_envelope = self._sign(external_promotion.APPROVAL_ENVELOPE_SCHEMA, approval)
         high_water_envelope = self._sign(external_promotion.HIGH_WATER_ENVELOPE_SCHEMA, high_water)
@@ -603,7 +613,7 @@ class NextSessionExternalPromotionTests(unittest.TestCase):
             "approval_signature_digest": event["approval_signature_digest"],
             "high_water_signature_digest": event["high_water_signature_digest"],
             "approval_nonce_digest": event["approval_nonce_digest"],
-            "key_epoch": 1,
+            "key_epoch": event["key_epoch"],
             "issued_at": issued.isoformat().replace("+00:00", "Z"),
             "expires_at": (issued + timedelta(minutes=5)).isoformat().replace("+00:00", "Z"),
             "external_counter": event["expected_external_counter"],
@@ -615,7 +625,7 @@ class NextSessionExternalPromotionTests(unittest.TestCase):
             "schema_version": external_promotion.FINALIZATION_ENVELOPE_SCHEMA,
             "algorithm": "Ed25519",
             "key_fingerprint_sha256": self.fingerprint,
-            "key_epoch": 1,
+            "key_epoch": event["key_epoch"],
             "statement": statement,
             "signature_base64": base64.b64encode(signature).decode("ascii"),
         }
@@ -769,6 +779,107 @@ class NextSessionExternalPromotionTests(unittest.TestCase):
                     "external_next_session_finalization_contract_invalid",
                     validated["blockers"],
                 )
+
+    def test_receipt_numeric_fields_reject_bool(self) -> None:
+        self._write_external_pair(nonce="3" * 64)
+        prepared = external_promotion.append_promotion_event(
+            {"approved_by_user": True}, self.prerequisites, evidence_root=self.evidence
+        )["event"]
+        for field in ("sequence_no", "external_counter", "key_epoch"):
+            with self.subTest(field=field):
+                self._write_finalization(prepared, **{field: True})
+                validated = external_promotion.validate_current_promotion(
+                    self.prerequisites, evidence_root=self.evidence
+                )
+                self.assertFalse(validated["ready"])
+                self.assertIn(
+                    "external_next_session_finalization_contract_invalid",
+                    validated["blockers"],
+                )
+
+    def test_future_high_water_is_rejected_before_prepare(self) -> None:
+        self._write_external_pair(
+            nonce="4" * 64,
+            issued=datetime.now(timezone.utc) + timedelta(minutes=1),
+        )
+        result = external_promotion.append_promotion_event(
+            {"approved_by_user": True}, self.prerequisites, evidence_root=self.evidence
+        )
+        self.assertFalse(result.get("prepared_event_written", False))
+        self.assertIn("external_next_session_high_water_issued_in_future", result["blockers"])
+
+    def test_key_rotation_uses_storage_history_and_missing_history_fails_closed(self) -> None:
+        self._write_external_pair(nonce="5" * 64)
+        first = external_promotion.append_promotion_event(
+            {"approved_by_user": True}, self.prerequisites, evidence_root=self.evidence
+        )
+        self._write_finalization(first["event"])
+        self.assertTrue(
+            external_promotion.validate_current_promotion(
+                self.prerequisites, evidence_root=self.evidence
+            )["ready"]
+        )
+
+        self.private_key = Ed25519PrivateKey.generate()
+        self.public_key = self.private_key.public_key()
+        self.fingerprint = hashlib.sha256(
+            self.public_key.public_bytes(
+                encoding=serialization.Encoding.DER,
+                format=serialization.PublicFormat.SubjectPublicKeyInfo,
+            )
+        ).hexdigest()
+        self.key_history[(2, self.fingerprint)] = self.public_key
+        self._write_external_pair(
+            nonce="6" * 64,
+            sequence_no=2,
+            previous=first["event_id"],
+            key_epoch=2,
+        )
+        second = external_promotion.append_promotion_event(
+            {"approved_by_user": True}, self.prerequisites, evidence_root=self.evidence
+        )
+        self.assertTrue(second["prepared_event_written"], second["blockers"])
+        self.assertEqual(second["event"]["key_epoch"], 2)
+        self._write_finalization(second["event"])
+        rotated = external_promotion.validate_current_promotion(
+            self.prerequisites, evidence_root=self.evidence
+        )
+        self.assertTrue(rotated["ready"], rotated["blockers"])
+
+        self.key_history = {
+            binding: key for binding, key in self.key_history.items() if binding[0] != 1
+        }
+        missing_history = external_promotion.validate_current_promotion(
+            self.prerequisites, evidence_root=self.evidence
+        )
+        self.assertFalse(missing_history["ready"])
+        self.assertIn(
+            "trusted_key_history_material_unavailable_or_untrusted",
+            missing_history["blockers"],
+        )
+
+    def test_postcommit_full_journal_validation_controls_written_claim(self) -> None:
+        self._write_external_pair(nonce="a" * 64)
+        original = external_promotion._read_events
+        calls = 0
+
+        def fail_postcommit(root: Path) -> tuple[list[dict], list[str]]:
+            nonlocal calls
+            calls += 1
+            if calls >= 4:
+                return [], ["injected_postcommit_journal_failure"]
+            return original(root)
+
+        with patch.object(external_promotion, "_read_events", side_effect=fail_postcommit):
+            result = external_promotion.append_promotion_event(
+                {"approved_by_user": True}, self.prerequisites, evidence_root=self.evidence
+            )
+        self.assertFalse(result["prepared_event_written"])
+        self.assertFalse(result["promotion_written"])
+        self.assertIn(
+            "next_session_prepared_event_postcommit_journal_validation_failed",
+            result["blockers"],
+        )
 
     def test_old_receipt_replay_cannot_finalize_new_prepared_generation(self) -> None:
         self._write_external_pair(nonce="1" * 64)

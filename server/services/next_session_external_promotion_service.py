@@ -46,6 +46,8 @@ HIGH_WATER_STATEMENT_SCHEMA = "next_session_external_high_water_statement.v1"
 EVENT_SCHEMA = "next_session_production_replacement_prepared_event.v1"
 FINALIZATION_ENVELOPE_SCHEMA = "next_session_external_finalization_envelope.v1"
 FINALIZATION_STATEMENT_SCHEMA = "next_session_external_finalization_statement.v1"
+MAX_CLOCK_SKEW_SECONDS = 0
+MAX_COUNTER = 2**63 - 1
 TRUSTED_OWNER_UIDS = frozenset({0})
 _HEAD = re.compile(r"^[0-9a-f]{40}$")
 _DIGEST = re.compile(r"^[0-9a-f]{64}$")
@@ -54,10 +56,11 @@ _ENVELOPE_FIELDS = {
     "schema_version",
     "algorithm",
     "key_fingerprint_sha256",
+    "key_epoch",
     "statement",
     "signature_base64",
 }
-_FINALIZATION_ENVELOPE_FIELDS = _ENVELOPE_FIELDS | {"key_epoch"}
+_FINALIZATION_ENVELOPE_FIELDS = set(_ENVELOPE_FIELDS)
 _APPROVAL_FIELDS = {
     "schema_version",
     "status",
@@ -70,6 +73,7 @@ _APPROVAL_FIELDS = {
     "approved_by_user",
     "issued_at",
     "expires_at",
+    "key_epoch",
 }
 _HIGH_WATER_FIELDS = {
     "schema_version",
@@ -83,6 +87,7 @@ _HIGH_WATER_FIELDS = {
     "approval_id",
     "nonce_digest",
     "issued_at",
+    "key_epoch",
 }
 _EVENT_FIELDS = {
     "schema_version",
@@ -106,6 +111,7 @@ _EVENT_FIELDS = {
     "approval_signature_digest",
     "high_water_signature_digest",
     "key_fingerprint_sha256",
+    "key_epoch",
     "recorded_at_utc",
     "commit_generation",
     "prepared_event_digest",
@@ -255,13 +261,19 @@ def _verify_signature(envelope: Mapping[str, Any], *, schema: str) -> tuple[bool
         return False, "external_envelope_shape_invalid", ""
     if envelope.get("algorithm") != "Ed25519":
         return False, "external_envelope_algorithm_invalid", ""
-    key, trust = external_trust._load_trusted_public_key()
+    key_epoch = envelope.get("key_epoch")
+    fingerprint = str(envelope.get("key_fingerprint_sha256") or "")
+    if not (type(key_epoch) is int and 1 <= key_epoch <= MAX_COUNTER):
+        return False, "external_envelope_key_epoch_invalid", ""
+    key, trust = external_trust._load_trusted_event_public_key(
+        epoch=key_epoch,
+        fingerprint=fingerprint,
+    )
     if key is None:
         return False, str(trust.get("status") or "external_public_key_unavailable"), ""
-    fingerprint = str(trust.get("key_fingerprint_sha256") or "")
     if not (
         _DIGEST.fullmatch(fingerprint)
-        and isinstance(envelope.get("key_fingerprint_sha256"), str)
+        and str(trust.get("key_fingerprint_sha256") or "") == fingerprint
         and bytes_eq(
             str(envelope.get("key_fingerprint_sha256")).encode("ascii", "ignore"),
             fingerprint.encode("ascii"),
@@ -370,6 +382,7 @@ def _read_events(evidence_root: Path) -> tuple[list[dict[str, Any]], list[str]]:
             event.get("schema_version") == EVENT_SCHEMA
             and event.get("status") == "next_session_production_replacement_prepared"
             and event.get("scope") == SCOPE
+            and type(event.get("sequence_no")) is int
             and event.get("sequence_no") == sequence
             and event.get("previous_event_id") == previous_id
             and event.get("event_id") == expected_event_id
@@ -378,7 +391,9 @@ def _read_events(evidence_root: Path) -> tuple[list[dict[str, Any]], list[str]]:
             and isinstance(event.get("commit_generation"), str)
             and bool(re.fullmatch(r"[0-9a-f]{32}", str(event.get("commit_generation"))))
             and type(event.get("expected_external_counter")) is int
-            and event.get("expected_external_counter") >= 1
+            and 1 <= event.get("expected_external_counter") <= MAX_COUNTER
+            and type(event.get("key_epoch")) is int
+            and 1 <= event.get("key_epoch") <= MAX_COUNTER
             and _DIGEST.fullmatch(str(event.get("previous_finalization_digest") or ""))
             and _HEAD.fullmatch(str(event.get("head_full") or ""))
             and _DIGEST.fullmatch(str(event.get("semantic_digest") or ""))
@@ -388,11 +403,14 @@ def _read_events(evidence_root: Path) -> tuple[list[dict[str, Any]], list[str]]:
             and event.get("high_water_signature_digest") == high_water_signature_digest
             and event.get("key_fingerprint_sha256") == approval.get("key_fingerprint_sha256")
             and approval.get("key_fingerprint_sha256") == high_water.get("key_fingerprint_sha256")
+            and event.get("key_epoch") == approval.get("key_epoch")
+            and approval.get("key_epoch") == high_water.get("key_epoch")
             and isinstance(approval_statement, Mapping)
             and isinstance(high_water_statement, Mapping)
             and approval_statement.get("approval_id") == event.get("approval_id")
             and approval_statement.get("review_id") == event.get("approval_review_id")
             and approval_statement.get("nonce_digest") == nonce
+            and approval_statement.get("key_epoch") == event.get("key_epoch")
             and high_water_statement.get("event_id") == event.get("event_id")
             and high_water_statement.get("sequence_no") == sequence
             and high_water_statement.get("previous_event_id") == previous_id
@@ -400,6 +418,7 @@ def _read_events(evidence_root: Path) -> tuple[list[dict[str, Any]], list[str]]:
             and high_water_statement.get("nonce_digest") == nonce
             and high_water_statement.get("head_full") == event.get("head_full")
             and high_water_statement.get("semantic_digest") == event.get("semantic_digest")
+            and high_water_statement.get("key_epoch") == event.get("key_epoch")
             and _timestamp(event.get("recorded_at_utc")) is not None
             and _timestamp(high_water_statement.get("issued_at")) is not None
             and _timestamp(event.get("recorded_at_utc"))
@@ -494,6 +513,7 @@ def _verify_external_pair(
     issued_at = _timestamp(approval_statement.get("issued_at"))
     expires_at = _timestamp(approval_statement.get("expires_at"))
     high_water_issued_at = _timestamp(high_water_statement.get("issued_at"))
+    key_epoch = approval.get("key_epoch")
     if not (
         approval_statement.get("schema_version") == APPROVAL_STATEMENT_SCHEMA
         and approval_statement.get("status") == "next_session_replacement_approved"
@@ -505,6 +525,10 @@ def _verify_external_pair(
         and _DIGEST.fullmatch(approval_id)
         and _DIGEST.fullmatch(str(approval_statement.get("nonce_digest") or ""))
         and approval_statement.get("approved_by_user") is True
+        and type(key_epoch) is int
+        and 1 <= key_epoch <= MAX_COUNTER
+        and type(approval_statement.get("key_epoch")) is int
+        and approval_statement.get("key_epoch") == key_epoch
         and issued_at is not None
         and expires_at is not None
         and issued_at < expires_at
@@ -529,10 +553,14 @@ def _verify_external_pair(
         and high_water_statement.get("head_full") == proposal.get("head_full")
         and high_water_statement.get("semantic_digest") == proposal.get("semantic_digest")
         and high_water_statement.get("event_id") == event_id
+        and type(high_water_statement.get("sequence_no")) is int
         and high_water_statement.get("sequence_no") == proposal.get("sequence_no")
         and high_water_statement.get("previous_event_id") == proposal.get("previous_event_id")
         and high_water_statement.get("approval_id") == approval_id
         and high_water_statement.get("nonce_digest") == approval_statement.get("nonce_digest")
+        and high_water.get("key_epoch") == key_epoch
+        and type(high_water_statement.get("key_epoch")) is int
+        and high_water_statement.get("key_epoch") == key_epoch
         and high_water_issued_at is not None
         and issued_at is not None
         and expires_at is not None
@@ -543,6 +571,11 @@ def _verify_external_pair(
         now = datetime.now(timezone.utc)
         if not (issued_at <= now <= expires_at):
             blockers.append("external_next_session_approval_expired_or_not_yet_valid")
+        if (
+            high_water_issued_at is not None
+            and high_water_issued_at.timestamp() > now.timestamp() + MAX_CLOCK_SKEW_SECONDS
+        ):
+            blockers.append("external_next_session_high_water_issued_in_future")
     return {
         "ready": not blockers,
         "event_id": event_id if not blockers else "",
@@ -551,6 +584,7 @@ def _verify_external_pair(
         "approval_signature_digest": approval_signature_digest if not blockers else "",
         "high_water_signature_digest": high_water_signature_digest if not blockers else "",
         "key_fingerprint_sha256": str(approval.get("key_fingerprint_sha256") or "") if not blockers else "",
+        "key_epoch": key_epoch if not blockers else 0,
         "recorded_at_utc": str(high_water_statement.get("issued_at") or "") if not blockers else "",
         "approval_envelope": approval if not blockers else {},
         "high_water_envelope": high_water if not blockers else {},
@@ -607,6 +641,8 @@ def _verify_external_finalization(
         and statement.get("scope") == SCOPE
         and statement.get("head_full") == prepared.get("head_full")
         and statement.get("event_id") == prepared.get("event_id")
+        and type(statement.get("sequence_no")) is int
+        and 1 <= statement.get("sequence_no") <= MAX_COUNTER
         and statement.get("sequence_no") == prepared.get("sequence_no")
         and statement.get("commit_generation") == prepared.get("commit_generation")
         and statement.get("prepared_event_digest") == prepared.get("prepared_event_digest")
@@ -614,9 +650,14 @@ def _verify_external_finalization(
         and statement.get("approval_signature_digest") == prepared.get("approval_signature_digest")
         and statement.get("high_water_signature_digest") == prepared.get("high_water_signature_digest")
         and statement.get("approval_nonce_digest") == prepared.get("approval_nonce_digest")
+        and type(statement.get("key_epoch")) is int
+        and 1 <= statement.get("key_epoch") <= MAX_COUNTER
         and statement.get("key_epoch") == key_epoch
         and type(key_epoch) is int
-        and key_epoch >= 1
+        and 1 <= key_epoch <= MAX_COUNTER
+        and key_epoch == prepared.get("key_epoch")
+        and type(statement.get("external_counter")) is int
+        and 1 <= statement.get("external_counter") <= MAX_COUNTER
         and statement.get("external_counter") == prepared.get("expected_external_counter")
         and statement.get("previous_finalization_digest")
         == prepared.get("previous_finalization_digest")
@@ -760,6 +801,24 @@ def _reconcile_event_commit(
                 if event_path.exists()
                 else "next_session_promotion_event_exclusive_write_failed"
             ],
+        }
+    journal_events, journal_blockers = _read_events(evidence_root)
+    if (
+        journal_blockers
+        or not journal_events
+        or journal_events[-1] != dict(event)
+        or len(journal_events) != event.get("sequence_no")
+    ):
+        return {
+            "ready": False,
+            "production_replacement_complete": False,
+            "status": "next_session_production_replacement_prepared_event_validation_failed",
+            "promotion_written": False,
+            "prepared_event_written": False,
+            "prepared": False,
+            "blockers": sorted(
+                set([*journal_blockers, "next_session_prepared_event_postcommit_journal_validation_failed"])
+            ),
         }
     return {
         "ready": False,
@@ -910,6 +969,7 @@ def append_promotion_event(
             "approval_signature_digest": external_pair["approval_signature_digest"],
             "high_water_signature_digest": external_pair["high_water_signature_digest"],
             "key_fingerprint_sha256": external_pair["key_fingerprint_sha256"],
+            "key_epoch": external_pair["key_epoch"],
             "recorded_at_utc": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
             "commit_generation": uuid.uuid4().hex,
             "prepared_event_digest": "",
