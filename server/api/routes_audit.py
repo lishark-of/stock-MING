@@ -3,7 +3,7 @@ from __future__ import annotations
 from fastapi import APIRouter
 
 from server.schemas.packets import cache_read_call_ledger, cache_read_packet, envelope
-from server.services import audit_service, release_promotion_service
+from server.services import audit_service, external_production_attestation_service, release_promotion_service
 
 
 router = APIRouter(prefix="/api/audit")
@@ -58,6 +58,18 @@ def promote_production_release(payload: dict | None = None) -> dict:
         call_ledger=_production_release_promotion_ledger(packet, request_method="POST"),
         warnings=packet.get("blockers"),
     )
+
+
+@router.get("/external-production-attestation")
+def get_external_production_attestation() -> dict:
+    packet = external_production_attestation_service.read_external_attestation_status()
+    return envelope(packet, call_ledger=[], warnings=[])
+
+
+@router.post("/external-production-attestation")
+def import_external_production_attestation(payload: dict | None = None) -> dict:
+    packet = external_production_attestation_service.import_signed_attestation(payload)
+    return envelope(packet, call_ledger=[], warnings=[] if packet.get("ready") else [packet.get("status")])
 
 
 @router.get("/user-route-qa")

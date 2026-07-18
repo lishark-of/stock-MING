@@ -140,6 +140,16 @@ def run_storage_cache_ttl_dry_run(payload: dict[str, Any] | None = None) -> dict
     return task_envelope(task)
 
 
+@router.post("/cache-ttl/production-attestation")
+def import_storage_cache_ttl_production_attestation(payload: dict[str, Any] | None = None) -> dict:
+    packet = storage_service.import_storage_cache_ttl_external_attestation(payload)
+    return envelope(
+        packet,
+        call_ledger=[],
+        warnings=[] if packet.get("ready") else [packet.get("status")],
+    )
+
+
 @router.post("/duckdb-read/validate")
 def run_storage_duckdb_read_validation(payload: dict[str, Any] | None = None) -> dict:
     task = storage_service.run_storage_duckdb_read_validation_task(payload)
