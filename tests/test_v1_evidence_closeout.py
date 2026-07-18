@@ -512,6 +512,41 @@ class V1EvidenceCloseoutTests(unittest.TestCase):
             "candidate_radar_production_replacement",
             rows["LTG-13"]["missing_production_evidence"],
         )
+    def test_forged_next_session_boolean_does_not_bypass_ltg08_validator(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir) / "evidence"
+            _seed_complete_local_versions(root)
+            forged = {
+                "schema_version": "next_session_projection.v1",
+                "status": "ready_cache_replay",
+                "production_replacement_complete": True,
+                "next_session_production_replacement": True,
+                **_safe_boundary(),
+            }
+            with sqlite3.connect(root / "v05_acceptance_runtime" / "meta.sqlite") as connection:
+                connection.execute(
+                    "INSERT OR REPLACE INTO packets(packet_key, payload_json, updated_at) VALUES (?, ?, ?)",
+                    (
+                        "command_center_next_session_projection_packet",
+                        json.dumps(forged),
+                        "2026-07-18T00:00:00+00:00",
+                    ),
+                )
+            blocked = {
+                "status": "next_session_production_replacement_blocked",
+                "production_replacement_complete": False,
+                "blockers": ["independent_validator_blocked_forged_packet"],
+            }
+            with patch.object(
+                v1_closeout_service.next_session_replacement_promotion_service,
+                "validate_next_session_production_replacement",
+                return_value=blocked,
+            ) as validator:
+                packet = v1_closeout_service.build_v1_closeout_evaluation(evidence_root=root)
+            validator.assert_called_once()
+            ltg08 = next(row for row in packet["ltg_closure_rows"] if row["id"] == "LTG-08")
+            self.assertFalse(ltg08["production_complete"])
+            self.assertFalse(ltg08["can_close"])
 
     def test_migration_get_is_zero_write_and_no_external_call(self):
         with tempfile.TemporaryDirectory() as temp_dir:

@@ -20,7 +20,7 @@ import stat
 import subprocess
 import uuid
 from collections.abc import Mapping
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
@@ -38,10 +38,16 @@ EVENTS_NAME = "events"
 TRUST_NAME = ".writer_trust"
 KEY_NAME = "writer.key"
 STATE_NAME = "writer.state"
+APPROVAL_ROOT_NAME = ".next_session_replacement_approval"
+APPROVAL_KEY_NAME = "approval.key"
+APPROVAL_TICKET_NAME = "approval.ticket.json"
+APPROVAL_STATE_NAME = "approval.state.json"
 
 EVENT_SCHEMA = "next_session_production_replacement_event.v1"
 STATE_SCHEMA = "next_session_production_replacement_state.v1"
 VALIDATION_SCHEMA = "next_session_production_replacement_validation.v1"
+APPROVAL_TICKET_SCHEMA = "next_session_production_replacement_approval_ticket.v1"
+APPROVAL_STATE_SCHEMA = "next_session_production_replacement_approval_state.v1"
 SCOPE = "ltg08_next_session_current_head_production_replacement"
 
 _HEAD = re.compile(r"^[0-9a-f]{40}$")
@@ -50,6 +56,25 @@ _EVENT_FILE = re.compile(r"^[0-9]{8}\.json$")
 _REQUIRED_VIEWPORTS = {"desktop", "laptop", "tablet", "mobile"}
 _REQUIRED_FEATURE_COUNT = 9
 _MIN_PRODUCTION_CLOSE_POINTS = 60
+_PROVENANCE_FIELDS = {
+    "schema_version",
+    "status",
+    "head_full",
+    "source_task_id",
+    "source_task_status",
+    "source_task_digest",
+    "symbol",
+    "data_date",
+    "provider_scope_hash",
+    "dataset_version_digest",
+    "daily_rows_digest",
+    "trade_calendar_digest",
+    "provider_backed",
+    "authoritative_dataset",
+    "trade_calendar_validated",
+    "synthetic_fixture",
+    "local_preview",
+}
 
 _EVENT_FIELDS = {
     "schema_version",
@@ -65,10 +90,37 @@ _EVENT_FIELDS = {
     "remote_ci_digest",
     "remote_run_id",
     "remote_artifact_digest",
+    "release_promotion_event_id",
+    "approval_review_id",
+    "approval_ticket_id",
+    "approval_nonce_digest",
     "approved_by_user",
     "recorded_at_utc",
     "previous_event_mac",
     "event_mac",
+}
+_APPROVAL_FIELDS = {
+    "schema_version",
+    "status",
+    "scope",
+    "head_full",
+    "semantic_digest",
+    "review_id",
+    "ticket_id",
+    "nonce_digest",
+    "approved_by_user",
+    "issued_at_utc",
+    "expires_at_utc",
+    "ticket_mac",
+}
+_APPROVAL_STATE_FIELDS = {
+    "schema_version",
+    "sequence_no",
+    "event_id",
+    "event_mac",
+    "approval_ticket_id",
+    "consumed_at_utc",
+    "state_mac",
 }
 _STATE_FIELDS = {
     "schema_version",
@@ -341,6 +393,246 @@ def _atomic_private_json(path: Path, value: Mapping[str, Any], *, replace: bool)
         return "next_session_replacement_journal_write_failed"
 
 
+def _approval_paths(evidence_root: Path | str) -> tuple[Path, Path, Path, Path]:
+    root = Path(evidence_root).expanduser().resolve() / APPROVAL_ROOT_NAME
+    return (
+        root,
+        root / APPROVAL_KEY_NAME,
+        root / APPROVAL_TICKET_NAME,
+        root / APPROVAL_STATE_NAME,
+    )
+
+
+def _read_approval_secret(evidence_root: Path | str) -> tuple[bytes | None, str]:
+    root, key_path, _, _ = _approval_paths(evidence_root)
+    if not root.exists():
+        return None, "next_session_replacement_out_of_band_approval_capability_missing"
+    if not _directory_valid(root):
+        return None, "next_session_replacement_out_of_band_approval_capability_invalid"
+    try:
+        names = {entry.name for entry in root.iterdir()}
+    except OSError:
+        return None, "next_session_replacement_out_of_band_approval_capability_invalid"
+    if not names.issubset({APPROVAL_KEY_NAME, APPROVAL_TICKET_NAME, APPROVAL_STATE_NAME}):
+        return None, "next_session_replacement_out_of_band_approval_capability_invalid"
+    secret = _secure_regular(key_path, mode=0o600, max_bytes=32)
+    if secret is None or len(secret) != 32:
+        return None, "next_session_replacement_out_of_band_approval_capability_invalid"
+    return secret, ""
+
+
+def _create_approval_secret(evidence_root: Path | str) -> tuple[bytes | None, str]:
+    """Provision the operator-only capability; the HTTP route never calls this."""
+
+    root, key_path, _, _ = _approval_paths(evidence_root)
+    evidence_directory = root.parent
+    try:
+        evidence_directory.mkdir(mode=0o700, exist_ok=True)
+        if not _evidence_anchor_valid(evidence_directory):
+            return None, "next_session_replacement_evidence_directory_invalid"
+        try:
+            root.mkdir(mode=0o700, exist_ok=False)
+        except FileExistsError:
+            pass
+        if not _directory_valid(root):
+            return None, "next_session_replacement_out_of_band_approval_capability_invalid"
+        if key_path.exists():
+            return _read_approval_secret(evidence_root)
+        secret = secrets.token_bytes(32)
+        descriptor = os.open(
+            key_path,
+            os.O_WRONLY
+            | os.O_CREAT
+            | os.O_EXCL
+            | int(getattr(os, "O_CLOEXEC", 0))
+            | int(getattr(os, "O_NOFOLLOW", 0)),
+            0o600,
+        )
+        try:
+            offset = 0
+            while offset < len(secret):
+                offset += os.write(descriptor, secret[offset:])
+            os.fsync(descriptor)
+        finally:
+            os.close(descriptor)
+        directory_descriptor = os.open(root, os.O_RDONLY | int(getattr(os, "O_DIRECTORY", 0)))
+        try:
+            os.fsync(directory_descriptor)
+        finally:
+            os.close(directory_descriptor)
+    except OSError:
+        return None, "next_session_replacement_out_of_band_approval_capability_create_failed"
+    return _read_approval_secret(evidence_root)
+
+
+def _approval_without_mac(ticket: Mapping[str, Any]) -> dict[str, Any]:
+    return {key: ticket.get(key) for key in sorted(_APPROVAL_FIELDS - {"ticket_mac"})}
+
+
+def _approval_review_id(*, head_full: str, semantic_digest: str) -> str:
+    return _digest({"scope": SCOPE, "head_full": head_full, "semantic_digest": semantic_digest})
+
+
+def record_next_session_replacement_approval_ticket(
+    *,
+    evidence_root: Path | str = EVIDENCE_ROOT,
+    expected_head_full: str,
+    semantic_digest: str,
+    review_id: str,
+    approved_by_user: bool,
+    project_root: Path = PROJECT_ROOT,
+) -> dict[str, Any]:
+    """Out-of-band operator recorder; intentionally not exposed by FastAPI."""
+
+    root = Path(evidence_root).expanduser().resolve()
+    head_full = _normalize_head(expected_head_full)
+    prerequisites = _collect_prerequisites(
+        root,
+        expected_head_full=head_full,
+        project_root=project_root,
+    )
+    expected_review_id = _approval_review_id(
+        head_full=head_full,
+        semantic_digest=str(prerequisites.get("semantic_digest") or ""),
+    )
+    blockers = list(prerequisites.get("blockers") or [])
+    if approved_by_user is not True:
+        blockers.append("explicit_user_next_session_replacement_approval_required")
+    if semantic_digest != prerequisites.get("semantic_digest"):
+        blockers.append("next_session_replacement_approval_semantic_digest_mismatch")
+    if review_id != expected_review_id:
+        blockers.append("next_session_replacement_approval_review_id_mismatch")
+    if blockers:
+        return {
+            "status": "next_session_replacement_approval_ticket_blocked",
+            "ticket_written": False,
+            "review_id": expected_review_id,
+            "blockers": sorted(set(blockers)),
+        }
+    _, _, ticket_path, _ = _approval_paths(root)
+    if ticket_path.exists():
+        return {
+            "status": "next_session_replacement_approval_ticket_blocked",
+            "ticket_written": False,
+            "review_id": expected_review_id,
+            "blockers": ["next_session_replacement_approval_ticket_already_pending"],
+        }
+    secret, blocker = _read_approval_secret(root)
+    if secret is None and blocker == "next_session_replacement_out_of_band_approval_capability_missing":
+        secret, blocker = _create_approval_secret(root)
+    if secret is None:
+        return {
+            "status": "next_session_replacement_approval_ticket_blocked",
+            "ticket_written": False,
+            "review_id": expected_review_id,
+            "blockers": [blocker],
+        }
+    issued = datetime.now(timezone.utc).replace(microsecond=0)
+    nonce_digest = hashlib.sha256(secrets.token_bytes(32)).hexdigest()
+    ticket: dict[str, Any] = {
+        "schema_version": APPROVAL_TICKET_SCHEMA,
+        "status": "next_session_replacement_approval_ticket_issued",
+        "scope": SCOPE,
+        "head_full": head_full,
+        "semantic_digest": semantic_digest,
+        "review_id": review_id,
+        "ticket_id": "",
+        "nonce_digest": nonce_digest,
+        "approved_by_user": True,
+        "issued_at_utc": issued.isoformat().replace("+00:00", "Z"),
+        "expires_at_utc": (issued + timedelta(minutes=15)).isoformat().replace("+00:00", "Z"),
+        "ticket_mac": "",
+    }
+    ticket["ticket_id"] = _digest(
+        {key: value for key, value in _approval_without_mac(ticket).items() if key != "ticket_id"}
+    )
+    ticket["ticket_mac"] = _mac(secret, _approval_without_mac(ticket))
+    blocker = _atomic_private_json(ticket_path, ticket, replace=False)
+    return {
+        "status": (
+            "next_session_replacement_approval_ticket_issued"
+            if not blocker
+            else "next_session_replacement_approval_ticket_blocked"
+        ),
+        "ticket_written": not blocker,
+        "review_id": review_id,
+        "ticket_id": ticket["ticket_id"] if not blocker else "",
+        "blockers": [] if not blocker else [blocker],
+        "contains_secret": False,
+    }
+
+
+def _load_approval_ticket(
+    evidence_root: Path | str,
+    *,
+    head_full: str,
+    semantic_digest: str,
+) -> tuple[dict[str, Any] | None, str]:
+    secret, blocker = _read_approval_secret(evidence_root)
+    if secret is None:
+        return None, blocker
+    _, _, ticket_path, _ = _approval_paths(evidence_root)
+    ticket = _read_json(ticket_path)
+    if set(ticket) != _APPROVAL_FIELDS:
+        return None, "next_session_replacement_out_of_band_approval_ticket_missing_or_invalid"
+    unsigned = _approval_without_mac(ticket)
+    expected_id = _digest({key: value for key, value in unsigned.items() if key != "ticket_id"})
+    now = datetime.now(timezone.utc).replace(microsecond=0)
+    try:
+        expires = datetime.fromisoformat(str(ticket.get("expires_at_utc") or "").replace("Z", "+00:00"))
+    except ValueError:
+        expires = datetime.min.replace(tzinfo=timezone.utc)
+    if not (
+        ticket.get("schema_version") == APPROVAL_TICKET_SCHEMA
+        and ticket.get("status") == "next_session_replacement_approval_ticket_issued"
+        and ticket.get("scope") == SCOPE
+        and ticket.get("head_full") == head_full
+        and ticket.get("semantic_digest") == semantic_digest
+        and ticket.get("review_id") == _approval_review_id(head_full=head_full, semantic_digest=semantic_digest)
+        and ticket.get("ticket_id") == expected_id
+        and _SHA256.fullmatch(str(ticket.get("ticket_id") or ""))
+        and _SHA256.fullmatch(str(ticket.get("nonce_digest") or ""))
+        and ticket.get("approved_by_user") is True
+        and _valid_timestamp(ticket.get("issued_at_utc"))
+        and _valid_timestamp(ticket.get("expires_at_utc"))
+        and expires >= now
+        and _SHA256.fullmatch(str(ticket.get("ticket_mac") or ""))
+        and hmac.compare_digest(str(ticket.get("ticket_mac") or ""), _mac(secret, unsigned))
+    ):
+        return None, "next_session_replacement_out_of_band_approval_ticket_invalid_or_stale"
+    return ticket, ""
+
+
+def _approval_state_without_mac(state: Mapping[str, Any]) -> dict[str, Any]:
+    return {key: state.get(key) for key in sorted(_APPROVAL_STATE_FIELDS - {"state_mac"})}
+
+
+def _approval_high_water_blocker(
+    evidence_root: Path | str,
+    event: Mapping[str, Any],
+) -> str:
+    secret, blocker = _read_approval_secret(evidence_root)
+    if secret is None:
+        return blocker
+    _, _, _, state_path = _approval_paths(evidence_root)
+    state = _read_json(state_path)
+    if set(state) != _APPROVAL_STATE_FIELDS:
+        return "next_session_replacement_approval_high_water_state_missing_or_invalid"
+    unsigned = _approval_state_without_mac(state)
+    if not (
+        state.get("schema_version") == APPROVAL_STATE_SCHEMA
+        and state.get("sequence_no") == event.get("sequence_no")
+        and state.get("event_id") == event.get("event_id")
+        and state.get("event_mac") == event.get("event_mac")
+        and state.get("approval_ticket_id") == event.get("approval_ticket_id")
+        and _valid_timestamp(state.get("consumed_at_utc"))
+        and _SHA256.fullmatch(str(state.get("state_mac") or ""))
+        and hmac.compare_digest(str(state.get("state_mac") or ""), _mac(secret, unsigned))
+    ):
+        return "next_session_replacement_approval_high_water_rollback_detected"
+    return ""
+
+
 def _read_next_packet() -> dict[str, Any]:
     from . import next_session_service
 
@@ -372,7 +664,130 @@ def _valid_production_close_points(rows: object) -> bool:
     return len(set(observed_dates)) == len(observed_dates) and observed_dates == sorted(observed_dates)
 
 
-def _next_packet_evidence(packet: Mapping[str, Any]) -> tuple[dict[str, Any], list[str]]:
+def _date_text(value: object) -> str:
+    text = str(value or "").strip().replace("-", "")
+    if text.endswith(".0"):
+        text = text[:-2]
+    return text if re.fullmatch(r"[0-9]{8}", text) else ""
+
+
+def _authoritative_provider_daily_evidence(
+    evidence_root: Path,
+    packet: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Re-read immutable provider Parquet truth and compare the displayed closes."""
+
+    try:
+        from .tushare_production_store import (
+            is_listed_a_share_code,
+            validate_tushare_full_market_production_version,
+        )
+
+        verified = validate_tushare_full_market_production_version(
+            evidence_root,
+            include_frames=True,
+        )
+    except Exception as exc:
+        return {
+            "ready": False,
+            "blockers": [f"next_session_authoritative_provider_verifier_failed_{type(exc).__name__}"],
+        }
+    chart = packet.get("chart_payload") if isinstance(packet.get("chart_payload"), Mapping) else {}
+    historical = chart.get("historical_points") if isinstance(chart.get("historical_points"), list) else []
+    provenance = (
+        packet.get("production_replacement_provenance")
+        if isinstance(packet.get("production_replacement_provenance"), Mapping)
+        else {}
+    )
+    symbol = str(provenance.get("symbol") or chart.get("symbol") or "").strip().upper()
+    frames = verified.get("frames") if isinstance(verified.get("frames"), Mapping) else {}
+    daily = frames.get("daily")
+    trade_cal = frames.get("trade_cal")
+    blockers = [str(item) for item in verified.get("blockers") or [] if str(item)]
+    if verified.get("ready") is not True:
+        blockers.append("next_session_authoritative_provider_version_missing")
+    if not is_listed_a_share_code(symbol) or symbol not in set(verified.get("symbols") or []):
+        blockers.append("next_session_authoritative_symbol_not_in_provider_universe")
+    dates = [_date_text(row.get("x")) for row in historical if isinstance(row, Mapping)]
+    if len(dates) != len(historical) or not dates or any(not value for value in dates):
+        blockers.append("next_session_authoritative_close_dates_invalid")
+    normalized_daily: list[dict[str, Any]] = []
+    normalized_calendar: list[dict[str, Any]] = []
+    try:
+        daily_rows = daily.loc[
+            (daily["ts_code"].astype(str).str.upper() == symbol)
+            & (daily["trade_date"].map(_date_text).isin(dates)),
+            ["ts_code", "trade_date", "close"],
+        ]
+        for row in daily_rows.to_dict("records"):
+            normalized_daily.append(
+                {
+                    "ts_code": str(row["ts_code"]).upper(),
+                    "trade_date": _date_text(row["trade_date"]),
+                    "close": round(float(row["close"]), 8),
+                }
+            )
+        normalized_daily.sort(key=lambda row: row["trade_date"])
+        calendar_rows = trade_cal.loc[
+            (trade_cal["cal_date"].map(_date_text).isin(dates))
+            & (trade_cal["is_open"].astype(int) == 1),
+            ["cal_date", "is_open"],
+        ].drop_duplicates(subset=["cal_date"])
+        normalized_calendar = sorted(
+            (
+                {"cal_date": _date_text(row["cal_date"]), "is_open": int(row["is_open"])}
+                for row in calendar_rows.to_dict("records")
+            ),
+            key=lambda row: row["cal_date"],
+        )
+    except Exception:
+        blockers.append("next_session_authoritative_provider_frames_invalid")
+    displayed = [
+        {
+            "trade_date": _date_text(row.get("x")),
+            "close": round(float(row.get("price")), 8),
+        }
+        for row in historical
+        if isinstance(row, Mapping)
+        and not isinstance(row.get("price"), bool)
+        and isinstance(row.get("price"), (int, float))
+    ]
+    provider_display = [
+        {"trade_date": row["trade_date"], "close": row["close"]}
+        for row in normalized_daily
+    ]
+    if displayed != provider_display or len(displayed) < _MIN_PRODUCTION_CLOSE_POINTS:
+        blockers.append("next_session_displayed_closes_do_not_match_authoritative_provider_rows")
+    if [row["cal_date"] for row in normalized_calendar] != dates:
+        blockers.append("next_session_displayed_dates_do_not_match_open_trade_calendar")
+    if not dates or dates[-1] != str(verified.get("validated_trade_date") or ""):
+        blockers.append("next_session_displayed_data_date_not_current_provider_trade_date")
+    if any(
+        not isinstance(row, Mapping) or row.get("source") != "tushare.daily.close"
+        for row in historical
+    ):
+        blockers.append("next_session_authoritative_close_source_labels_invalid")
+    blockers = sorted(set(blockers))
+    return {
+        "ready": not blockers,
+        "blockers": blockers,
+        "symbol": symbol,
+        "data_date": dates[-1] if dates else "",
+        "provider_scope_hash": str(verified.get("scope_hash") or ""),
+        "dataset_version_digest": str(verified.get("version_digest") or ""),
+        "daily_rows_digest": _digest(normalized_daily) if normalized_daily else "",
+        "trade_calendar_digest": _digest(normalized_calendar) if normalized_calendar else "",
+        "validated_trade_date": str(verified.get("validated_trade_date") or ""),
+        "row_count": len(normalized_daily),
+    }
+
+
+def _next_packet_evidence(
+    packet: Mapping[str, Any],
+    *,
+    head_full: str,
+    authoritative: Mapping[str, Any],
+) -> tuple[dict[str, Any], list[str]]:
     chart = packet.get("chart_payload") if isinstance(packet.get("chart_payload"), Mapping) else {}
     summary = packet.get("chart_summary") if isinstance(packet.get("chart_summary"), Mapping) else {}
     maturity = chart.get("chart_maturity") if isinstance(chart.get("chart_maturity"), Mapping) else {}
@@ -383,6 +798,11 @@ def _next_packet_evidence(packet: Mapping[str, Any]) -> tuple[dict[str, Any], li
         else {}
     )
     historical = chart.get("historical_points") if isinstance(chart.get("historical_points"), list) else []
+    provenance = (
+        packet.get("production_replacement_provenance")
+        if isinstance(packet.get("production_replacement_provenance"), Mapping)
+        else {}
+    )
     anchor_count = int(maturity.get("scenario_anchor_count") or 0)
     anchored_count = int(maturity.get("scenario_anchored_count") or 0)
     exact_packet = bool(
@@ -392,11 +812,46 @@ def _next_packet_evidence(packet: Mapping[str, Any]) -> tuple[dict[str, Any], li
         and chart.get("is_exact_next_session_packet") is True
         and summary.get("is_exact_next_session_packet") is True
     )
+    provider_binding_material = {
+        "head_full": head_full,
+        "source_task_id": provenance.get("source_task_id"),
+        "symbol": authoritative.get("symbol"),
+        "data_date": authoritative.get("data_date"),
+        "provider_scope_hash": authoritative.get("provider_scope_hash"),
+        "dataset_version_digest": authoritative.get("dataset_version_digest"),
+        "daily_rows_digest": authoritative.get("daily_rows_digest"),
+        "trade_calendar_digest": authoritative.get("trade_calendar_digest"),
+    }
+    authoritative_lineage = bool(
+        set(provenance) == _PROVENANCE_FIELDS
+        and provenance.get("schema_version") == "next_session_production_replacement_provenance.v1"
+        and provenance.get("status") == "authoritative_provider_dataset_current_head"
+        and provenance.get("head_full") == head_full
+        and isinstance(provenance.get("source_task_id"), str)
+        and bool(provenance.get("source_task_id"))
+        and provenance.get("source_task_status") == "success"
+        and provenance.get("source_task_digest") == _digest(provider_binding_material)
+        and all(provenance.get(key) == authoritative.get(key) for key in (
+            "symbol",
+            "data_date",
+            "provider_scope_hash",
+            "dataset_version_digest",
+            "daily_rows_digest",
+            "trade_calendar_digest",
+        ))
+        and provenance.get("provider_backed") is True
+        and provenance.get("authoritative_dataset") is True
+        and provenance.get("trade_calendar_validated") is True
+        and provenance.get("synthetic_fixture") is False
+        and provenance.get("local_preview") is False
+    )
     real_close = bool(
         chart.get("uses_real_daily_close") is True
         and summary.get("uses_real_daily_close") is True
         and maturity.get("has_real_60d_close") is True
         and _valid_production_close_points(historical)
+        and authoritative.get("ready") is True
+        and authoritative_lineage
     )
     production_maturity = bool(
         maturity.get("status") in {"ready", "production_ready"}
@@ -434,12 +889,30 @@ def _next_packet_evidence(packet: Mapping[str, Any]) -> tuple[dict[str, Any], li
         "chart_payload": chart,
         "chart_summary": summary,
         "retained_coverage": coverage,
+        "production_replacement_provenance": provenance,
+        "authoritative_provider_evidence": {
+            key: authoritative.get(key)
+            for key in (
+                "symbol",
+                "data_date",
+                "provider_scope_hash",
+                "dataset_version_digest",
+                "daily_rows_digest",
+                "trade_calendar_digest",
+                "validated_trade_date",
+                "row_count",
+            )
+        },
     }
     blockers: list[str] = []
     if not exact_packet:
         blockers.append("next_session_exact_packet_missing")
     if not real_close:
         blockers.append("next_session_real_close_60_sessions_missing")
+    if authoritative.get("ready") is not True:
+        blockers.extend(str(item) for item in authoritative.get("blockers") or [])
+    if not authoritative_lineage:
+        blockers.append("next_session_authoritative_current_head_lineage_missing_or_invalid")
     if not production_maturity:
         blockers.append("next_session_production_maturity_missing")
     if not retained:
@@ -454,6 +927,8 @@ def _next_packet_evidence(packet: Mapping[str, Any]) -> tuple[dict[str, Any], li
         "production_maturity": production_maturity,
         "same_packet_coverage_9_of_9": retained,
         "safe_boundary": safe,
+        "authoritative_provider_dataset": authoritative.get("ready") is True,
+        "authoritative_current_head_lineage": authoritative_lineage,
         "historical_point_count": len(historical),
         "scenario_anchor_count": anchor_count,
         "scenario_anchored_count": anchored_count,
@@ -560,29 +1035,37 @@ def _streamlit_evidence(root: Path, head_full: str, project_root: Path) -> tuple
 
 
 def _remote_ci_evidence(root: Path, head_full: str) -> tuple[dict[str, Any], list[str]]:
-    result = release_promotion_service.validate_release_prerequisites(
+    release = release_promotion_service.validate_production_release_promotion(
         root,
         expected_head_full=head_full,
     )
-    rows = result.get("rows") if isinstance(result.get("rows"), list) else []
+    prerequisites = release_promotion_service.validate_release_prerequisites(
+        root,
+        expected_head_full=head_full,
+    )
+    rows = prerequisites.get("rows") if isinstance(prerequisites.get("rows"), list) else []
     remote = next(
         (row for row in rows if isinstance(row, Mapping) and row.get("evidence_key") == "remote_ci"),
         {},
     )
     ready = bool(
-        remote.get("ready") is True
+        release.get("release_promotion_current_head") is True
+        and release.get("head_full") == head_full
+        and _SHA256.fullmatch(str(release.get("event_id") or ""))
+        and remote.get("ready") is True
         and _SHA256.fullmatch(str(remote.get("semantic_digest") or ""))
-        and str(result.get("remote_run_id") or "").isdigit()
-        and str(result.get("remote_artifact_digest") or "").startswith("sha256:")
+        and str(prerequisites.get("remote_run_id") or "").isdigit()
+        and str(prerequisites.get("remote_artifact_digest") or "").startswith("sha256:")
     )
-    blockers = list(remote.get("blockers") or [])
+    blockers = list(release.get("blockers") or []) + list(remote.get("blockers") or [])
     if not ready:
         blockers.append("matching_remote_ci_current_head_missing")
     return {
         "ready": ready,
         "digest": str(remote.get("semantic_digest") or "") if ready else "",
-        "run_id": str(result.get("remote_run_id") or "") if ready else "",
-        "artifact_digest": str(result.get("remote_artifact_digest") or "") if ready else "",
+        "run_id": str(prerequisites.get("remote_run_id") or "") if ready else "",
+        "artifact_digest": str(prerequisites.get("remote_artifact_digest") or "") if ready else "",
+        "release_promotion_event_id": str(release.get("event_id") or "") if ready else "",
     }, sorted(set(str(item) for item in blockers if item))
 
 
@@ -596,7 +1079,13 @@ def _collect_prerequisites(
     actual = _current_head(project_root)
     if not expected_head_full or actual != expected_head_full:
         blockers.append("next_session_replacement_expected_head_not_current")
-    packet_fact, packet_blockers = _next_packet_evidence(_read_next_packet())
+    packet = _read_next_packet()
+    authoritative = _authoritative_provider_daily_evidence(evidence_root, packet)
+    packet_fact, packet_blockers = _next_packet_evidence(
+        packet,
+        head_full=expected_head_full,
+        authoritative=authoritative,
+    )
     motion_fact, motion_blockers = _motion_evidence(evidence_root, expected_head_full, project_root)
     streamlit_fact, streamlit_blockers = _streamlit_evidence(evidence_root, expected_head_full, project_root)
     remote_fact, remote_blockers = _remote_ci_evidence(evidence_root, expected_head_full)
@@ -610,6 +1099,7 @@ def _collect_prerequisites(
         "remote_ci_digest": remote_fact.get("digest") or "",
         "remote_run_id": remote_fact.get("run_id") or "",
         "remote_artifact_digest": remote_fact.get("artifact_digest") or "",
+        "release_promotion_event_id": remote_fact.get("release_promotion_event_id") or "",
     }
     blockers = sorted(set(blockers))
     return {
@@ -665,6 +1155,10 @@ def _load_chain(evidence_root: Path | str, secret: bytes) -> tuple[list[dict[str
                     "motion_pair_digest",
                     "streamlit_retirement_digest",
                     "remote_ci_digest",
+                    "release_promotion_event_id",
+                    "approval_review_id",
+                    "approval_ticket_id",
+                    "approval_nonce_digest",
                     "event_mac",
                 )
             )
@@ -708,6 +1202,15 @@ def _public_summary(
     blockers: list[str],
 ) -> dict[str, Any]:
     ready = event is not None and not blockers
+    semantic_digest = str(prerequisites.get("semantic_digest") or "")
+    review_id = (
+        _approval_review_id(
+            head_full=str(prerequisites.get("head_full") or ""),
+            semantic_digest=semantic_digest,
+        )
+        if prerequisites.get("ready") is True and semantic_digest
+        else ""
+    )
     return {
         "schema_version": VALIDATION_SCHEMA,
         "status": (
@@ -727,6 +1230,12 @@ def _public_summary(
         "remote_ci_digest": event.get("remote_ci_digest") if ready and event else "",
         "remote_run_id": event.get("remote_run_id") if ready and event else "",
         "remote_artifact_digest": event.get("remote_artifact_digest") if ready and event else "",
+        "release_promotion_event_id": event.get("release_promotion_event_id") if ready and event else "",
+        "approval_review_id": event.get("approval_review_id") if ready and event else review_id,
+        "approval_semantic_digest": semantic_digest,
+        "out_of_band_approval_ticket_required": True,
+        "approval_ticket_id": event.get("approval_ticket_id") if ready and event else "",
+        "approval_nonce_digest": event.get("approval_nonce_digest") if ready and event else "",
         "next_packet_evidence": prerequisites.get("next_packet") or {},
         "motion_pair_evidence": prerequisites.get("motion_pair") or {},
         "streamlit_retirement_evidence": prerequisites.get("streamlit_retirement") or {},
@@ -775,6 +1284,9 @@ def validate_next_session_production_replacement(
             blockers.append(chain_blocker)
         elif events:
             latest = events[-1]
+            approval_high_water_blocker = _approval_high_water_blocker(root, latest)
+            if approval_high_water_blocker:
+                blockers.append(approval_high_water_blocker)
             material = prerequisites.get("material") if isinstance(prerequisites.get("material"), Mapping) else {}
             if not (
                 prerequisites.get("ready") is True
@@ -812,31 +1324,47 @@ def promote_next_session_production_replacement(
         result = _public_summary(prerequisites=prerequisites, event=None, blockers=blockers)
         result.update({"promotion_written": False, "idempotent_replay": False})
         return result
+    material = dict(prerequisites["material"])
+    semantic_digest = str(prerequisites["semantic_digest"])
     secret, blocker = _read_secret(root)
-    if secret is None and blocker == "next_session_replacement_trusted_writer_key_missing":
+    events: list[dict[str, Any]] = []
+    if secret is not None:
+        events, chain_blocker = _load_chain(root, secret)
+        if chain_blocker == "next_session_replacement_event_missing":
+            events, chain_blocker = [], ""
+        if chain_blocker:
+            result = _public_summary(prerequisites=prerequisites, event=None, blockers=[chain_blocker])
+            result.update({"promotion_written": False, "idempotent_replay": False})
+            return result
+        latest_existing = events[-1] if events else None
+        if latest_existing is not None and latest_existing.get("semantic_digest") == semantic_digest:
+            result = validate_next_session_production_replacement(
+                root,
+                expected_head_full=head_full,
+                project_root=project_root,
+            )
+            result.update({"promotion_written": False, "idempotent_replay": True, "read_only": False, "writes_storage": False})
+            return result
+    elif blocker != "next_session_replacement_trusted_writer_key_missing":
+        result = _public_summary(prerequisites=prerequisites, event=None, blockers=[blocker])
+        result.update({"promotion_written": False, "idempotent_replay": False})
+        return result
+    approval, approval_blocker = _load_approval_ticket(
+        root,
+        head_full=head_full,
+        semantic_digest=semantic_digest,
+    )
+    if approval is None:
+        result = _public_summary(prerequisites=prerequisites, event=None, blockers=[approval_blocker])
+        result.update({"promotion_written": False, "idempotent_replay": False})
+        return result
+    if secret is None:
         secret, blocker = _create_secret(root)
     if secret is None:
         result = _public_summary(prerequisites=prerequisites, event=None, blockers=[blocker])
         result.update({"promotion_written": False, "idempotent_replay": False})
         return result
-    events, chain_blocker = _load_chain(root, secret)
-    if chain_blocker == "next_session_replacement_event_missing":
-        events, chain_blocker = [], ""
-    if chain_blocker:
-        result = _public_summary(prerequisites=prerequisites, event=None, blockers=[chain_blocker])
-        result.update({"promotion_written": False, "idempotent_replay": False})
-        return result
-    material = dict(prerequisites["material"])
-    semantic_digest = str(prerequisites["semantic_digest"])
     latest = events[-1] if events else None
-    if latest is not None and latest.get("semantic_digest") == semantic_digest:
-        result = validate_next_session_production_replacement(
-            root,
-            expected_head_full=head_full,
-            project_root=project_root,
-        )
-        result.update({"promotion_written": False, "idempotent_replay": True, "read_only": False, "writes_storage": False})
-        return result
     sequence = len(events) + 1
     recorded_at = _now_iso()
     if latest is not None and recorded_at < str(latest.get("recorded_at_utc") or ""):
@@ -855,6 +1383,9 @@ def promote_next_session_production_replacement(
         "semantic_digest": semantic_digest,
         "scope": SCOPE,
         **material,
+        "approval_review_id": approval["review_id"],
+        "approval_ticket_id": approval["ticket_id"],
+        "approval_nonce_digest": approval["nonce_digest"],
         "approved_by_user": True,
         "recorded_at_utc": recorded_at,
         "previous_event_mac": str(latest.get("event_mac") or "") if latest else "",
@@ -881,6 +1412,43 @@ def promote_next_session_production_replacement(
         result = _public_summary(prerequisites=prerequisites, event=None, blockers=[blocker])
         result.update({"promotion_written": True, "idempotent_replay": False})
         return result
+    _, _, approval_ticket_path, approval_state_path = _approval_paths(root)
+    approval_secret, approval_blocker = _read_approval_secret(root)
+    if approval_secret is None:
+        result = _public_summary(prerequisites=prerequisites, event=None, blockers=[approval_blocker])
+        result.update({"promotion_written": True, "idempotent_replay": False})
+        return result
+    approval_state_unsigned = {
+        "schema_version": APPROVAL_STATE_SCHEMA,
+        "sequence_no": sequence,
+        "event_id": event["event_id"],
+        "event_mac": event["event_mac"],
+        "approval_ticket_id": approval["ticket_id"],
+        "consumed_at_utc": _now_iso(),
+    }
+    approval_state = {
+        **approval_state_unsigned,
+        "state_mac": _mac(approval_secret, approval_state_unsigned),
+    }
+    blocker = _atomic_private_json(approval_state_path, approval_state, replace=True)
+    if blocker:
+        result = _public_summary(
+            prerequisites=prerequisites,
+            event=None,
+            blockers=["next_session_replacement_approval_high_water_write_failed"],
+        )
+        result.update({"promotion_written": True, "idempotent_replay": False})
+        return result
+    try:
+        approval_ticket_path.unlink()
+    except OSError:
+        result = _public_summary(
+            prerequisites=prerequisites,
+            event=None,
+            blockers=["next_session_replacement_approval_ticket_consume_failed"],
+        )
+        result.update({"promotion_written": True, "idempotent_replay": False})
+        return result
     result = validate_next_session_production_replacement(
         root,
         expected_head_full=head_full,
@@ -892,5 +1460,6 @@ def promote_next_session_production_replacement(
 
 __all__ = [
     "promote_next_session_production_replacement",
+    "record_next_session_replacement_approval_ticket",
     "validate_next_session_production_replacement",
 ]

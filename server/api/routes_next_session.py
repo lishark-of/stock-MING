@@ -61,7 +61,11 @@ def _replacement_promotion_ledger(packet: dict[str, Any], *, request_method: str
             "api": "local_next_session_production_replacement_journal",
             "endpoint": f"{request_method} /api/next-session/production-replacement",
             "request_method": request_method,
-            "mode": "read_only_validation" if request_method == "GET" else "explicit_literal_approval_write",
+            "mode": (
+                "read_only_validation"
+                if request_method == "GET"
+                else "operator_ticket_bound_literal_approval_write"
+            ),
             "call_status": packet.get("status") or "next_session_production_replacement_blocked",
             "row_count": 1 if packet.get("production_replacement_complete") is True else 0,
             "promotion_written": packet.get("promotion_written") is True,
