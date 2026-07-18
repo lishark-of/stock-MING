@@ -493,6 +493,36 @@ class FullMarketWorkerProductionTests(unittest.TestCase):
             self.assertFalse(fact["candidate_radar_production_replacement"])
             self.assertIn("bound_worker_task_outputs", fact["blockers"])
 
+    def test_worker_packet_radar_claim_requires_cache_and_external_lineage(self) -> None:
+        self.assertEqual(
+            service._candidate_radar_replacement_claim_fields(
+                authoritative_cache_validated=False,
+                external_lineage_validated=False,
+            ),
+            {
+                "candidate_radar_production_replacement": False,
+                "global_candidate_cache_overwritten": False,
+            },
+        )
+        self.assertFalse(
+            service._candidate_radar_replacement_claim_fields(
+                authoritative_cache_validated=True,
+                external_lineage_validated=False,
+            )["candidate_radar_production_replacement"]
+        )
+        self.assertFalse(
+            service._candidate_radar_replacement_claim_fields(
+                authoritative_cache_validated=False,
+                external_lineage_validated=True,
+            )["candidate_radar_production_replacement"]
+        )
+        self.assertTrue(
+            service._candidate_radar_replacement_claim_fields(
+                authoritative_cache_validated=True,
+                external_lineage_validated=True,
+            )["candidate_radar_production_replacement"]
+        )
+
     def test_candidate_worker_output_needs_exact_authoritative_cache_binding(self) -> None:
         acceptance_run_id = uuid.uuid4().hex
         worker_packet = {

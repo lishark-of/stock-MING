@@ -32,6 +32,17 @@ def _write_json(path: Path, payload: dict) -> None:
     path.write_text(json.dumps(payload), encoding="utf-8")
 
 
+def _tree_digest(root: Path) -> str:
+    digest = hashlib.sha256()
+    for path in sorted(root.rglob("*"), key=lambda item: item.as_posix()):
+        relative = path.relative_to(root).as_posix()
+        digest.update(relative.encode("utf-8"))
+        digest.update(str(path.stat().st_mode & 0o777).encode("ascii"))
+        if path.is_file():
+            digest.update(path.read_bytes())
+    return digest.hexdigest()
+
+
 def _write_packets(path: Path, packets: dict[str, dict], tasks: list[dict] | None = None) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     with sqlite3.connect(path) as connection:
@@ -313,6 +324,54 @@ class V1EvidenceCloseoutTests(unittest.TestCase):
             self.assertFalse(packet["external_calls_triggered"])
             self.assertFalse(packet["writes_storage"])
 
+    def test_v1_exposes_sanitized_factor_and_radar_validator_blockers(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir) / "evidence"
+            worker = v1_closeout_service.full_market_worker_service
+            _write_packets(
+                root / "meta.sqlite",
+                {
+                    worker.PACKET_KEY: {
+                        "status": "full_market_worker_production_complete",
+                        "candidate_radar_production_replacement": True,
+                        "global_candidate_cache_overwritten": True,
+                    },
+                    worker.FACTOR_PACKET_KEY: {
+                        "status": "factor_full_market_worker_production_complete",
+                        "full_market_factor_research": True,
+                    },
+                },
+            )
+            packet = v1_closeout_service.build_v1_closeout_evaluation(
+                evidence_root=root
+            )
+
+        factor = packet["factor_full_market_research_summary"]
+        radar = packet["candidate_radar_production_replacement_summary"]
+        self.assertEqual(
+            factor["validator"],
+            "validate_factor_full_market_research_fact",
+        )
+        self.assertEqual(
+            radar["validator"],
+            "validate_full_market_worker_production_fact",
+        )
+        for summary in (factor, radar):
+            self.assertTrue(summary["source_is_validator_result"])
+            self.assertFalse(summary["caller_boolean_accepted_as_evidence"])
+            self.assertTrue(summary["sanitized"])
+            self.assertFalse(summary["raw_payload_exposed"])
+            self.assertFalse(summary["ready"])
+            self.assertEqual(summary["blocker_count"], len(summary["blockers"]))
+        self.assertIn(
+            "external_trusted_production_lineage_runner_unavailable",
+            factor["blockers"],
+        )
+        self.assertIn(
+            "external_trusted_production_lineage_runner_unavailable",
+            radar["blockers"],
+        )
+
     def test_complete_local_fixture_closes_only_ltg12_isolation_scope(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir) / "evidence"
@@ -474,6 +533,54 @@ class V1EvidenceCloseoutTests(unittest.TestCase):
             self.assertFalse(payload["github_called"])
             self.assertFalse(payload["qmt_called"])
             self.assertFalse(payload["broker_called"])
+
+    def test_migration_get_with_live_wal_is_full_tree_byte_write_free(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir) / "evidence"
+            root.mkdir()
+            db_path = root / "meta.sqlite"
+            connection = sqlite3.connect(db_path)
+            try:
+                self.assertEqual(
+                    connection.execute("PRAGMA journal_mode=WAL").fetchone()[0],
+                    "wal",
+                )
+                connection.execute(
+                    "CREATE TABLE packets ("
+                    "packet_key TEXT PRIMARY KEY, payload_json TEXT, updated_at TEXT)"
+                )
+                connection.execute(
+                    "CREATE TABLE task_status (task_id TEXT PRIMARY KEY, payload_json TEXT)"
+                )
+                connection.execute(
+                    "INSERT INTO packets VALUES (?, ?, ?)",
+                    (
+                        "command_center_deepseek_provider_benchmark_current",
+                        json.dumps({"status": "caller_boolean_must_not_be_trusted"}),
+                        "2026-07-18T00:00:00+00:00",
+                    ),
+                )
+                connection.commit()
+                self.assertTrue(Path(f"{db_path}-wal").is_file())
+                self.assertTrue(Path(f"{db_path}-shm").is_file())
+                before = _tree_digest(root)
+
+                with patch.object(v1_closeout_service, "EVIDENCE_ROOT", root):
+                    response = TestClient(app).get("/api/migration/status")
+
+                after = _tree_digest(root)
+                self.assertEqual(response.status_code, 200)
+                self.assertEqual(after, before)
+                payload = response.json()["data"]["command_center_3_v1_local_rc"]
+                self.assertFalse(payload["writes_storage"])
+                self.assertFalse(
+                    payload["factor_full_market_research_summary"]["ready"]
+                )
+                self.assertFalse(
+                    payload["candidate_radar_production_replacement_summary"]["ready"]
+                )
+            finally:
+                connection.close()
 
 
 if __name__ == "__main__":

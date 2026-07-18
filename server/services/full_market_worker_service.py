@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit
 
+from server.services.sqlite_evidence_reader import immutable_evidence_connection
 from storage import parquet_store
 from storage.sqlite_meta import SQLiteMetaStore
 
@@ -292,6 +293,21 @@ def _matching_production_lineage_event(
     return {}
 
 
+def _candidate_radar_replacement_claim_fields(
+    *,
+    authoritative_cache_validated: bool,
+    external_lineage_validated: bool,
+) -> dict[str, bool]:
+    replacement_ready = bool(
+        authoritative_cache_validated is True
+        and external_lineage_validated is True
+    )
+    return {
+        "candidate_radar_production_replacement": replacement_ready,
+        "global_candidate_cache_overwritten": replacement_ready,
+    }
+
+
 def _integer(value: Any, *, default: int = 0) -> int:
     try:
         return int(value)
@@ -304,11 +320,10 @@ def _bounded_integer(value: Any, *, default: int, minimum: int, maximum: int) ->
 
 
 def _read_packet_no_init(db_path: Path, packet_key: str) -> dict[str, Any]:
-    if not db_path.is_file():
+    connection = immutable_evidence_connection(db_path)
+    if connection is None:
         return {}
-    connection: sqlite3.Connection | None = None
     try:
-        connection = sqlite3.connect(db_path)
         row = connection.execute(
             "SELECT payload_json FROM packets WHERE packet_key = ?",
             (packet_key,),
@@ -317,17 +332,17 @@ def _read_packet_no_init(db_path: Path, packet_key: str) -> dict[str, Any]:
     except Exception:
         return {}
     finally:
-        if connection is not None:
-            connection.close()
+        connection.close()
     return dict(value) if isinstance(value, Mapping) else {}
 
 
 def _read_task_no_init(db_path: Path, task_id: str) -> dict[str, Any]:
-    if not db_path.is_file() or not task_id:
+    if not task_id:
         return {}
-    connection: sqlite3.Connection | None = None
+    connection = immutable_evidence_connection(db_path)
+    if connection is None:
+        return {}
     try:
-        connection = sqlite3.connect(db_path)
         row = connection.execute(
             "SELECT payload_json FROM task_status WHERE task_id = ?",
             (task_id,),
@@ -336,8 +351,7 @@ def _read_task_no_init(db_path: Path, task_id: str) -> dict[str, Any]:
     except Exception:
         return {}
     finally:
-        if connection is not None:
-            connection.close()
+        connection.close()
     return dict(value) if isinstance(value, Mapping) else {}
 
 
@@ -2291,8 +2305,10 @@ def _blocked_attempt(status: str, *, run_id: str = "", **fields: Any) -> dict[st
         "production_worker_complete": False,
         "full_market_worker_runtime": False,
         "celery_redis_runtime": False,
-        "candidate_radar_production_replacement": False,
-        "global_candidate_cache_overwritten": False,
+        **_candidate_radar_replacement_claim_fields(
+            authoritative_cache_validated=False,
+            external_lineage_validated=False,
+        ),
         "does_not_execute_trades": True,
         "does_not_modify_strategy_action": True,
         "contains_secret": False,
@@ -2500,8 +2516,10 @@ def _promote_official_candidate_results(
         "production_worker_complete": True,
         "full_market_worker_runtime": True,
         "celery_redis_runtime": True,
-        "candidate_radar_production_replacement": True,
-        "global_candidate_cache_overwritten": False,
+        **_candidate_radar_replacement_claim_fields(
+            authoritative_cache_validated=False,
+            external_lineage_validated=False,
+        ),
         "synthetic_fixture": False,
         "does_not_execute_trades": True,
         "does_not_modify_strategy_action": True,
@@ -3135,7 +3153,7 @@ def validate_full_market_worker_production_fact(
         and packet.get("production_worker_complete") is True
         and packet.get("full_market_worker_runtime") is True
         and packet.get("celery_redis_runtime") is True
-        and packet.get("candidate_radar_production_replacement") is True
+        and packet.get("candidate_radar_production_replacement") is False
     )
     packets_ready = bool(
         packet

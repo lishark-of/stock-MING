@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import hashlib
 import json
-import sqlite3
+import re
 import subprocess
 from collections.abc import Mapping
 from pathlib import Path
@@ -22,6 +22,7 @@ from server.services import (
     storage_service,
     streamlit_retirement_evidence_service,
 )
+from server.services.sqlite_evidence_reader import immutable_evidence_connection
 from .tushare_production_store import validate_tushare_full_market_production_version
 from .tauri_package_verifier import validate_tauri_production_package
 
@@ -304,13 +305,44 @@ def _safe_summary(value: Any, fields: tuple[str, ...], *, observed: bool) -> dic
     }
 
 
+_SAFE_BLOCKER_TOKEN = re.compile(r"^[a-z0-9][a-z0-9_.:-]{0,159}$")
+
+
+def _validator_blocker_summary(
+    fact: Mapping[str, Any],
+    *,
+    validator: str,
+    ready_field: str,
+    blocker_fields: tuple[str, ...],
+) -> dict[str, Any]:
+    blockers: list[str] = []
+    for field in blocker_fields:
+        values = fact.get(field)
+        if not isinstance(values, list):
+            continue
+        for value in values:
+            token = str(value or "").strip().lower()
+            if _SAFE_BLOCKER_TOKEN.fullmatch(token) and token not in blockers:
+                blockers.append(token)
+    return {
+        "schema_version": "command_center_3_validator_blocker_summary.v1",
+        "validator": validator,
+        "ready": fact.get(ready_field) is True,
+        "blocker_count": len(blockers),
+        "blockers": blockers,
+        "source_is_validator_result": True,
+        "caller_boolean_accepted_as_evidence": False,
+        "sanitized": True,
+        "raw_payload_exposed": False,
+        "contains_secret": False,
+    }
+
+
 def _read_packets(db_path: Path, packet_keys: tuple[str, ...]) -> dict[str, Any]:
-    if not db_path.is_file():
+    connection = immutable_evidence_connection(db_path)
+    if connection is None:
         return {}
-    connection: sqlite3.Connection | None = None
     try:
-        uri = f"file:{db_path.resolve().as_posix()}?mode=ro"
-        connection = sqlite3.connect(uri, uri=True)
         placeholders = ",".join("?" for _ in packet_keys)
         rows = connection.execute(
             f"SELECT packet_key, payload_json FROM packets WHERE packet_key IN ({placeholders})",
@@ -319,8 +351,7 @@ def _read_packets(db_path: Path, packet_keys: tuple[str, ...]) -> dict[str, Any]
     except Exception:
         return {}
     finally:
-        if connection is not None:
-            connection.close()
+        connection.close()
     packets: dict[str, Any] = {}
     for packet_key, payload_json in rows:
         try:
@@ -367,12 +398,12 @@ def _read_model_execution_event(db_path: Path, packet: Any) -> Any:
 def _read_model_task_status(db_path: Path, packet: Any) -> Any:
     source = packet if isinstance(packet, Mapping) else {}
     task_id = str(source.get("execution_task_id") or "")
-    if not db_path.is_file() or not task_id:
+    if not task_id:
         return None
-    connection: sqlite3.Connection | None = None
+    connection = immutable_evidence_connection(db_path)
+    if connection is None:
+        return None
     try:
-        uri = f"file:{db_path.resolve().as_posix()}?mode=ro"
-        connection = sqlite3.connect(uri, uri=True)
         row = connection.execute(
             "SELECT payload_json FROM task_status WHERE task_id = ?",
             (task_id,),
@@ -393,23 +424,19 @@ def _read_model_task_status(db_path: Path, packet: Any) -> Any:
     except Exception:
         return None
     finally:
-        if connection is not None:
-            connection.close()
+        connection.close()
 
 
 def _read_task_history(db_path: Path) -> list[dict[str, Any]]:
-    if not db_path.is_file():
+    connection = immutable_evidence_connection(db_path)
+    if connection is None:
         return []
-    connection: sqlite3.Connection | None = None
     try:
-        uri = f"file:{db_path.resolve().as_posix()}?mode=ro"
-        connection = sqlite3.connect(uri, uri=True)
         rows = connection.execute("SELECT payload_json FROM task_status").fetchall()
     except Exception:
         return []
     finally:
-        if connection is not None:
-            connection.close()
+        connection.close()
     history: list[dict[str, Any]] = []
     for (payload_json,) in rows:
         try:
@@ -1283,6 +1310,18 @@ def _build_version_rows(
     factor_full_market_fact = full_market_worker_service.validate_factor_full_market_research_fact(
         evidence_root
     )
+    factor_blocker_summary = _validator_blocker_summary(
+        factor_full_market_fact,
+        validator="validate_factor_full_market_research_fact",
+        ready_field="full_market_factor_research",
+        blocker_fields=("blockers", "provider_blockers"),
+    )
+    candidate_radar_blocker_summary = _validator_blocker_summary(
+        full_market_worker_fact,
+        validator="validate_full_market_worker_production_fact",
+        ready_field="candidate_radar_production_replacement",
+        blocker_fields=("candidate_radar_replacement_blockers",),
+    )
     facts = {
         "trade_cal_provider_direct": _provider_ready(trade_cal, {"trade_cal"}),
         "factor_small_pool_provider_direct": _provider_ready(factor, {"daily", "daily_basic"}),
@@ -1334,6 +1373,8 @@ def _build_version_rows(
     }
     context = {
         "storage_production_fact_validation": storage_production_fact_validation,
+        "factor_full_market_research_summary": factor_blocker_summary,
+        "candidate_radar_production_replacement_summary": candidate_radar_blocker_summary,
         "motion_current_head_evidence_summary": motion_validation,
         "qmt_summary": _safe_summary(qmt, _SAFE_PACKET_FIELDS, observed=isinstance(qmt, Mapping)),
         "governed_model_summary": _safe_summary(
@@ -1547,6 +1588,12 @@ def build_v1_closeout_evaluation(
         "remote_ci_review_summary": context["remote_receipt_summary"],
         "production_release_promotion_summary": context["release_promotion_summary"],
         "storage_production_fact_validation": context["storage_production_fact_validation"],
+        "factor_full_market_research_summary": context[
+            "factor_full_market_research_summary"
+        ],
+        "candidate_radar_production_replacement_summary": context[
+            "candidate_radar_production_replacement_summary"
+        ],
         "motion_current_head_evidence_summary": context["motion_current_head_evidence_summary"],
         "streamlit_primary_retirement_summary": context["streamlit_primary_retirement"],
         "tushare_production_version": context["tushare_production_version"],
