@@ -256,15 +256,52 @@ class SQLiteMetaStore:
         ):
             raise ValueError("bundle_packet_or_task_identity_invalid")
 
+        for _, payload in packet_rows:
+            try:
+                decoded_packet = json.loads(payload)
+            except Exception as exc:
+                raise ValueError("bundle_packet_json_invalid") from exc
+            if not (
+                isinstance(decoded_packet, dict)
+                and decoded_packet.get("request_bundle_id") == request_bundle_id
+                and decoded_packet.get("bundle_digest") == bundle_digest
+            ):
+                raise ValueError("bundle_packet_binding_invalid")
+
+        for task_id, task_type, payload, _ in task_rows:
+            try:
+                decoded_task = json.loads(payload)
+            except Exception as exc:
+                raise ValueError("bundle_task_json_invalid") from exc
+            payload_safe = (
+                decoded_task.get("payload_safe")
+                if isinstance(decoded_task, dict)
+                and isinstance(decoded_task.get("payload_safe"), dict)
+                else {}
+            )
+            if not (
+                decoded_task.get("task_id") == task_id
+                and decoded_task.get("task_type") == task_type
+                and payload_safe.get("request_bundle_id") == request_bundle_id
+                and payload_safe.get("bundle_digest") == bundle_digest
+            ):
+                raise ValueError("bundle_task_binding_invalid")
+
         stable_task_fields = (
             "task_id",
             "task_type",
             "input_hash",
             "idempotency_key",
+            "dedupe_scope",
+            "dedupe_policy",
             "lock_key",
+            "lock_enforced",
+            "lock_policy",
+            "retry_policy",
             "status",
             "progress",
             "current_step",
+            "error_message_safe",
             "output_packet_key",
             "payload_safe",
             "warnings",
@@ -303,18 +340,19 @@ class SQLiteMetaStore:
                     ).fetchone()
                     for task_id in task_ids
                 }
+                existing_histories = {
+                    task_id: conn.execute(
+                        """
+                        SELECT task_type, payload_json, payload_digest
+                        FROM task_status_history
+                        WHERE task_id = ?
+                        ORDER BY history_id ASC
+                        """,
+                        (task_id,),
+                    ).fetchall()
+                    for task_id in task_ids
+                }
                 if packets_exact:
-                    for packet_key, payload in packet_rows:
-                        try:
-                            decoded_packet = json.loads(payload)
-                        except Exception as exc:
-                            raise RuntimeError("idempotent_bundle_packet_json_invalid") from exc
-                        if not (
-                            isinstance(decoded_packet, dict)
-                            and decoded_packet.get("request_bundle_id") == request_bundle_id
-                            and decoded_packet.get("bundle_digest") == bundle_digest
-                        ):
-                            raise RuntimeError("idempotent_bundle_packet_binding_invalid")
                     for task_id, task_type, expected_payload, _ in task_rows:
                         row = existing_tasks.get(task_id)
                         if row is None:
@@ -333,16 +371,8 @@ class SQLiteMetaStore:
                             )
                         ):
                             raise RuntimeError("idempotent_bundle_task_binding_invalid")
-                        history_row = conn.execute(
-                            """
-                            SELECT task_type, payload_json, payload_digest
-                            FROM task_status_history
-                            WHERE task_id = ?
-                            ORDER BY history_id DESC
-                            LIMIT 1
-                            """,
-                            (task_id,),
-                        ).fetchone()
+                        history_rows = existing_histories.get(task_id) or []
+                        history_row = history_rows[0] if len(history_rows) == 1 else None
                         current_payload = str(row[0])
                         if not (
                             history_row is not None
@@ -363,12 +393,16 @@ class SQLiteMetaStore:
                         "idempotent_reuse": True,
                         "writes_performed": 0,
                     }
-                if any(row is not None for row in existing_tasks.values()):
+                if (
+                    any(payload is not None for payload in existing_packets.values())
+                    or any(row is not None for row in existing_tasks.values())
+                    or any(existing_histories.values())
+                ):
                     raise RuntimeError("idempotent_bundle_partial_or_conflicting_state")
                 for packet_key, payload in packet_rows:
                     conn.execute(
                         """
-                        INSERT OR REPLACE INTO packets(
+                        INSERT INTO packets(
                             packet_key, payload_json, updated_at
                         ) VALUES (?, ?, ?)
                         """,
@@ -383,7 +417,7 @@ class SQLiteMetaStore:
                 for task_id, task_type, payload, payload_digest in task_rows:
                     conn.execute(
                         """
-                        INSERT OR REPLACE INTO task_status(
+                        INSERT INTO task_status(
                             task_id, payload_json, updated_at
                         ) VALUES (?, ?, ?)
                         """,

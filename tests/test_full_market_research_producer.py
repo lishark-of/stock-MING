@@ -408,6 +408,193 @@ class FullMarketResearchProducerTests(unittest.TestCase):
             for key, packet in first_packets.items():
                 self.assertEqual(store.read_packet(key), packet)
 
+    def test_preexisting_partial_or_corrupt_packet_matrix_fails_closed(self):
+        packet_keys = (
+            service.FACTOR_REQUEST_PACKET_KEY,
+            service.RADAR_REQUEST_PACKET_KEY,
+            service.COORDINATOR_PACKET_KEY,
+        )
+        payload = {"effective_dated_industry_membership_digest": "e" * 64}
+        for mask in range(1, 1 << len(packet_keys)):
+            with self.subTest(mask=mask), tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp)
+                meta_path = root / "meta.sqlite"
+                store = SQLiteMetaStore(meta_path)
+                seeded: dict[str, dict] = {}
+                for index, packet_key in enumerate(packet_keys):
+                    if mask & (1 << index):
+                        packet = {
+                            "request_bundle_id": "0" * 64,
+                            "bundle_digest": "1" * 64,
+                            "sentinel": packet_key,
+                        }
+                        store.write_packet(packet_key, packet)
+                        seeded[packet_key] = packet
+                with (
+                    patch.object(service, "SQLITE_META_PATH", meta_path),
+                    patch.object(task_service, "SQLITE_META_PATH", meta_path),
+                    patch.object(
+                        service,
+                        "validate_tushare_full_market_production_version",
+                        return_value=_provider(),
+                    ),
+                ):
+                    with self.assertRaisesRegex(
+                        RuntimeError, "idempotent_bundle_partial_or_conflicting_state"
+                    ):
+                        service.run_full_market_factor_radar_map_reduce_request(
+                            payload, evidence_root=root, meta_path=meta_path
+                        )
+                persisted = SQLiteMetaStore(meta_path, read_only=True)
+                for packet_key in packet_keys:
+                    self.assertEqual(persisted.read_packet(packet_key), seeded.get(packet_key))
+                self.assertEqual(persisted.list_task_metadata(), [])
+                self.assertEqual(persisted.task_status_history_count(), 0)
+
+    def test_preexisting_partial_task_and_history_matrix_fails_closed(self):
+        payload = {"effective_dated_industry_membership_digest": "e" * 64}
+        with tempfile.TemporaryDirectory() as source_tmp:
+            source_root = Path(source_tmp)
+            source_meta = source_root / "meta.sqlite"
+            with (
+                patch.object(service, "SQLITE_META_PATH", source_meta),
+                patch.object(task_service, "SQLITE_META_PATH", source_meta),
+                patch.object(
+                    service,
+                    "validate_tushare_full_market_production_version",
+                    return_value=_provider(),
+                ),
+            ):
+                service.run_full_market_factor_radar_map_reduce_request(
+                    payload, evidence_root=source_root, meta_path=source_meta
+                )
+            with sqlite3.connect(source_meta) as connection:
+                packet_rows = connection.execute(
+                    "SELECT packet_key, payload_json, updated_at FROM packets ORDER BY packet_key"
+                ).fetchall()
+                task_rows = connection.execute(
+                    "SELECT task_id, payload_json, updated_at FROM task_status ORDER BY task_id"
+                ).fetchall()
+                history_rows = connection.execute(
+                    """
+                    SELECT task_id, task_type, payload_json, updated_at, payload_digest
+                    FROM task_status_history ORDER BY task_id
+                    """
+                ).fetchall()
+
+            cases = {
+                "one_exact_packet": (packet_rows[:1], [], []),
+                "all_packets_one_task": (packet_rows, task_rows[:1], []),
+                "all_packets_all_tasks_partial_history": (
+                    packet_rows,
+                    task_rows,
+                    history_rows[:2],
+                ),
+                "orphan_task": ([], task_rows[:1], []),
+                "orphan_history": ([], [], history_rows[:1]),
+            }
+            for name, (seed_packets, seed_tasks, seed_history) in cases.items():
+                with self.subTest(name=name), tempfile.TemporaryDirectory() as tmp:
+                    root = Path(tmp)
+                    meta_path = root / "meta.sqlite"
+                    SQLiteMetaStore(meta_path)
+                    with sqlite3.connect(meta_path) as connection:
+                        connection.executemany(
+                            "INSERT INTO packets(packet_key, payload_json, updated_at) VALUES (?, ?, ?)",
+                            seed_packets,
+                        )
+                        connection.executemany(
+                            "INSERT INTO task_status(task_id, payload_json, updated_at) VALUES (?, ?, ?)",
+                            seed_tasks,
+                        )
+                        connection.executemany(
+                            """
+                            INSERT INTO task_status_history(
+                                task_id, task_type, payload_json, updated_at, payload_digest
+                            ) VALUES (?, ?, ?, ?, ?)
+                            """,
+                            seed_history,
+                        )
+                        connection.commit()
+                    before_counts = (
+                        len(seed_packets),
+                        len(seed_tasks),
+                        len(seed_history),
+                    )
+                    with (
+                        patch.object(service, "SQLITE_META_PATH", meta_path),
+                        patch.object(task_service, "SQLITE_META_PATH", meta_path),
+                        patch.object(
+                            service,
+                            "validate_tushare_full_market_production_version",
+                            return_value=_provider(),
+                        ),
+                    ):
+                        with self.assertRaises(RuntimeError):
+                            service.run_full_market_factor_radar_map_reduce_request(
+                                payload, evidence_root=root, meta_path=meta_path
+                            )
+                    with sqlite3.connect(meta_path) as connection:
+                        after_counts = tuple(
+                            connection.execute(
+                                f"SELECT COUNT(*) FROM {table}"
+                            ).fetchone()[0]
+                            for table in (
+                                "packets",
+                                "task_status",
+                                "task_status_history",
+                            )
+                        )
+                    self.assertEqual(after_counts, before_counts)
+
+    def test_different_bundle_is_blocked_without_breaking_current_bundle_reuse(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            meta_path = root / "meta.sqlite"
+            first_payload = {
+                "effective_dated_industry_membership_digest": "e" * 64
+            }
+            different_payload = {
+                "effective_dated_industry_membership_digest": "f" * 64
+            }
+            with (
+                patch.object(service, "SQLITE_META_PATH", meta_path),
+                patch.object(task_service, "SQLITE_META_PATH", meta_path),
+                patch.object(
+                    service,
+                    "validate_tushare_full_market_production_version",
+                    return_value=_provider(),
+                ),
+            ):
+                first = service.run_full_market_factor_radar_map_reduce_request(
+                    first_payload, evidence_root=root, meta_path=meta_path
+                )
+                store = SQLiteMetaStore(meta_path, read_only=True)
+                packet_snapshot = {
+                    key: store.read_packet(key)
+                    for key in (
+                        service.FACTOR_REQUEST_PACKET_KEY,
+                        service.RADAR_REQUEST_PACKET_KEY,
+                        service.COORDINATOR_PACKET_KEY,
+                    )
+                }
+                with self.assertRaisesRegex(
+                    RuntimeError, "idempotent_bundle_partial_or_conflicting_state"
+                ):
+                    service.run_full_market_factor_radar_map_reduce_request(
+                        different_payload, evidence_root=root, meta_path=meta_path
+                    )
+                replay = service.run_full_market_factor_radar_map_reduce_request(
+                    first_payload, evidence_root=root, meta_path=meta_path
+                )
+
+            persisted = SQLiteMetaStore(meta_path, read_only=True)
+            self.assertEqual(replay["task_id"], first["task_id"])
+            self.assertEqual(len(persisted.list_task_metadata()), 3)
+            self.assertEqual(persisted.task_status_history_count(), 3)
+            for key, packet in packet_snapshot.items():
+                self.assertEqual(persisted.read_packet(key), packet)
+
     def test_concurrent_identical_requests_commit_once_and_reuse(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
