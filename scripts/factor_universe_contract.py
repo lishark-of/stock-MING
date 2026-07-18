@@ -111,6 +111,24 @@ def _read_script(path: str) -> str:
         return ""
 
 
+def _frontend_uses_bounded_local_api_client(api_client: str) -> bool:
+    """Accept the bounded local transport without accepting direct page fetches."""
+
+    return (
+        "export function postTask" in api_client
+        and "const API_BASE_CANDIDATES = localApiBaseCandidates();" in api_client
+        and "async function fetchLocalApi(" in api_client
+        and "const controller = new AbortController();" in api_client
+        and "window.setTimeout(() => controller.abort" in api_client
+        and "return await fetch(url, { ...init, signal: controller.signal });" in api_client
+        and api_client.count("fetch(") == 1
+        and "if (isLocalApiBase(API_BASE))" in api_client
+        and "await fetchLocalApi(`${apiBase}${path}`" in api_client
+        and "return request<TaskCreationData>(path" in api_client
+        and "fetch(`${apiBase}${path}`" not in api_client
+    )
+
+
 def _worker_stage_scope_rows(required_stages: list[str], selected_stages: list[str]) -> list[dict[str, Any]]:
     selected = set(selected_stages)
     return [
@@ -809,10 +827,7 @@ def build_contract() -> dict[str, Any]:
         ),
         _row(
             "frontend_displays_plan_and_does_not_compute_universe",
-            "export function postTask" in api_client
-            and "fetch(`${apiBase}${path}`" in api_client
-            and "const API_BASE_CANDIDATES = localApiBaseCandidates();" in api_client
-            and "return request<TaskCreationData>(path" in api_client
+            _frontend_uses_bounded_local_api_client(api_client)
             and 'from "../api/client"' in factor_page
             and "getFactorQuantCache" in factor_page
             and "postTask" in factor_page

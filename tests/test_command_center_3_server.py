@@ -7207,7 +7207,8 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertTrue(
             any(row["api"] == "local_next_session_durable_evidence_recipe" for row in service_packet["call_ledger"])
         )
-        self.assertIn("next_session_durable_evidence_recipe", " ".join(service_packet["warnings"]))
+        self.assertNotIn("next_session_durable_evidence_recipe", " ".join(service_packet["warnings"]))
+        self.assertIn("next_session_durable_evidence_recipe", " ".join(service_packet["notices"]))
 
     def test_next_session_cache_exact_packet_without_chart_model_still_has_contract(self):
         self._with_meta_store()
@@ -12654,7 +12655,14 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         cache_view = candidate_service.read_candidate_radar_cache()
         self.assertEqual(cache_view["cache_source"], "sqlite_meta")
         self.assertEqual(cache_view["full_pool_scan_plan"]["status"], "full_pool_plan_ready")
-        self.assertEqual(cache_view["call_ledger"][1]["api"], "local_candidate_radar_full_pool_plan")
+        self.assertEqual(cache_view["call_ledger"][0]["api"], "local_candidate_radar_cache")
+        self.assertFalse(
+            any(
+                row.get("api") == "local_candidate_radar_full_pool_plan"
+                for row in cache_view["call_ledger"]
+            )
+        )
+        self.assert_local_ledger_boundary(cache_view["call_ledger"][0])
 
     def test_candidate_radar_deep_scan_plan_task_records_no_feature_loss_readiness_without_scan(self):
         from storage.sqlite_meta import SQLiteMetaStore
@@ -12760,7 +12768,14 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         cache_view = candidate_service.read_candidate_radar_cache()
         self.assertEqual(cache_view["cache_source"], "sqlite_meta")
         self.assertEqual(cache_view["deep_scan_plan"]["status"], "deep_scan_plan_ready")
-        self.assertEqual(cache_view["call_ledger"][1]["api"], "local_candidate_radar_deep_scan_plan")
+        self.assertEqual(cache_view["call_ledger"][0]["api"], "local_candidate_radar_cache")
+        self.assertFalse(
+            any(
+                row.get("api") == "local_candidate_radar_deep_scan_plan"
+                for row in cache_view["call_ledger"]
+            )
+        )
+        self.assert_local_ledger_boundary(cache_view["call_ledger"][0])
 
     def test_candidate_radar_quick_scan_task_fails_safe_when_packet_write_fails(self):
         self._with_meta_store()
@@ -17887,6 +17902,25 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("freshness_durable_evidence_recipe_is_local_provider_pending", criteria)
         self.assertIn("trade_cal_provider_freshness_replay_is_local_prior_provider_evidence", criteria)
 
+    def test_data_health_freshness_contract_packet_identity_is_fail_closed(self):
+        from scripts import data_health_freshness_contract as contract_module
+
+        exact_keys = [
+            "command_center_3_candidate_radar_freshness_cache",
+            "command_center_evidence_radar_packet",
+            "market_packet",
+        ]
+        self.assertTrue(contract_module._has_exact_producer_refresh_packet_keys(exact_keys))
+        self.assertFalse(
+            contract_module._has_exact_producer_refresh_packet_keys(
+                ["command_center_3_candidate_radar_cache", *exact_keys[1:]]
+            )
+        )
+        self.assertFalse(
+            contract_module._has_exact_producer_refresh_packet_keys([*exact_keys, "extra_packet"])
+        )
+        self.assertFalse(contract_module._has_exact_producer_refresh_packet_keys("market_packet"))
+
     def test_tushare_acceptance_contract_script_is_local_push_gate_guard(self):
         path = Path("scripts/tushare_acceptance_contract.py")
         script = path.read_text(encoding="utf-8")
@@ -18718,6 +18752,36 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("task_catalog_is_button_gated_read_plan_worker_dry_run_execution_request_and_research_receipt_only", criteria)
         self.assertIn("frontend_displays_plan_and_does_not_compute_universe", criteria)
         self.assertIn("research_outputs_do_not_enter_action_surfaces", criteria)
+
+    def test_factor_universe_frontend_transport_contract_is_fail_closed(self):
+        from scripts import factor_universe_contract as contract_module
+
+        api_client = Path("desktop/src/api/client.ts").read_text(encoding="utf-8")
+        self.assertTrue(contract_module._frontend_uses_bounded_local_api_client(api_client))
+        self.assertFalse(
+            contract_module._frontend_uses_bounded_local_api_client(
+                api_client.replace("signal: controller.signal", "signal: undefined", 1)
+            )
+        )
+        self.assertFalse(
+            contract_module._frontend_uses_bounded_local_api_client(
+                api_client.replace(
+                    "await fetchLocalApi(`${apiBase}${path}`",
+                    "await fetch(`${apiBase}${path}`",
+                    1,
+                )
+            )
+        )
+        self.assertFalse(
+            contract_module._frontend_uses_bounded_local_api_client(
+                api_client.replace("const API_BASE_CANDIDATES = localApiBaseCandidates();", "", 1)
+            )
+        )
+        self.assertFalse(
+            contract_module._frontend_uses_bounded_local_api_client(
+                api_client + '\nfetch("https://example.invalid");\n'
+            )
+        )
 
     def test_deepseek_governance_contract_script_is_local_push_gate_guard(self):
         path = Path("scripts/deepseek_governance_contract.py")
@@ -21313,6 +21377,25 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("docs_policy_or_plan", categories)
         self.assertIn("tests_fixture_or_assertion", categories)
 
+    def test_secret_keyword_review_contract_keeps_realistic_values_fail_closed(self):
+        from scripts import secret_keyword_review_contract as contract_module
+
+        self.assertTrue(
+            contract_module._high_risk_outside_allowed(
+                "scripts/example.py", 'api_key = "abcdefghijklmnopqrstuv"'
+            )
+        )
+        self.assertFalse(
+            contract_module._high_risk_outside_allowed(
+                "scripts/example.py", 'api_key = "redacted"'
+            )
+        )
+        self.assertFalse(
+            contract_module._high_risk_outside_allowed(
+                "tests/test_example.py", 'api_key = "abcdefghijklmnopqrstuv"'
+            )
+        )
+
     def test_motion_viewport_qa_contract_script_is_local_static(self):
         path = Path("scripts/motion_viewport_qa_contract.py")
         script = path.read_text(encoding="utf-8")
@@ -21410,6 +21493,33 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         criteria = {row["criterion"] for row in payload["static_rows"]}
         self.assertIn("keynote_focus_sweep_cue", criteria)
         self.assertIn("motion_production_stage_scope_manifest_is_complete_and_pending", criteria)
+
+    def test_motion_packet_status_contract_accepts_accessible_dot_and_fails_closed(self):
+        from scripts import motion_viewport_qa_contract as contract_module
+
+        packet_card = Path("desktop/src/components/PacketCard.tsx").read_text(encoding="utf-8")
+        styles = Path("desktop/src/styles.css").read_text(encoding="utf-8")
+        self.assertTrue(contract_module._packet_status_clarity_source_contract(packet_card, styles))
+        self.assertFalse(
+            contract_module._packet_status_clarity_source_contract(
+                packet_card.replace('role="status"', "", 1), styles
+            )
+        )
+        self.assertFalse(
+            contract_module._packet_status_clarity_source_contract(
+                packet_card.replace('aria-label={`状态：${status}`}', "", 1), styles
+            )
+        )
+        self.assertFalse(
+            contract_module._packet_status_clarity_source_contract(
+                packet_card,
+                styles.replace(
+                    '.packet-card[data-motion-scope="packet_status_clarity"][data-status-tone="bad"]',
+                    ".packet-card[data-status-tone-disabled]",
+                    1,
+                ),
+            )
+        )
 
     def test_motion_browser_qa_runbook_script_is_local_static(self):
         path = Path("scripts/motion_browser_qa_runbook.py")

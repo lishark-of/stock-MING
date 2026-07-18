@@ -95,6 +95,13 @@ REQUIRED_FRESHNESS_DURABLE_EVIDENCE_KEYS = {
     "decision_surface_isolation",
     "production_promotion_review",
 }
+PRODUCER_REFRESH_PACKET_KEYS = frozenset(
+    {
+        "command_center_3_candidate_radar_freshness_cache",
+        "command_center_evidence_radar_packet",
+        "market_packet",
+    }
+)
 
 
 def _get(mapping: dict[str, Any], key: str) -> dict[str, Any]:
@@ -121,6 +128,12 @@ def _as_dict(value: Any) -> dict[str, Any]:
 
 def _as_list(value: Any) -> list[Any]:
     return value if isinstance(value, list) else []
+
+
+def _has_exact_producer_refresh_packet_keys(value: Any) -> bool:
+    """Keep local freshness writes pinned to the three audited packet identities."""
+
+    return set(_as_list(value)) == PRODUCER_REFRESH_PACKET_KEYS
 
 
 def _serialized(value: Any) -> str:
@@ -2096,12 +2109,9 @@ def build_contract() -> dict[str, Any]:
             and producer_refresh_receipt.get("writes_snapshot_cache") is False
             and producer_refresh_receipt.get("writes_local_sqlite_packets") is True
             and int(producer_refresh_receipt.get("local_sqlite_packet_write_count") or 0) == 3
-            and set(_as_list(producer_refresh_receipt.get("written_packet_keys")))
-            == {
-                "command_center_3_candidate_radar_cache",
-                "command_center_evidence_radar_packet",
-                "market_packet",
-            }
+            and _has_exact_producer_refresh_packet_keys(
+                producer_refresh_receipt.get("written_packet_keys")
+            )
             and producer_refresh_receipt.get("does_not_refresh_provider") is True
             and producer_refresh_receipt.get("provider_backed_long_window_acceptance_done") is False
             and producer_refresh_receipt.get("production_freshness_gate_complete") is False

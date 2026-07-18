@@ -80,6 +80,32 @@ def row(criterion: str, passed: bool, evidence: str, *, status: str | None = Non
     }
 
 
+def _packet_status_clarity_source_contract(packet_card: str, styles: str) -> bool:
+    """Recognize either accessible status presentation while preserving tone guards."""
+
+    accessible_status_presentation = (
+        'StatusBadge label={status} tone={tone}' in packet_card
+        or (
+            'className="packet-card__state"' in packet_card
+            and 'role="status"' in packet_card
+            and 'aria-label={`状态：${status}`}' in packet_card
+            and 'className="packet-card__state-dot"' in packet_card
+        )
+    )
+    return (
+        'data-motion-scope="packet_status_clarity"' in packet_card
+        and "function statusTone" in packet_card
+        and "data-status-tone={tone}" in packet_card
+        and accessible_status_presentation
+        and '.packet-card[data-motion-scope="packet_status_clarity"][data-status-tone="good"]'
+        in styles
+        and '.packet-card[data-motion-scope="packet_status_clarity"][data-status-tone="warn"]'
+        in styles
+        and '.packet-card[data-motion-scope="packet_status_clarity"][data-status-tone="bad"]'
+        in styles
+    )
+
+
 def motion_production_stage_scope_rows() -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
     missing_evidence = [
@@ -236,13 +262,7 @@ def build_contract() -> dict[str, Any]:
         ),
         row(
             "packet_status_clarity_cue",
-            'data-motion-scope="packet_status_clarity"' in packet_card
-            and "function statusTone" in packet_card
-            and "data-status-tone={tone}" in packet_card
-            and 'StatusBadge label={status} tone={tone}' in packet_card
-            and '.packet-card[data-motion-scope="packet_status_clarity"][data-status-tone="good"]' in styles
-            and '.packet-card[data-motion-scope="packet_status_clarity"][data-status-tone="warn"]' in styles
-            and '.packet-card[data-motion-scope="packet_status_clarity"][data-status-tone="bad"]' in styles,
+            _packet_status_clarity_source_contract(packet_card, styles),
             "packet cards map ready/pending/blocked status strings to matching good/warn/bad visual hierarchy cues",
         ),
         row(
