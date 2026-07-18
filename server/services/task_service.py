@@ -3348,6 +3348,9 @@ TASK_CATALOG = [
         "output_packet_key": "command_center_chokepoint_scan_packet",
         "button_gated": True,
         "current_backend": "local_fallback_stub",
+        "production_worker_required": False,
+        "legacy_debug_only": True,
+        "production_disposition": "legacy_debug_not_in_production_worker_scope",
         "external_call_policy": "manual_deepseek_capable",
         "possible_external_sources": ["deepseek"],
         "deepseek_model_strategy_purpose": "explain",
@@ -3365,6 +3368,9 @@ TASK_CATALOG = [
         "output_packet_key": "command_center_serenity_method_radar_packet",
         "button_gated": True,
         "current_backend": "local_fallback_stub",
+        "production_worker_required": False,
+        "legacy_debug_only": True,
+        "production_disposition": "legacy_debug_not_in_production_worker_scope",
         "external_call_policy": "manual_github_probe_capable",
         "possible_external_sources": ["github"],
         "call_ledger_required": True,
@@ -3909,6 +3915,8 @@ def _build_route_coverage() -> dict[str, Any]:
 def _build_implementation_status() -> dict[str, Any]:
     backend_counts: dict[str, int] = {}
     stub_task_types: list[str] = []
+    production_required_stub_task_types: list[str] = []
+    legacy_debug_stub_task_types: list[str] = []
     local_pipeline_task_types: list[str] = []
     guarded_local_task_types: list[str] = []
     external_capable_task_types: list[str] = []
@@ -3919,6 +3927,16 @@ def _build_implementation_status() -> dict[str, Any]:
         backend_counts[backend] = backend_counts.get(backend, 0) + 1
         if "stub" in backend:
             stub_task_types.append(task_type)
+            legacy_debug_exemption = bool(
+                item.get("production_worker_required") is False
+                and item.get("legacy_debug_only") is True
+                and item.get("production_disposition")
+                == "legacy_debug_not_in_production_worker_scope"
+            )
+            if legacy_debug_exemption:
+                legacy_debug_stub_task_types.append(task_type)
+            else:
+                production_required_stub_task_types.append(task_type)
         if "pipeline" in backend or backend == "local_producer_cache_refresh_sqlite_packet_writer":
             local_pipeline_task_types.append(task_type)
         if "guarded" in backend or "sanitizer" in backend:
@@ -3933,6 +3951,10 @@ def _build_implementation_status() -> dict[str, Any]:
         "task_count": len(TASK_CATALOG),
         "backend_counts": backend_counts,
         "stub_task_count": len(stub_task_types),
+        "production_required_stub_task_count": len(production_required_stub_task_types),
+        "production_required_stub_task_types": production_required_stub_task_types,
+        "legacy_debug_stub_task_count": len(legacy_debug_stub_task_types),
+        "legacy_debug_stub_task_types": legacy_debug_stub_task_types,
         "local_pipeline_task_count": len(local_pipeline_task_types),
         "guarded_local_task_count": len(guarded_local_task_types),
         "implemented_local_task_count": len(implemented_local_task_types),

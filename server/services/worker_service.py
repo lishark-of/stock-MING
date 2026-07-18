@@ -1191,6 +1191,10 @@ def _worker_production_blocker_audit(
     task_persistence: dict[str, Any],
 ) -> dict[str, Any]:
     stub_count = int(task_implementation_status.get("stub_task_count") or 0)
+    production_required_stub_count = int(
+        task_implementation_status.get("production_required_stub_task_count", stub_count) or 0
+    )
+    legacy_debug_stub_count = int(task_implementation_status.get("legacy_debug_stub_task_count") or 0)
     external_capable_button_gated = bool(task_implementation_status.get("all_external_capable_tasks_are_button_gated", True))
     external_capable_call_ledger = bool(task_implementation_status.get("all_external_capable_tasks_require_call_ledger", True))
     scheduler_auto_task_count = sum(1 for row in dispatch_plan_rows if row.get("automatic_scheduler_allowed"))
@@ -1258,9 +1262,12 @@ def _worker_production_blocker_audit(
         _row(
             "stub_tasks_migrated",
             "task_catalog",
-            "passed" if stub_count == 0 else "blocked",
-            f"{stub_count} task(s) still report stub backend; scaffold cannot be called production worker completion.",
-            "Replace stub task backends or keep them clearly marked as non-production.",
+            "passed" if production_required_stub_count == 0 else "blocked",
+            (
+                f"{production_required_stub_count} production-worker task(s) still report stub backend; "
+                f"{legacy_debug_stub_count}/{stub_count} stub task(s) are explicitly legacy-debug-only and outside production dispatch."
+            ),
+            "Replace production-required stub backends; keep legacy/debug stubs explicitly outside production dispatch.",
         ),
         _row(
             "dispatch_queue_contract_complete",

@@ -22147,6 +22147,21 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
             set(implementation_status["stub_task_types"]),
             {"run_chokepoint_scan", "probe_serenity_github"},
         )
+        self.assertEqual(implementation_status["production_required_stub_task_count"], 0)
+        self.assertEqual(implementation_status["production_required_stub_task_types"], [])
+        self.assertEqual(implementation_status["legacy_debug_stub_task_count"], 2)
+        self.assertEqual(
+            set(implementation_status["legacy_debug_stub_task_types"]),
+            {"run_chokepoint_scan", "probe_serenity_github"},
+        )
+        by_task = {row["task_type"]: row for row in catalog["tasks"]}
+        for task_type in ("run_chokepoint_scan", "probe_serenity_github"):
+            self.assertFalse(by_task[task_type]["production_worker_required"])
+            self.assertTrue(by_task[task_type]["legacy_debug_only"])
+            self.assertEqual(
+                by_task[task_type]["production_disposition"],
+                "legacy_debug_not_in_production_worker_scope",
+            )
         self.assertEqual(
             set(implementation_status["local_pipeline_task_types"]),
             {
@@ -24892,6 +24907,9 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertFalse(blocker_by_criterion["celery_worker_started"]["cache_api_can_resolve"])
         self.assertTrue(blocker_by_criterion["celery_worker_started"]["operator_action_required"])
         self.assertIn("stub_tasks_migrated", blocker_by_criterion)
+        self.assertEqual(blocker_by_criterion["stub_tasks_migrated"]["status"], "passed")
+        self.assertFalse(blocker_by_criterion["stub_tasks_migrated"]["blocks_production_worker"])
+        self.assertFalse(blocker_by_criterion["stub_tasks_migrated"]["operator_action_required"])
         self.assertTrue(blocker_by_criterion["external_tasks_button_gated"]["status"], "passed")
         self.assertTrue(blocker_by_criterion["external_tasks_call_ledger_required"]["status"], "passed")
         self.assertTrue(blocker_by_criterion["scheduler_default_off"]["status"], "passed")
