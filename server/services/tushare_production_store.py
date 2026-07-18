@@ -669,6 +669,23 @@ def validate_tushare_full_market_production_version(
         "scored_universe_policy": str(result.get("scored_universe_policy") or ""),
         "artifact_manifest_digest": str(result.get("manifest_digest") or ""),
         "version_digest": str(result.get("version_digest") or ""),
+        "current_version": str(result.get("current_version") or ""),
+        "official_call_ledger_digest": str(
+            (
+                result.get("manifest", {}).get("official_run_receipt", {})
+                if isinstance(result.get("manifest"), Mapping)
+                else {}
+            ).get("sanitized_call_ledger_digest")
+            or ""
+        ),
+        "official_execution_event_digest": str(
+            (
+                result.get("manifest", {}).get("official_run_receipt", {})
+                if isinstance(result.get("manifest"), Mapping)
+                else {}
+            ).get("execution_event_digest")
+            or ""
+        ),
     }
     if include_frames and shared["ready"]:
         import pyarrow.parquet as pq

@@ -15,7 +15,6 @@ import json
 import math
 import os
 import re
-import secrets
 import sqlite3
 import stat
 import subprocess
@@ -27,6 +26,7 @@ from typing import Any
 
 from . import (
     motion_evidence_service,
+    next_session_external_promotion_service,
     release_promotion_service,
     streamlit_retirement_evidence_service,
 )
@@ -62,13 +62,29 @@ _EVENT_FILE = re.compile(r"^[0-9]{8}\.json$")
 _REQUIRED_VIEWPORTS = {"desktop", "laptop", "tablet", "mobile"}
 _REQUIRED_FEATURE_COUNT = 9
 _MIN_PRODUCTION_CLOSE_POINTS = 60
+_REQUIRED_COVERAGE_KEYS = {
+    "latest_close_anchor",
+    "scenario_paths",
+    "reference_and_limit_lines",
+    "operation_zones_and_guardrails",
+    "position_conflict_warnings",
+    "freshness_and_data_trust",
+    "deepseek_status_display",
+    "hover_click_drilldown",
+    "read_only_action_boundary",
+}
 _PROVENANCE_FIELDS = {
     "schema_version",
     "status",
     "head_full",
     "source_task_id",
     "source_task_status",
-    "source_task_digest",
+    "source_task_payload_digest",
+    "source_task_call_ledger_digest",
+    "official_execution_event_digest",
+    "result_version",
+    "packet_scope_hash",
+    "coverage_rows_digest",
     "symbol",
     "data_date",
     "provider_scope_hash",
@@ -374,58 +390,6 @@ def _read_secret(evidence_root: Path | str) -> tuple[bytes | None, str]:
     return secret, ""
 
 
-def _create_secret(evidence_root: Path | str) -> tuple[bytes | None, str]:
-    root, events, key_path, _ = _paths(evidence_root)
-    trust = key_path.parent
-    evidence_directory = root.parent
-
-    def ensure_private_directory(path: Path) -> bool:
-        try:
-            path.mkdir(mode=0o700, exist_ok=False)
-        except FileExistsError:
-            pass
-        except OSError:
-            return False
-        return _directory_valid(path)
-
-    try:
-        try:
-            evidence_directory.mkdir(mode=0o700, exist_ok=False)
-        except FileExistsError:
-            pass
-        if not _evidence_anchor_valid(evidence_directory):
-            return None, "next_session_replacement_evidence_directory_invalid"
-        if not ensure_private_directory(root):
-            return None, "next_session_replacement_trust_directory_invalid"
-        if not ensure_private_directory(events):
-            return None, "next_session_replacement_trust_directory_invalid"
-        if not ensure_private_directory(trust):
-            return None, "next_session_replacement_trust_directory_invalid"
-        if key_path.exists():
-            return _read_secret(evidence_root)
-        secret = secrets.token_bytes(32)
-        descriptor = os.open(
-            key_path,
-            os.O_WRONLY
-            | os.O_CREAT
-            | os.O_EXCL
-            | int(getattr(os, "O_CLOEXEC", 0))
-            | int(getattr(os, "O_NOFOLLOW", 0)),
-            0o600,
-        )
-        try:
-            offset = 0
-            while offset < len(secret):
-                offset += os.write(descriptor, secret[offset:])
-            os.fsync(descriptor)
-        finally:
-            os.close(descriptor)
-    except OSError:
-        return None, "next_session_replacement_trusted_writer_key_create_failed"
-    verified, blocker = _read_secret(evidence_root)
-    return (verified, blocker) if verified is not None else (None, blocker)
-
-
 def _atomic_private_json(path: Path, value: Mapping[str, Any], *, replace: bool) -> str:
     temporary = path.with_name(f".{path.name}.{uuid.uuid4().hex}.tmp")
     descriptor = -1
@@ -498,50 +462,6 @@ def _read_approval_secret(evidence_root: Path | str) -> tuple[bytes | None, str]
     if secret is None or len(secret) != 32:
         return None, "next_session_replacement_out_of_band_approval_capability_invalid"
     return secret, ""
-
-
-def _create_approval_secret(evidence_root: Path | str) -> tuple[bytes | None, str]:
-    """Provision the operator-only capability; the HTTP route never calls this."""
-
-    root, key_path, _, _ = _approval_paths(evidence_root)
-    evidence_directory = root.parent
-    try:
-        evidence_directory.mkdir(mode=0o700, exist_ok=True)
-        if not _evidence_anchor_valid(evidence_directory):
-            return None, "next_session_replacement_evidence_directory_invalid"
-        try:
-            root.mkdir(mode=0o700, exist_ok=False)
-        except FileExistsError:
-            pass
-        if not _directory_valid(root):
-            return None, "next_session_replacement_out_of_band_approval_capability_invalid"
-        if key_path.exists():
-            return _read_approval_secret(evidence_root)
-        secret = secrets.token_bytes(32)
-        descriptor = os.open(
-            key_path,
-            os.O_WRONLY
-            | os.O_CREAT
-            | os.O_EXCL
-            | int(getattr(os, "O_CLOEXEC", 0))
-            | int(getattr(os, "O_NOFOLLOW", 0)),
-            0o600,
-        )
-        try:
-            offset = 0
-            while offset < len(secret):
-                offset += os.write(descriptor, secret[offset:])
-            os.fsync(descriptor)
-        finally:
-            os.close(descriptor)
-        directory_descriptor = os.open(root, os.O_RDONLY | int(getattr(os, "O_DIRECTORY", 0)))
-        try:
-            os.fsync(directory_descriptor)
-        finally:
-            os.close(directory_descriptor)
-    except OSError:
-        return None, "next_session_replacement_out_of_band_approval_capability_create_failed"
-    return _read_approval_secret(evidence_root)
 
 
 def _approval_without_mac(ticket: Mapping[str, Any]) -> dict[str, Any]:
@@ -819,6 +739,12 @@ def _authoritative_provider_daily_evidence(
         "dataset_version_digest": str(verified.get("version_digest") or ""),
         "daily_rows_digest": _digest(normalized_daily) if normalized_daily else "",
         "trade_calendar_digest": _digest(normalized_calendar) if normalized_calendar else "",
+        "source_task_call_ledger_digest": str(
+            verified.get("official_call_ledger_digest") or ""
+        ),
+        "official_execution_event_digest": str(
+            verified.get("official_execution_event_digest") or ""
+        ),
         "validated_trade_date": str(verified.get("validated_trade_date") or ""),
         "row_count": len(normalized_daily),
     }
@@ -840,6 +766,13 @@ def _next_packet_evidence(
         if isinstance(packet.get("next_session_same_packet_signal_capability_coverage"), Mapping)
         else {}
     )
+    coverage_rows = (
+        packet.get("next_session_same_packet_signal_capability_coverage_rows")
+        if isinstance(packet.get("next_session_same_packet_signal_capability_coverage_rows"), list)
+        else coverage.get("rows")
+        if isinstance(coverage.get("rows"), list)
+        else []
+    )
     historical = chart.get("historical_points") if isinstance(chart.get("historical_points"), list) else []
     provenance = (
         packet.get("production_replacement_provenance")
@@ -858,23 +791,85 @@ def _next_packet_evidence(
     source_task_binding = bool(
         source_task.get("task_id") == provenance.get("source_task_id")
         and source_task.get("status") == "success"
-        and source_task.get("head_full") == head_full
+        and source_task.get("task_type") == "refresh_tushare_facts"
+        and source_task.get("progress") == 1.0
+        and source_task.get("output_packet_key") == "command_center_tushare_refresh_packet"
+        and isinstance(source_task.get("payload_safe"), Mapping)
+        and source_task.get("payload_safe", {}).get("acceptance_mode")
+        == "full_interface_provider_production"
+        and source_task.get("external_calls_triggered") is True
+        and source_task.get("tushare_called") is True
+        and source_task.get("does_not_execute_trades") is True
+        and source_task.get("does_not_modify_strategy_action") is True
+        and provenance.get("source_task_payload_digest")
+        == _digest(source_task.get("payload_safe") or {})
+        and provenance.get("source_task_call_ledger_digest")
+        == authoritative.get("source_task_call_ledger_digest")
+        == _digest(source_task.get("call_ledger") or [])
+        and provenance.get("official_execution_event_digest")
+        == authoritative.get("official_execution_event_digest")
+    )
+    chart_structure_digest = _digest(
+        {
+            "scenario_series": chart.get("scenario_series") or [],
+            "reference_lines": chart.get("reference_lines") or [],
+            "operation_zones": chart.get("operation_zones") or [],
+        }
+    )
+    coverage_rows_digest = _digest(coverage_rows) if coverage_rows else ""
+    coverage_rows_valid = bool(
+        len(coverage_rows) == _REQUIRED_FEATURE_COUNT
+        and {str(row.get("coverage_key") or "") for row in coverage_rows if isinstance(row, Mapping)}
+        == _REQUIRED_COVERAGE_KEYS
         and all(
-            source_task.get(key) == authoritative.get(key)
-            for key in (
-                "symbol",
-                "data_date",
-                "provider_scope_hash",
-                "dataset_version_digest",
-                "daily_rows_digest",
-                "trade_calendar_digest",
-            )
+            isinstance(row, Mapping)
+            and row.get("retained") is True
+            and row.get("direct_observation") is True
+            and row.get("same_packet") is True
+            and row.get("external_calls_triggered") is False
+            and row.get("does_not_execute_trades") is True
+            and row.get("does_not_modify_strategy_action") is True
+            and row.get("does_not_modify_operation_zones") is True
+            and row.get("contains_secret") is False
+            for row in coverage_rows
         )
-        and provenance.get("source_task_digest") == _digest(source_task)
+    )
+    binding_material = {
+        "scope": "ltg08_next_session_current_head_production_packet",
+        "head_full": head_full,
+        "source_task_id": provenance.get("source_task_id"),
+        "source_task_payload_digest": provenance.get("source_task_payload_digest"),
+        "source_task_call_ledger_digest": authoritative.get("source_task_call_ledger_digest"),
+        "official_execution_event_digest": authoritative.get("official_execution_event_digest"),
+        "symbol": authoritative.get("symbol"),
+        "data_date": authoritative.get("data_date"),
+        "provider_scope_hash": authoritative.get("provider_scope_hash"),
+        "dataset_version_digest": authoritative.get("dataset_version_digest"),
+        "daily_rows_digest": authoritative.get("daily_rows_digest"),
+        "trade_calendar_digest": authoritative.get("trade_calendar_digest"),
+        "coverage_rows_digest": coverage_rows_digest,
+        "chart_structure_digest": chart_structure_digest,
+    }
+    binding_digest = _digest(binding_material)
+    expected_result_version = f"next-session-prod-{binding_digest[:24]}"
+    expected_packet_scope_hash = _digest(
+        {**binding_material, "result_version": expected_result_version}
+    )
+    exact_version_binding = bool(
+        coverage_rows_valid
+        and provenance.get("coverage_rows_digest") == coverage_rows_digest
+        and provenance.get("result_version") == expected_result_version
+        and provenance.get("packet_scope_hash") == expected_packet_scope_hash
+        and packet.get("coverage_rows_digest") == coverage_rows_digest
+        and packet.get("result_version") == expected_result_version
+        and packet.get("packet_scope_hash") == expected_packet_scope_hash
+        and chart.get("result_version") == expected_result_version
+        and chart.get("packet_scope_hash") == expected_packet_scope_hash
+        and summary.get("result_version") == expected_result_version
     )
     authoritative_lineage = bool(
         set(provenance) == _PROVENANCE_FIELDS
-        and provenance.get("schema_version") == "next_session_production_replacement_provenance.v1"
+        and provenance.get("schema_version") == "next_session_production_replacement_provenance.v2"
         and provenance.get("status") == "authoritative_provider_dataset_current_head"
         and provenance.get("head_full") == head_full
         and isinstance(provenance.get("source_task_id"), str)
@@ -894,6 +889,7 @@ def _next_packet_evidence(
         and provenance.get("trade_calendar_validated") is True
         and provenance.get("synthetic_fixture") is False
         and provenance.get("local_preview") is False
+        and exact_version_binding
     )
     real_close = bool(
         chart.get("uses_real_daily_close") is True
@@ -919,6 +915,7 @@ def _next_packet_evidence(
         and coverage.get("required_feature_group_count") == _REQUIRED_FEATURE_COUNT
         and coverage.get("retained_feature_group_count") == _REQUIRED_FEATURE_COUNT
         and coverage.get("missing_feature_groups") == []
+        and coverage_rows_valid
     )
     safe = bool(
         contract.get("cache_only") is True
@@ -963,6 +960,8 @@ def _next_packet_evidence(
         blockers.extend(str(item) for item in authoritative.get("blockers") or [])
     if not authoritative_lineage:
         blockers.append("next_session_authoritative_current_head_lineage_missing_or_invalid")
+    if not exact_version_binding:
+        blockers.append("next_session_exact_result_version_scope_coverage_binding_invalid")
     if not production_maturity:
         blockers.append("next_session_production_maturity_missing")
     if not retained:
@@ -980,6 +979,7 @@ def _next_packet_evidence(
         "authoritative_provider_dataset": authoritative.get("ready") is True,
         "authoritative_current_head_lineage": authoritative_lineage,
         "immutable_source_task_status_verified": source_task_binding,
+        "exact_result_version_scope_coverage_binding": exact_version_binding,
         "historical_point_count": len(historical),
         "scenario_anchor_count": anchor_count,
         "scenario_anchored_count": anchored_count,
@@ -1261,12 +1261,22 @@ def _public_summary(
     prerequisites: Mapping[str, Any],
     event: Mapping[str, Any] | None,
     blockers: list[str],
+    evidence_root: Path | str,
 ) -> dict[str, Any]:
-    blockers = sorted(set([*blockers, *STRUCTURAL_PRODUCTION_BLOCKERS]))
-    # Same-UID local files cannot provide an out-of-band approval capability
-    # or rollback-resistant high-water mark.  Until such external trust exists,
-    # no in-process event can be production evidence.
-    ready = False
+    trust = next_session_external_promotion_service.validate_current_promotion(
+        prerequisites,
+        evidence_root=evidence_root,
+    )
+    blockers = sorted(set([*blockers, *(trust.get("blockers") or [])]))
+    if trust.get("external_approval_verified") is not True:
+        blockers.append("external_trusted_approval_capability_unavailable")
+    if trust.get("rollback_resistant_high_water_verified") is not True:
+        blockers.append("rollback_resistant_high_water_unavailable")
+    blockers = sorted(set(blockers))
+    ready = bool(prerequisites.get("ready") is True and trust.get("ready") is True and not blockers)
+    trusted_event = trust.get("event") if isinstance(trust.get("event"), Mapping) else {}
+    if ready:
+        event = trusted_event
     semantic_digest = str(prerequisites.get("semantic_digest") or "")
     review_id = (
         _approval_review_id(
@@ -1299,13 +1309,18 @@ def _public_summary(
         "approval_review_id": event.get("approval_review_id") if ready and event else review_id,
         "approval_semantic_digest": semantic_digest,
         "out_of_band_approval_ticket_required": True,
-        "approval_ticket_id": event.get("approval_ticket_id") if ready and event else "",
+        "approval_ticket_id": event.get("approval_id") if ready and event else "",
         "approval_nonce_digest": event.get("approval_nonce_digest") if ready and event else "",
         "next_packet_evidence": prerequisites.get("next_packet") or {},
         "motion_pair_evidence": prerequisites.get("motion_pair") or {},
         "streamlit_retirement_evidence": prerequisites.get("streamlit_retirement") or {},
         "remote_ci_evidence": prerequisites.get("remote_ci") or {},
         "blockers": blockers,
+        "promotion_proposal": trust.get("proposal") or {},
+        "external_trusted_approval_verified": trust.get("external_approval_verified") is True,
+        "rollback_resistant_high_water_verified": (
+            trust.get("rollback_resistant_high_water_verified") is True
+        ),
         "read_only": True,
         "writes_storage": False,
         "creates_task": False,
@@ -1349,7 +1364,12 @@ def validate_next_session_production_replacement(
         }
     )
     blockers = list(prerequisites.get("blockers") or [])
-    return _public_summary(prerequisites=prerequisites, event=None, blockers=blockers)
+    return _public_summary(
+        prerequisites=prerequisites,
+        event=None,
+        blockers=blockers,
+        evidence_root=root,
+    )
 
 
 def promote_next_session_production_replacement(
@@ -1383,15 +1403,26 @@ def promote_next_session_production_replacement(
     blockers = list(prerequisites.get("blockers") or [])
     if not approved:
         blockers.insert(0, "explicit_user_next_session_replacement_approval_required")
-    result = _public_summary(prerequisites=prerequisites, event=None, blockers=blockers)
+    write_result = next_session_external_promotion_service.append_promotion_event(
+        request,
+        prerequisites,
+        evidence_root=root,
+    )
+    blockers.extend(str(item) for item in write_result.get("blockers") or [])
+    result = _public_summary(
+        prerequisites=prerequisites,
+        event=write_result.get("event") if isinstance(write_result.get("event"), Mapping) else None,
+        blockers=blockers,
+        evidence_root=root,
+    )
     result.update(
         {
-            "promotion_written": False,
+            "promotion_written": write_result.get("promotion_written") is True,
             "idempotent_replay": False,
             "read_only": False,
-            "writes_storage": False,
-            "local_qa_only": True,
-            "production_eligible": False,
+            "writes_storage": write_result.get("promotion_written") is True,
+            "local_qa_only": write_result.get("promotion_written") is not True,
+            "production_eligible": result.get("production_replacement_complete") is True,
         }
     )
     return result

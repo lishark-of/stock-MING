@@ -22102,12 +22102,13 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         )
         self.assertEqual(route_coverage["task_creation_route_count"], catalog["task_count"])
         self.assertEqual(route_coverage["local_lifecycle_route_count"], 2)
-        self.assertEqual(route_coverage["local_control_plane_route_count"], 4)
+        self.assertEqual(route_coverage["local_control_plane_route_count"], 5)
         self.assertEqual(
             route_coverage["local_control_plane_routes"],
             [
                 "POST /api/audit/external-production-attestation",
                 "POST /api/audit/production-release-promotion",
+                "POST /api/next-session/production-packet",
                 "POST /api/next-session/production-replacement",
                 "POST /api/storage/cache-ttl/production-attestation",
             ],
@@ -22735,15 +22736,18 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertEqual(catalog["task_lifecycle_routes"][0]["external_call_policy"], "local_cancel_no_external_call")
         self.assertEqual(catalog["task_lifecycle_routes"][1]["route"], "POST /api/tasks/{task_id}/retry")
         self.assertEqual(catalog["task_lifecycle_routes"][1]["external_call_policy"], "local_retry_no_external_call")
+        control_plane_by_route = {
+            row["route"]: row for row in catalog["control_plane_post_routes"]
+        }
         self.assertEqual(
-            catalog["control_plane_post_routes"][0]["route"],
-            "POST /api/audit/production-release-promotion",
-        )
-        self.assertEqual(
-            catalog["control_plane_post_routes"][0]["authoritative_state"],
+            control_plane_by_route["POST /api/audit/production-release-promotion"][
+                "authoritative_state"
+            ],
             "hmac_append_only_release_promotion_journal",
         )
-        self.assertFalse(catalog["control_plane_post_routes"][0]["creates_task"])
+        self.assertFalse(
+            control_plane_by_route["POST /api/audit/production-release-promotion"]["creates_task"]
+        )
         self.assertEqual(by_type["refresh_tushare_facts"]["route"], "POST /api/tasks/refresh-tushare-facts")
         self.assertEqual(by_type["refresh_tushare_facts"]["current_backend"], "button_gated_tushare_pipeline")
         self.assertFalse(by_type["refresh_tushare_facts"]["retry_policy"]["auto_retry_enabled"])

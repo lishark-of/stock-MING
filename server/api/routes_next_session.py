@@ -6,7 +6,11 @@ from fastapi import APIRouter
 
 from server.api.task_response import task_envelope
 from server.schemas.packets import cache_envelope, cache_read_call_ledger, cache_read_packet, envelope
-from server.services import next_session_replacement_promotion_service, next_session_service
+from server.services import (
+    next_session_production_packet_service,
+    next_session_replacement_promotion_service,
+    next_session_service,
+)
 
 
 router = APIRouter(prefix="/api/next-session")
@@ -37,6 +41,33 @@ def generate_next_session(payload: dict[str, Any] | None = None) -> dict:
     return task_envelope(task)
 
 
+@router.post("/production-packet")
+def produce_next_session_production_packet(payload: dict[str, Any] | None = None) -> dict:
+    packet = next_session_production_packet_service.produce_next_session_production_packet(payload)
+    return envelope(
+        packet,
+        call_ledger=[
+            {
+                "api": "local_next_session_production_packet_producer",
+                "endpoint": "POST /api/next-session/production-packet",
+                "request_method": "POST",
+                "mode": "explicit_post_immutable_dataset_readback",
+                "call_status": packet.get("status"),
+                "row_count": 1 if packet.get("packet_written") is True else 0,
+                "external": False,
+                "external_calls_triggered": False,
+                "tushare_called": False,
+                "deepseek_called": False,
+                "github_called": False,
+                "does_not_execute_trades": True,
+                "does_not_modify_strategy_action": True,
+                "contains_secret": False,
+            }
+        ],
+        warnings=packet.get("blockers"),
+    )
+
+
 @router.post("/browser-qa-review")
 def review_next_session_browser_qa(payload: dict[str, Any] | None = None) -> dict:
     task = next_session_service.run_next_session_browser_qa_review_task(payload)
@@ -64,6 +95,8 @@ def _replacement_promotion_ledger(packet: dict[str, Any], *, request_method: str
             "mode": (
                 "read_only_validation"
                 if request_method == "GET"
+                else "external_authority_verified_append_only_promotion"
+                if packet.get("production_replacement_complete") is True
                 else "local_qa_review_only_production_fail_closed"
             ),
             "call_status": packet.get("status") or "next_session_production_replacement_blocked",
