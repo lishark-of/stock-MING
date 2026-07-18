@@ -45,6 +45,10 @@ STORAGE_CURRENT_RESULT_RETENTION_CLEANUP_PACKET_KEY = (
 STORAGE_PRODUCTION_PROMOTION_REVIEW_PACKET_KEY = "command_center_3_storage_production_promotion_review_packet"
 DUCKDB_READ_VALIDATION_PACKET_KEY = "command_center_3_storage_duckdb_read_validation_packet"
 STORAGE_PRODUCTION_BLOCKER_SCHEMA_VERSION = "command_center_3_storage_production_blocker_audit.v1"
+STORAGE_PRODUCTION_FACT_VALIDATION_SCHEMA_VERSION = (
+    "command_center_3_storage_production_fact_validation.v1"
+)
+STORAGE_PHASE_A_PACKET_SCHEMA_VERSION = "command_center_3_storage_physical_execution_phase_a.v1"
 STORAGE_PHYSICAL_DURABLE_EVIDENCE_SCHEMA_VERSION = (
     "command_center_3_storage_physical_durable_evidence_recipe.v1"
 )
@@ -5096,8 +5100,67 @@ def _storage_production_blocker_row(
     }
 
 
+def validate_storage_production_fact(
+    source: Mapping[str, Any] | None = None,
+    *,
+    expected_head_full: str | None = None,
+) -> dict[str, Any]:
+    """Fail closed until an independently trusted production validator exists.
+
+    Local phase-A packets and the local HMAC journal are useful integrity
+    evidence, but neither is an externally held production trust root.  In
+    particular, a caller-supplied ``production_storage_complete`` boolean must
+    never become an authoritative closeout fact.
+    """
+
+    packet = dict(source) if isinstance(source, Mapping) else {}
+    authoritative_head = str(
+        expected_head_full
+        if expected_head_full is not None
+        else production_evidence_journal.current_head_full()
+    ).strip().lower()
+    packet_head = str(packet.get("head_full") or "").strip().lower()
+    exact_schema = packet.get("schema_version") == STORAGE_PHASE_A_PACKET_SCHEMA_VERSION
+    exact_head = bool(authoritative_head and packet_head == authoritative_head)
+    untrusted_claim_present = packet.get("production_storage_complete") is True
+    blockers: list[str] = []
+    if not exact_schema:
+        blockers.append("storage_production_packet_exact_schema_missing")
+    if not exact_head:
+        blockers.append("storage_production_packet_current_head_binding_missing")
+    blockers.append("trusted_external_storage_production_validator_missing")
+    if untrusted_claim_present:
+        blockers.append("untrusted_local_production_storage_claim_rejected")
+    return {
+        "schema_version": STORAGE_PRODUCTION_FACT_VALIDATION_SCHEMA_VERSION,
+        "status": "storage_production_fact_blocked_external_trust_validator_missing",
+        "ready": False,
+        "production_storage_complete": False,
+        "expected_head_full": authoritative_head,
+        "packet_head_full": packet_head,
+        "exact_schema_validated": exact_schema,
+        "current_head_binding_validated": exact_head,
+        "trusted_external_production_validator_ready": False,
+        "local_integrity_journal_is_not_production_trust": True,
+        "caller_boolean_is_not_authoritative": True,
+        "untrusted_claim_present": untrusted_claim_present,
+        "blockers": blockers,
+        "read_only": True,
+        "writes_storage": False,
+        "external_calls_triggered": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "contains_secret": False,
+    }
+
+
 def storage_production_blocker_audit(production_readiness: Mapping[str, Any] | None = None) -> dict[str, Any]:
-    readiness = dict(production_readiness or storage_production_readiness())
+    # Do not consume a caller-provided readiness mapping: it is not an
+    # authoritative validator and historically allowed a nested boolean to
+    # self-seal production readiness.
+    caller_supplied_readiness_rejected = production_readiness is not None
+    readiness = dict(storage_production_readiness())
+    production_fact_validation = validate_storage_production_fact()
     dataset_count = int(readiness.get("schema_migration_dataset_count") or len(CANONICAL_PARQUET_DATASETS))
     schema_validation_done = int(readiness.get("physical_schema_validation_done_count") or 0)
     schema_migration_executed = int(readiness.get("schema_migration_executed_count") or 0)
@@ -5245,14 +5308,26 @@ def storage_production_blocker_audit(production_readiness: Mapping[str, Any] | N
         ),
     ]
     blockers = [row["criterion"] for row in rows if row.get("production_blocker")]
+    blockers.extend(
+        blocker
+        for blocker in production_fact_validation.get("blockers") or []
+        if blocker not in blockers
+    )
+    production_ready = bool(
+        not blockers
+        and dependency_ready
+        and production_fact_validation.get("ready") is True
+    )
     return {
         "schema_version": STORAGE_PRODUCTION_BLOCKER_SCHEMA_VERSION,
-        "status": "storage_production_ready" if not blockers and dependency_ready else "storage_production_blocked",
+        "status": "storage_production_ready" if production_ready else "storage_production_blocked",
         "scope": "ltg_05_storage_duckdb_parquet_productionization",
         "dataset_count": dataset_count,
         "blocking_criterion_count": len(blockers),
         "blockers": blockers,
-        "production_storage_complete": not blockers and dependency_ready,
+        "production_storage_complete": production_ready,
+        "caller_supplied_readiness_rejected": caller_supplied_readiness_rejected,
+        "authoritative_production_fact_validation": production_fact_validation,
         "local_contracts_ready": readiness.get("status") in {"foundation_ready", "partial_dependency_missing"},
         "dry_runs_are_not_production_completion": True,
         "preflight_is_not_physical_migration": True,

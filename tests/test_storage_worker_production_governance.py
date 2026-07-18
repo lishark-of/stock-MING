@@ -97,6 +97,39 @@ class ProductionEvidenceJournalTests(unittest.TestCase):
             self.assertFalse(replay_after_rollback["production_trusted"])
             self.assertFalse(journal.validate_journal()["snapshot_rollback_resistant"])
 
+    def test_state_anchor_write_failure_returns_precise_fail_closed_diagnostic(self) -> None:
+        with tempfile.TemporaryDirectory() as directory, self._patch_paths(Path(directory)):
+            original_atomic_write = journal._atomic_write
+
+            def fail_state_anchor(path: Path, payload: bytes, *, mode: int = 0o600) -> None:
+                if path == journal.STATE_PATH:
+                    raise OSError("injected state anchor failure")
+                original_atomic_write(path, payload, mode=mode)
+
+            with patch.object(journal, "_atomic_write", side_effect=fail_state_anchor):
+                result = journal.record_event(
+                    event_type="worker_runtime_execution_request",
+                    expected_head_full=journal.current_head_full(),
+                    authorization_nonce="state-anchor-failure-0123456789-ABCDEFG",
+                    subject="request-state-failure",
+                    scope_hash="1" * 64,
+                    payload_digest="2" * 64,
+                )
+
+            self.assertFalse(result["ready"])
+            self.assertFalse(result["local_integrity_ready"])
+            self.assertFalse(result["production_trusted"])
+            self.assertEqual(
+                result["status"],
+                "production_evidence_state_write_failed_journal_fail_closed",
+            )
+            self.assertTrue(result["journal_append_succeeded"])
+            self.assertFalse(result["state_anchor_write_succeeded"])
+            self.assertTrue(result["trusted_recovery_required"])
+            self.assertTrue(journal.JOURNAL_PATH.exists())
+            self.assertFalse(journal.STATE_PATH.exists())
+            self.assertFalse(journal.validate_journal()["ready"])
+
 
 class StorageTtlProductionEvidenceTests(unittest.TestCase):
     def _patch_paths(self, root: Path):
@@ -161,13 +194,7 @@ class StorageTtlProductionEvidenceTests(unittest.TestCase):
                 self.assertFalse(ready["production_trust_boundary_satisfied"])
                 self.assertEqual(ready["verified_dataset_count"], len(storage_service.CANONICAL_PARQUET_DATASETS))
                 self.assertEqual(ready["refresh_executed_count"], 0)
-                blocker_audit = storage_service.storage_production_blocker_audit(
-                    {
-                        "cache_ttl_refresh_executed_count": ready["refresh_executed_count"],
-                        "cache_ttl_resolution_verified_count": ready["resolution_verified_dataset_count"],
-                        "cache_ttl_refresh_per_dataset_evidence": ready,
-                    }
-                )
+                blocker_audit = storage_service.storage_production_blocker_audit()
                 ttl_row = next(
                     row
                     for row in blocker_audit["rows"]
@@ -184,6 +211,65 @@ class StorageTtlProductionEvidenceTests(unittest.TestCase):
                 blocked = storage_service.storage_cache_ttl_refresh_evidence()
                 self.assertFalse(blocked["production_ttl_evidence_ready"])
                 self.assertEqual(blocked["verified_dataset_count"], len(storage_service.CANONICAL_PARQUET_DATASETS) - 1)
+
+    def test_caller_mapping_cannot_self_seal_storage_production(self) -> None:
+        crafted = {
+            "status": "foundation_ready",
+            "schema_migration_dataset_count": 1,
+            "physical_schema_validation_done_count": 1,
+            "schema_migration_executed_count": 1,
+            "physical_dataset_version_validated_count": 1,
+            "dataset_version_migration_executed_count": 1,
+            "dataset_version_manifest_present_count": 1,
+            "dataset_version_manifest_evidence_validated": True,
+            "dataset_version_manifest_evidence_validated_count": 1,
+            "partition_migration_executed_count": 1,
+            "compaction_executed_count": 1,
+            "cache_ttl_resolution_verified_count": 1,
+            "cache_ttl_refresh_per_dataset_evidence": {
+                "production_ttl_evidence_ready": True,
+                "unresolved_datasets": [],
+            },
+            "duckdb_query_service_status": "service_ready",
+            "artifact_hygiene_policy": "path_only_manual_cleanup_no_delete_on_get",
+            "artifact_cleanup_review_status": "manual_review_ready_no_candidates",
+            "artifact_cleanup_manual_review_required": True,
+            "artifact_cleanup_delete_executed_count": 0,
+            "artifact_cleanup_delete_command_generated": False,
+            "external_calls_triggered": False,
+            "schema_validation_dry_run_writes_parquet": False,
+            "compaction_dry_run_writes_parquet": False,
+            "cache_ttl_dry_run_writes_parquet": False,
+        }
+        authoritative_local = {
+            "status": "foundation_ready",
+            "schema_migration_dataset_count": len(storage_service.CANONICAL_PARQUET_DATASETS),
+            "duckdb_query_service_status": "service_ready",
+            "artifact_hygiene_policy": "path_only_manual_cleanup_no_delete_on_get",
+            "artifact_cleanup_review_status": "manual_review_ready_no_candidates",
+            "artifact_cleanup_manual_review_required": True,
+            "artifact_cleanup_delete_executed_count": 0,
+            "artifact_cleanup_delete_command_generated": False,
+            "external_calls_triggered": False,
+            "schema_validation_dry_run_writes_parquet": False,
+            "compaction_dry_run_writes_parquet": False,
+            "cache_ttl_dry_run_writes_parquet": False,
+        }
+        with patch.object(
+            storage_service,
+            "storage_production_readiness",
+            return_value=authoritative_local,
+        ):
+            result = storage_service.storage_production_blocker_audit(crafted)
+
+        self.assertTrue(result["caller_supplied_readiness_rejected"])
+        self.assertEqual(result["dataset_count"], len(storage_service.CANONICAL_PARQUET_DATASETS))
+        self.assertEqual(result["status"], "storage_production_blocked")
+        self.assertFalse(result["production_storage_complete"])
+        self.assertIn("trusted_external_storage_production_validator_missing", result["blockers"])
+        validation = result["authoritative_production_fact_validation"]
+        self.assertFalse(validation["ready"])
+        self.assertFalse(validation["trusted_external_production_validator_ready"])
 
 
 class WorkerProductionGovernanceTests(unittest.TestCase):

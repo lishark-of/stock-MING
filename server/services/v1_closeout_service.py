@@ -19,6 +19,7 @@ from server.services import (
     full_market_worker_service,
     motion_evidence_service,
     release_promotion_service,
+    storage_service,
     streamlit_retirement_evidence_service,
 )
 from .tushare_production_store import validate_tushare_full_market_production_version
@@ -1111,6 +1112,10 @@ def _build_version_rows(
         and row["current_step"] == "storage_physical_execution_phase_a_v04_durable_execution_success"
         for row in v04_history
     )
+    storage_production_fact_validation = storage_service.validate_storage_production_fact(
+        storage if isinstance(storage, Mapping) else None,
+        expected_head_full=expected_head_full,
+    )
 
     offline_desktop = _read_json(evidence_root / "desktop_runtime" / "tauri_packaged_runtime_offline_smoke.json")
     online_desktop = _read_json(evidence_root / "desktop_runtime" / "tauri_packaged_runtime_online_smoke.json")
@@ -1279,9 +1284,7 @@ def _build_version_rows(
             isinstance(factor, Mapping)
             and factor.get("production_tushare_pipeline_complete") is True
         ),
-        "production_storage": bool(
-            isinstance(storage, Mapping) and storage.get("production_storage_complete") is True
-        ),
+        "production_storage": storage_production_fact_validation.get("ready") is True,
         "full_market_worker_runtime": full_market_worker_fact.get("full_market_worker_runtime") is True,
         "celery_redis_runtime": full_market_worker_fact.get("celery_redis_runtime") is True,
         "governed_model_runtime": _governed_model_runtime_ready(
@@ -1320,6 +1323,7 @@ def _build_version_rows(
         "qmt_research_isolation": _qmt_isolation_ready(qmt),
     }
     context = {
+        "storage_production_fact_validation": storage_production_fact_validation,
         "motion_current_head_evidence_summary": motion_validation,
         "qmt_summary": _safe_summary(qmt, _SAFE_PACKET_FIELDS, observed=isinstance(qmt, Mapping)),
         "governed_model_summary": _safe_summary(
@@ -1532,6 +1536,7 @@ def build_v1_closeout_evaluation(
         "release_review_summary": context["release_receipt_summary"],
         "remote_ci_review_summary": context["remote_receipt_summary"],
         "production_release_promotion_summary": context["release_promotion_summary"],
+        "storage_production_fact_validation": context["storage_production_fact_validation"],
         "motion_current_head_evidence_summary": context["motion_current_head_evidence_summary"],
         "streamlit_primary_retirement_summary": context["streamlit_primary_retirement"],
         "tushare_production_version": context["tushare_production_version"],

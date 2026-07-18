@@ -380,6 +380,43 @@ class V1EvidenceCloseoutTests(unittest.TestCase):
             self.assertFalse(ltg02["production_complete"])
             self.assertFalse(ltg02["can_close"])
 
+    def test_single_storage_boolean_cannot_create_production_fact(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir) / "evidence"
+            head = "a" * 40
+            _write_packets(
+                root / "v04_acceptance_runtime" / "runtime_meta.sqlite",
+                {
+                    "command_center_3_storage_physical_execution_phase_a_packet": {
+                        "schema_version": "command_center_3_storage_physical_execution_phase_a.v1",
+                        "head_full": head,
+                        "status": "storage_v04_physical_execution_success",
+                        "production_storage_complete": True,
+                        **_safe_boundary(),
+                    }
+                },
+            )
+
+            _, facts, context = v1_closeout_service._build_version_rows(
+                root,
+                expected_head_full=head,
+            )
+
+            self.assertFalse(facts["production_storage"])
+            validation = context["storage_production_fact_validation"]
+            self.assertTrue(validation["exact_schema_validated"])
+            self.assertTrue(validation["current_head_binding_validated"])
+            self.assertFalse(validation["trusted_external_production_validator_ready"])
+            self.assertFalse(validation["production_storage_complete"])
+            self.assertIn(
+                "trusted_external_storage_production_validator_missing",
+                validation["blockers"],
+            )
+            self.assertIn(
+                "untrusted_local_production_storage_claim_rejected",
+                validation["blockers"],
+            )
+
     def test_migration_get_is_zero_write_and_no_external_call(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir) / "missing"

@@ -284,7 +284,26 @@ def record_event(
             "last_event_mac": event["event_mac"],
         }
         state["state_mac"] = hmac.new(key, _canonical_bytes(state), hashlib.sha256).hexdigest()
-        _atomic_write(STATE_PATH, _canonical_bytes(state))
+        try:
+            _atomic_write(STATE_PATH, _canonical_bytes(state))
+        except Exception:
+            # The durable journal line may already exist.  Do not pretend the
+            # event was committed and do not attempt an unsafe rollback; the
+            # missing/mismatched state anchor deliberately makes subsequent
+            # validation fail closed until trusted recovery.
+            return {
+                "ready": False,
+                "local_integrity_ready": False,
+                "production_trusted": False,
+                "snapshot_rollback_resistant": False,
+                "status": "production_evidence_state_write_failed_journal_fail_closed",
+                "event_id": event["event_id"],
+                "head_full": head_full,
+                "writes_performed": True,
+                "journal_append_succeeded": True,
+                "state_anchor_write_succeeded": False,
+                "trusted_recovery_required": True,
+            }
         verified = validate_journal()
         if verified.get("ready") is not True:
             return {"ready": False, "local_integrity_ready": False, "production_trusted": False, "status": "production_evidence_event_post_write_validation_failed", "writes_performed": True}
