@@ -89,3 +89,19 @@ def run_full_market_factor_radar_map_reduce_request(
         payload or {}
     )
     return envelope(task, call_ledger=task.get("call_ledger"), warnings=task.get("warnings"))
+
+
+@router.post("/full-market-factor-execution")
+def run_full_market_factor_execution(
+    payload: dict[str, Any] | None = None,
+) -> dict:
+    from server.services import full_market_research_producer_service
+
+    packet = full_market_research_producer_service.execute_full_market_factor_research(
+        payload or {}
+    )
+    return envelope(
+        packet,
+        call_ledger=packet.get("call_ledger"),
+        warnings=packet.get("warnings"),
+    )

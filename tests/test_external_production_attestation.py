@@ -249,6 +249,9 @@ class ExternalProductionAttestationTests(unittest.TestCase):
             packet = {
                 "acceptance_run_id": run_id,
                 "provider_scope_hash": scope_hash,
+                "provider_version_digest": "8" * 64,
+                "universe_digest": "9" * 64,
+                "validated_trade_date": "20260710",
                 "result_dataset": "wrong_dataset" if wrong_dataset else dataset,
                 "result_version_id": generation,
                 "result_artifact_sha256": artifact_digest,
@@ -420,6 +423,9 @@ class ExternalProductionAttestationTests(unittest.TestCase):
         if kind == "worker_runtime_lineage":
             return {
                 "worker_run_id": subject,
+                "provider_version_digest": "8" * 64,
+                "universe_digest": "9" * 64,
+                "validated_trade_date": "20260710",
                 "redis_transport_digest": "1" * 64,
                 "celery_task_ids_digest": "2" * 64,
                 "eligible_worker_count": 2,

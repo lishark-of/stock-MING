@@ -181,6 +181,9 @@ _CLAIM_SCHEMAS: dict[str, dict[str, type | tuple[type, ...]]] = {
     },
     "worker_runtime_lineage": {
         "worker_run_id": str,
+        "provider_version_digest": str,
+        "universe_digest": str,
+        "validated_trade_date": str,
         "redis_transport_digest": str,
         "celery_task_ids_digest": str,
         "eligible_worker_count": int,
@@ -715,6 +718,9 @@ def _claims_ready(
     if kind == "worker_runtime_lineage":
         return bool(
             claims.get("worker_run_id") == subject
+            and _HEX_64.fullmatch(str(claims.get("provider_version_digest") or ""))
+            and _HEX_64.fullmatch(str(claims.get("universe_digest") or ""))
+            and re.fullmatch(r"[0-9]{8}", str(claims.get("validated_trade_date") or ""))
             and claims.get("eligible_worker_count", 0) > 0
             and claims.get("batch_count", 0) > 0
             and claims.get("row_count", 0) > 0

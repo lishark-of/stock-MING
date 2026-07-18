@@ -128,6 +128,9 @@ def _source_identity(consumer: str, packet: Mapping[str, Any]) -> dict[str, Any]
         )
         claims = {
             "worker_run_id": run_id,
+            "provider_version_digest": str(packet.get("provider_version_digest") or ""),
+            "universe_digest": str(packet.get("universe_digest") or ""),
+            "validated_trade_date": str(packet.get("validated_trade_date") or ""),
             "redis_transport_digest": str(packet.get("transport_attestation_digest") or ""),
             "celery_task_ids_digest": _digest(celery_ids),
             "eligible_worker_count": len(set(worker_ids)),
