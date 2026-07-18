@@ -22102,11 +22102,12 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         )
         self.assertEqual(route_coverage["task_creation_route_count"], catalog["task_count"])
         self.assertEqual(route_coverage["local_lifecycle_route_count"], 2)
-        self.assertEqual(route_coverage["local_control_plane_route_count"], 5)
+        self.assertEqual(route_coverage["local_control_plane_route_count"], 6)
         self.assertEqual(
             route_coverage["local_control_plane_routes"],
             [
                 "POST /api/audit/external-production-attestation",
+                "POST /api/audit/external-production-consumers/{consumer}/promote",
                 "POST /api/audit/production-release-promotion",
                 "POST /api/next-session/production-packet",
                 "POST /api/next-session/production-replacement",
