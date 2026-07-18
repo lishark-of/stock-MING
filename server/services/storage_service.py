@@ -5,9 +5,11 @@ import fcntl
 import hashlib
 import json
 import math
+import os
 from pathlib import Path
 import shutil
 import sqlite3
+import stat
 from typing import Any, Mapping
 
 from storage import duckdb_store, parquet_store
@@ -749,6 +751,96 @@ def _external_packet_digest(packet: Mapping[str, Any]) -> str:
     ).hexdigest()
 
 
+def _storage_dataset_physical_binding(dataset: str) -> dict[str, Any]:
+    """Read an exact, race-checked identity for a canonical Parquet artifact."""
+
+    dataset_name = str(dataset or "")
+    path = parquet_store.dataset_path(root=PARQUET_ROOT, name=dataset_name)
+    base = {
+        "dataset": dataset_name,
+        "artifact_path": _path_label(path),
+        "file_digest": "",
+        "version_digest": "",
+        "pointer_digest": "",
+        "artifact_digest": "",
+        "ready": False,
+        "status": "storage_physical_artifact_missing",
+    }
+    if dataset_name not in CANONICAL_PARQUET_DATASETS:
+        return {**base, "status": "storage_physical_artifact_dataset_invalid"}
+    flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
+    try:
+        descriptor = os.open(path, flags)
+    except OSError:
+        return base
+    try:
+        before = os.fstat(descriptor)
+        if not stat.S_ISREG(before.st_mode) or before.st_nlink != 1:
+            return {**base, "status": "storage_physical_artifact_not_exact_regular_file"}
+        digest = hashlib.sha256()
+        with os.fdopen(descriptor, "rb", closefd=False) as handle:
+            for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+                digest.update(chunk)
+        after = os.fstat(descriptor)
+        path_after = os.stat(path, follow_symlinks=False)
+    except OSError:
+        return {**base, "status": "storage_physical_artifact_read_failed"}
+    finally:
+        os.close(descriptor)
+    stable_fields = (
+        "st_dev",
+        "st_ino",
+        "st_mode",
+        "st_nlink",
+        "st_size",
+        "st_mtime_ns",
+        "st_ctime_ns",
+    )
+    if any(getattr(before, field) != getattr(after, field) for field in stable_fields) or any(
+        getattr(after, field) != getattr(path_after, field) for field in stable_fields
+    ):
+        return {**base, "status": "storage_physical_artifact_changed_during_read"}
+    file_digest = digest.hexdigest()
+    version_material = {
+        "schema_version": "storage_physical_artifact_version.v1",
+        "dataset": dataset_name,
+        "file_digest": file_digest,
+        "device": int(after.st_dev),
+        "inode": int(after.st_ino),
+        "size_bytes": int(after.st_size),
+        "mtime_ns": int(after.st_mtime_ns),
+        "ctime_ns": int(after.st_ctime_ns),
+    }
+    version_digest = _json_sha256(version_material)
+    pointer_material = {
+        "schema_version": "storage_physical_artifact_pointer.v1",
+        "dataset": dataset_name,
+        "pointer": "canonical_parquet_root",
+        "artifact_path": _path_label(path),
+        "version_digest": version_digest,
+    }
+    pointer_digest = _json_sha256(pointer_material)
+    artifact_digest = _json_sha256(
+        {
+            "schema_version": "storage_physical_artifact_binding.v1",
+            "dataset": dataset_name,
+            "file_digest": file_digest,
+            "version_digest": version_digest,
+            "pointer_digest": pointer_digest,
+        }
+    )
+    return {
+        **base,
+        "ready": True,
+        "status": "storage_physical_artifact_exact_readback_verified",
+        "file_digest": file_digest,
+        "version_digest": version_digest,
+        "pointer_digest": pointer_digest,
+        "artifact_digest": artifact_digest,
+        "size_bytes": int(after.st_size),
+    }
+
+
 def _storage_phase_a_external_binding(
     packet: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
@@ -818,10 +910,13 @@ def _validate_storage_ttl_production_consumer(
     }
     row_set_shape_ready = len(raw_rows) == len(rows_by_dataset)
     valid_datasets: set[str] = set()
+    physical_rows: list[dict[str, Any]] = []
     for dataset in CANONICAL_PARQUET_DATASETS:
         row = rows_by_dataset.get(dataset, {})
         event = events_by_id.get(str(row.get("attestation_id") or ""), {})
         claims = event.get("claims") if isinstance(event.get("claims"), Mapping) else {}
+        physical = _storage_dataset_physical_binding(dataset)
+        physical_rows.append(physical)
         row_ready = bool(
             row
             and event.get("attestation_kind") == "storage_ttl_resolution"
@@ -830,6 +925,11 @@ def _validate_storage_ttl_production_consumer(
             and event.get("scope_hash") == row.get("scope_hash")
             and event.get("task_id") == row.get("task_id")
             and event.get("artifact_digest") == row.get("artifact_digest")
+            and physical.get("ready") is True
+            and event.get("artifact_digest") == physical.get("artifact_digest")
+            and row.get("physical_file_digest") == physical.get("file_digest")
+            and row.get("physical_version_digest") == physical.get("version_digest")
+            and row.get("physical_pointer_digest") == physical.get("pointer_digest")
             and event.get("head_full") == row.get("head_full")
             and event.get("monotonic_counter") == row.get("monotonic_counter")
             and claims.get("dataset") == dataset
@@ -883,6 +983,7 @@ def _validate_storage_ttl_production_consumer(
         "production_ttl_evidence_ready": ready,
         "production_storage_complete": ready,
         "rows": list(rows_by_dataset.values()),
+        "physical_readback_rows": physical_rows,
         "writes_performed": False,
         "pointers_written": False,
         "external_calls_triggered": False,
@@ -1024,12 +1125,17 @@ def storage_cache_ttl_refresh_evidence() -> dict[str, Any]:
         and local_verified_count == len(CANONICAL_PARQUET_DATASETS)
     )
     production_resolution_ready = production_consumer.get("ready") is True
+    production_verified_count = int(production_consumer.get("verified_dataset_count") or 0)
+    production_unresolved = list(production_consumer.get("unresolved_datasets") or [])
     return {
         "schema_version": CACHE_TTL_REFRESH_EVIDENCE_SCHEMA_VERSION,
         "packet_key": CACHE_TTL_REFRESH_EVIDENCE_PACKET_KEY,
-        "status": "storage_cache_ttl_local_resolution_evidence_verified_production_blocked"
+        "status": "storage_cache_ttl_production_evidence_verified"
+        if production_resolution_ready
+        else "storage_cache_ttl_local_resolution_evidence_verified_production_blocked"
         if local_resolution_ready or external_verified_count
         else "storage_cache_ttl_refresh_evidence_blocked",
+        "ready": production_resolution_ready,
         "read_status": read_status,
         "head_full": packet_head,
         "current_head_full": head_full,
@@ -1039,6 +1145,8 @@ def storage_cache_ttl_refresh_evidence() -> dict[str, Any]:
         "resolution_verified_dataset_count": verified_count,
         "local_integrity_verified_dataset_count": local_verified_count,
         "external_attestation_verified_dataset_count": external_verified_count,
+        "production_verified_dataset_count": production_verified_count,
+        "production_unresolved": production_unresolved,
         "refresh_executed_count": sum(
             1 for row in validated_rows if row["verified"] and row["resolution"] == "refreshed"
         ),
@@ -1097,15 +1205,24 @@ def import_storage_cache_ttl_external_attestation(payload: Any) -> dict[str, Any
             }
         phase_a = _storage_phase_a_external_binding()
         claims = prepared.get("claims") if isinstance(prepared.get("claims"), Mapping) else {}
-        if not (
+        dataset = str(prepared.get("subject") or "")
+        physical = _storage_dataset_physical_binding(dataset)
+        phase_a_ready = bool(
             phase_a.get("ready") is True
             and claims.get("phase_a_packet_digest") == phase_a.get("packet_digest")
             and claims.get("phase_a_task_id") == phase_a.get("task_id")
-        ):
+        )
+        physical_ready = bool(
+            physical.get("ready") is True
+            and prepared.get("artifact_digest") == physical.get("artifact_digest")
+        )
+        if not phase_a_ready or not physical_ready:
             return {
                 **prepared,
                 "ready": False,
-                "status": "storage_ttl_attestation_phase_a_binding_invalid",
+                "status": "storage_ttl_attestation_phase_a_binding_invalid"
+                if not phase_a_ready
+                else "storage_ttl_attestation_physical_artifact_binding_invalid",
                 "storage_packet_written": False,
                 "consumer_state_unchanged": True,
                 "production_ttl_evidence_ready": False,
@@ -1116,6 +1233,7 @@ def import_storage_cache_ttl_external_attestation(payload: Any) -> dict[str, Any
                     external_production_attestation_service.PRODUCTION_TRUST_BLOCKERS
                 ),
                 "pointers_written": False,
+                "physical_artifact_readback": physical,
             }
         registry_before, _ = external_production_attestation_service._read_registry_no_init()
         consumer, consumer_read_status = _read_storage_ttl_production_consumer()
@@ -1146,7 +1264,6 @@ def import_storage_cache_ttl_external_attestation(payload: Any) -> dict[str, Any
             if isinstance(row, Mapping)
             and str(row.get("dataset") or "") in CANONICAL_PARQUET_DATASETS
         }
-        dataset = str(prepared.get("subject") or "")
         rows_by_dataset[dataset] = {
             "dataset": dataset,
             "attestation_id": prepared["attestation_id"],
@@ -1154,6 +1271,9 @@ def import_storage_cache_ttl_external_attestation(payload: Any) -> dict[str, Any
             "scope_hash": prepared["scope_hash"],
             "task_id": prepared["task_id"],
             "artifact_digest": prepared["artifact_digest"],
+            "physical_file_digest": physical["file_digest"],
+            "physical_version_digest": physical["version_digest"],
+            "physical_pointer_digest": physical["pointer_digest"],
             "monotonic_counter": prepared["monotonic_counter"],
             "head_key_epoch": prepared["head_key_epoch"],
             "head_key_epoch_digest": prepared["head_key_epoch_digest"],
@@ -5430,6 +5550,12 @@ def storage_production_readiness(sqlite_meta: Mapping[str, Any] | None = None) -
         "cache_ttl_resolution_verified_count": int(
             ttl_refresh_evidence.get("resolution_verified_dataset_count") or 0
         ),
+        "cache_ttl_production_verified_dataset_count": int(
+            ttl_refresh_evidence.get("production_verified_dataset_count") or 0
+        ),
+        "cache_ttl_production_unresolved": list(
+            ttl_refresh_evidence.get("production_unresolved") or []
+        ),
         "cache_ttl_refresh_required_dataset_count": len(CANONICAL_PARQUET_DATASETS),
         "cache_ttl_refresh_per_dataset_evidence": ttl_refresh_evidence,
         "cache_ttl_refresh_per_dataset_ready": ttl_refresh_evidence.get("production_ttl_evidence_ready") is True,
@@ -5569,12 +5695,15 @@ def storage_production_blocker_audit(production_readiness: Mapping[str, Any] | N
     manifest_evidence_count = int(readiness.get("dataset_version_manifest_evidence_validated_count") or 0)
     compaction_executed = int(readiness.get("compaction_executed_count") or 0)
     ttl_refresh_executed = int(readiness.get("cache_ttl_refresh_executed_count") or 0)
-    ttl_resolution_verified = int(readiness.get("cache_ttl_resolution_verified_count") or 0)
     ttl_refresh_evidence = (
         dict(readiness.get("cache_ttl_refresh_per_dataset_evidence") or {})
         if isinstance(readiness.get("cache_ttl_refresh_per_dataset_evidence"), Mapping)
         else {}
     )
+    ttl_production_verified = int(
+        ttl_refresh_evidence.get("production_verified_dataset_count") or 0
+    )
+    ttl_production_unresolved = list(ttl_refresh_evidence.get("production_unresolved") or [])
     partition_executed = int(readiness.get("partition_migration_executed_count") or 0)
     cleanup_review_ready = str(readiness.get("artifact_cleanup_review_status") or "").startswith("manual_review_ready")
     dependency_ready = str(readiness.get("status")) == "foundation_ready"
@@ -5649,16 +5778,19 @@ def storage_production_blocker_audit(production_readiness: Mapping[str, Any] | N
         ),
         _storage_production_blocker_row(
             "cache_ttl_refresh_pipeline_executed",
-            ttl_resolution_verified >= dataset_count
+            ttl_production_verified == dataset_count
+            and not ttl_production_unresolved
             and ttl_refresh_evidence.get("production_ttl_evidence_ready") is True,
             current_status=(
-                f"local_resolution={ttl_resolution_verified}/{dataset_count}; "
-                f"actual_refresh={ttl_refresh_executed}/{dataset_count}; production_trust=false"
+                f"production_verified={ttl_production_verified}/{dataset_count}; "
+                f"actual_refresh={ttl_refresh_executed}/{dataset_count}; "
+                f"production_unresolved={ttl_production_unresolved}; "
+                f"production_trust={'true' if ttl_refresh_evidence.get('production_ttl_evidence_ready') is True else 'false'}"
             ),
             evidence=(
-                "Local TTL evidence resolves canonical datasets through the current-HEAD integrity journal, but production "
-                "promotion still requires an independently held or external trust capability; "
-                f"unresolved={ttl_refresh_evidence.get('unresolved_datasets') or list(CANONICAL_PARQUET_DATASETS)}."
+                "Production TTL evidence requires six externally anchored rows bound to exact current physical "
+                "file/version/pointer digests; "
+                f"production_unresolved={ttl_production_unresolved}."
             ),
             next_action="Run one explicitly approved maintenance scope that resolves every stale/missing dataset and journals fresh no-op rows for the rest.",
             classification="per_dataset_current_head_trusted_evidence_required",
@@ -5743,7 +5875,11 @@ def storage_production_blocker_audit(production_readiness: Mapping[str, Any] | N
         "dataset_version_migration_executed_count": version_migrations,
         "compaction_executed_count": compaction_executed,
         "cache_ttl_refresh_executed_count": ttl_refresh_executed,
-        "cache_ttl_resolution_verified_count": ttl_resolution_verified,
+        "cache_ttl_resolution_verified_count": int(
+            readiness.get("cache_ttl_resolution_verified_count") or 0
+        ),
+        "cache_ttl_production_verified_dataset_count": ttl_production_verified,
+        "cache_ttl_production_unresolved": ttl_production_unresolved,
         "external_calls_triggered": False,
         "tushare_called": False,
         "deepseek_called": False,
@@ -6936,8 +7072,9 @@ def storage_physical_durable_evidence_recipe(
             evidence=(
                 f"refresh_recommended_count={cache_ttl_metadata.get('refresh_recommended_count')}; "
                 f"dataset_count={cache_ttl_metadata.get('dataset_count')}; "
-                f"verified_dataset_count={ttl_refresh_evidence.get('verified_dataset_count')}; "
-                f"unresolved={ttl_refresh_evidence.get('unresolved_datasets')}"
+                f"local_verified_dataset_count={ttl_refresh_evidence.get('verified_dataset_count')}; "
+                f"production_verified_dataset_count={ttl_refresh_evidence.get('production_verified_dataset_count')}; "
+                f"production_unresolved={ttl_refresh_evidence.get('production_unresolved')}"
             ),
             required_evidence=(
                 "per-dataset current-HEAD local integrity evidence plus an independently held or external production "

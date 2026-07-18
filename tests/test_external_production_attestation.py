@@ -20,6 +20,7 @@ from fastapi.testclient import TestClient
 from server.main import app
 from server.services import external_production_attestation_service as external
 from server.services import storage_service
+from server.services import tushare_task_service
 from storage.sqlite_meta import SQLiteMetaStore
 
 
@@ -122,6 +123,14 @@ class ExternalProductionAttestationTests(unittest.TestCase):
         self.trust_root.chmod(0o555)
 
     def _install_phase_a(self) -> dict:
+        storage_service.PARQUET_ROOT.mkdir(parents=True, exist_ok=True)
+        for dataset in storage_service.CANONICAL_PARQUET_DATASETS:
+            path = storage_service.parquet_store.dataset_path(
+                root=storage_service.PARQUET_ROOT,
+                name=dataset,
+            )
+            if not path.exists():
+                path.write_bytes(f"physical:{dataset}:v1".encode("utf-8"))
         packet = {
             "schema_version": storage_service.STORAGE_PHASE_A_PACKET_SCHEMA_VERSION,
             "packet_key": storage_service.STORAGE_PHYSICAL_EXECUTION_PHASE_A_PACKET_KEY,
@@ -302,6 +311,11 @@ class ExternalProductionAttestationTests(unittest.TestCase):
     ) -> dict:
         now = datetime.now(timezone.utc)
         resolved_claims = claims or self._claims(kind, subject)
+        physical = (
+            storage_service._storage_dataset_physical_binding(subject)
+            if kind == "storage_ttl_resolution"
+            else {}
+        )
         statement = {
             "schema_version": external.STATEMENT_SCHEMA_VERSION,
             "attestation_kind": kind,
@@ -318,7 +332,11 @@ class ExternalProductionAttestationTests(unittest.TestCase):
                 else f"task-{counter}-{subject}"
             ),
             "subject": subject,
-            "artifact_digest": hashlib.sha256(f"artifact:{kind}:{subject}".encode("utf-8")).hexdigest(),
+            "artifact_digest": (
+                str(physical["artifact_digest"])
+                if physical.get("ready") is True
+                else hashlib.sha256(f"artifact:{kind}:{subject}".encode("utf-8")).hexdigest()
+            ),
             "monotonic_counter": counter,
             "previous_attestation_digest": previous,
             "issued_at": now.isoformat(),
@@ -585,6 +603,14 @@ class ExternalProductionAttestationTests(unittest.TestCase):
 
     def test_storage_six_dataset_consumer_is_atomic_and_production_trusted(self) -> None:
         phase_a = self._install_phase_a()
+        SQLiteMetaStore(self.db_path).write_packet(
+            storage_service.CACHE_TTL_REFRESH_EVIDENCE_PACKET_KEY,
+            {
+                "schema_version": storage_service.CACHE_TTL_REFRESH_EVIDENCE_SCHEMA_VERSION,
+                "head_full": "0" * 40,
+                "rows": [],
+            },
+        )
         previous = ""
         for counter, dataset in enumerate(storage_service.CANONICAL_PARQUET_DATASETS, start=1):
             signed = self._envelope(
@@ -602,8 +628,23 @@ class ExternalProductionAttestationTests(unittest.TestCase):
             self.assertFalse(result["pointers_written"])
             self.assertEqual(result["ready"], counter == len(storage_service.CANONICAL_PARQUET_DATASETS))
             previous = result["attestation_id"]
+            progress = storage_service.storage_cache_ttl_refresh_evidence()
+            self.assertEqual(progress["production_verified_dataset_count"], counter)
+            self.assertEqual(
+                progress["production_unresolved"],
+                storage_service.CANONICAL_PARQUET_DATASETS[counter:],
+            )
+            self.assertEqual(progress["ready"], counter == len(storage_service.CANONICAL_PARQUET_DATASETS))
 
         validation = storage_service.storage_cache_ttl_refresh_evidence()
+        self.assertTrue(validation["ready"])
+        self.assertEqual(validation["production_verified_dataset_count"], 6)
+        self.assertEqual(validation["production_unresolved"], [])
+        self.assertEqual(validation["verified_dataset_count"], 0)
+        self.assertEqual(
+            validation["unresolved_datasets"],
+            storage_service.CANONICAL_PARQUET_DATASETS,
+        )
         self.assertTrue(validation["production_ttl_evidence_ready"])
         self.assertTrue(validation["production_trust_boundary_satisfied"])
         self.assertTrue(validation["snapshot_rollback_resistant"])
@@ -615,11 +656,14 @@ class ExternalProductionAttestationTests(unittest.TestCase):
         self.assertTrue(fact["ready"])
         self.assertTrue(fact["production_storage_complete"])
         self.assertTrue(fact["trusted_external_production_validator_ready"])
-        self.assertIsNone(
-            SQLiteMetaStore(self.db_path).read_packet(
-                storage_service.CACHE_TTL_REFRESH_EVIDENCE_PACKET_KEY
-            )
+        audit = storage_service.storage_production_blocker_audit()
+        ttl_row = next(
+            row for row in audit["rows"] if row["criterion"] == "cache_ttl_refresh_pipeline_executed"
         )
+        self.assertTrue(ttl_row["passed"])
+        self.assertFalse(ttl_row["production_blocker"])
+        self.assertEqual(audit["cache_ttl_production_verified_dataset_count"], 6)
+        self.assertEqual(audit["cache_ttl_production_unresolved"], [])
 
     def test_storage_pair_post_commit_exception_reconciles_production_truth(self) -> None:
         self._install_phase_a()
@@ -660,8 +704,94 @@ class ExternalProductionAttestationTests(unittest.TestCase):
         self.assertTrue(result["writes_performed"])
         self.assertTrue(result["post_commit_exception_reconciled"])
         validation = storage_service.storage_cache_ttl_refresh_evidence()
+        self.assertTrue(validation["ready"])
+        self.assertEqual(validation["production_verified_dataset_count"], 6)
+        self.assertEqual(validation["production_unresolved"], [])
         self.assertTrue(validation["production_storage_complete"])
         self.assertTrue(validation["production_trusted"])
+
+    def test_tushare_replacement_invalidates_physical_attestations_until_reattested(self) -> None:
+        self._install_phase_a()
+        previous = ""
+        counter = 0
+        for dataset in storage_service.CANONICAL_PARQUET_DATASETS:
+            counter += 1
+            signed = self._envelope("storage_ttl_resolution", dataset, counter, previous)
+            self._install_external_proof(signed)
+            result = storage_service.import_storage_cache_ttl_external_attestation(
+                {"signed_envelope": signed}
+            )
+            previous = result["attestation_id"]
+        self.assertTrue(storage_service.storage_cache_ttl_refresh_evidence()["ready"])
+
+        store = SQLiteMetaStore(self.db_path)
+        exact_consumer = store.read_packet(
+            storage_service.STORAGE_TTL_PRODUCTION_CONSUMER_PACKET_KEY
+        )
+        mismatched_consumer = json.loads(json.dumps(exact_consumer))
+        mismatched_consumer["rows"][0]["physical_pointer_digest"] = "0" * 64
+        store.write_packet(
+            storage_service.STORAGE_TTL_PRODUCTION_CONSUMER_PACKET_KEY,
+            mismatched_consumer,
+        )
+        mismatched = storage_service.storage_cache_ttl_refresh_evidence()
+        self.assertFalse(mismatched["ready"])
+        self.assertEqual(mismatched["production_verified_dataset_count"], 5)
+        self.assertEqual(mismatched["production_unresolved"], ["factor_values"])
+        store.write_packet(
+            storage_service.STORAGE_TTL_PRODUCTION_CONSUMER_PACKET_KEY,
+            exact_consumer,
+        )
+
+        ledger: list[dict] = []
+        staging_root = self.root / "tushare-staging"
+        staging_root.mkdir()
+        for api, dataset in tushare_task_service.PARQUET_DATASETS.items():
+            staging = staging_root / f"{dataset}.parquet"
+            staging.write_bytes(f"tushare:{dataset}:v2".encode("utf-8"))
+            ledger.append(
+                {
+                    "api": api,
+                    "parquet_status": "staged",
+                    "parquet_staging_path": str(staging),
+                    "parquet_staging_digest": hashlib.sha256(staging.read_bytes()).hexdigest(),
+                    "parquet_row_count": 1,
+                }
+            )
+        promotion = tushare_task_service._promote_staged_parquet_datasets(
+            ledger,
+            scope_hash="b" * 64,
+        )
+        self.assertTrue(promotion["promotion_verified"], promotion)
+        self.assertEqual(promotion["promoted_dataset_count"], 4)
+
+        invalidated = storage_service.storage_cache_ttl_refresh_evidence()
+        self.assertFalse(invalidated["ready"])
+        self.assertFalse(invalidated["production_storage_complete"])
+        self.assertEqual(invalidated["production_verified_dataset_count"], 2)
+        self.assertEqual(
+            invalidated["production_unresolved"],
+            ["daily", "daily_basic", "moneyflow", "trade_cal"],
+        )
+        audit = storage_service.storage_production_blocker_audit()
+        ttl_row = next(
+            row for row in audit["rows"] if row["criterion"] == "cache_ttl_refresh_pipeline_executed"
+        )
+        self.assertFalse(ttl_row["passed"])
+        self.assertTrue(ttl_row["production_blocker"])
+
+        for dataset in ("daily", "daily_basic", "moneyflow", "trade_cal"):
+            counter += 1
+            signed = self._envelope("storage_ttl_resolution", dataset, counter, previous)
+            self._install_external_proof(signed)
+            result = storage_service.import_storage_cache_ttl_external_attestation(
+                {"signed_envelope": signed}
+            )
+            previous = result["attestation_id"]
+        reattested = storage_service.storage_cache_ttl_refresh_evidence()
+        self.assertTrue(reattested["ready"])
+        self.assertEqual(reattested["production_verified_dataset_count"], 6)
+        self.assertEqual(reattested["production_unresolved"], [])
 
     def test_worker_factor_and_radar_lineages_stay_local_integrity_only(self) -> None:
         previous = ""
