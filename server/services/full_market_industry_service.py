@@ -636,6 +636,7 @@ def validate_full_market_industry_membership(
     _validate_last_good: bool = True,
     _require_generation_attestation: bool = True,
     _generation_attestation_must_be_latest: bool = True,
+    _generation_attestation_head_mode: str = "current",
 ) -> dict[str, Any]:
     """Read and verify the current full-market industry pointer without writes."""
 
@@ -960,6 +961,12 @@ def validate_full_market_industry_membership(
                     pointer.get("generation_attestation_previous_digest") or ""
                 ),
                 require_latest=_generation_attestation_must_be_latest,
+                head_mode=_generation_attestation_head_mode,
+                runtime_head_full=(
+                    _current_head_full()
+                    if _generation_attestation_head_mode == "current"
+                    else ""
+                ),
             )
             blockers.extend(generation_attestation.get("blockers") or [])
             if (
@@ -1088,6 +1095,7 @@ def validate_full_market_industry_membership(
                 _validate_last_good=False,
                 _require_generation_attestation=True,
                 _generation_attestation_must_be_latest=False,
+                _generation_attestation_head_mode="history",
             )
             if recovery.get("ready") is not True:
                 blockers.append("industry_generation_pointer_recovery_invalid")

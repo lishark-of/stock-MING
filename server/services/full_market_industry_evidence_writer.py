@@ -165,6 +165,7 @@ def _resume_attested_provider_evidence(
         expected_universe_digest=provider.get("universe_digest"),
         expected_validated_trade_date=provider.get("validated_trade_date"),
         _generation_attestation_must_be_latest=False,
+        _generation_attestation_head_mode="history",
     )
     previous_pointer_value = _read_json(root / POINTER_FILE)
     previous_pointer = (
@@ -184,6 +185,8 @@ def _resume_attested_provider_evidence(
         manifest,
         expected_previous_attestation_digest=pointer_previous_attestation,
         require_latest=True,
+        head_mode="current",
+        runtime_head_full=_current_head_full(),
     )
     previous_attestation = str(
         attestation_probe.get("previous_attestation_digest")
@@ -195,6 +198,8 @@ def _resume_attested_provider_evidence(
         manifest,
         expected_previous_attestation_digest=previous_attestation,
         require_latest=True,
+        head_mode="current",
+        runtime_head_full=_current_head_full(),
     )
     if attestation.get("ready") is not True:
         return {
@@ -413,6 +418,8 @@ def _promote_provider_evidence(
         expected_symbols=provider.get("symbols"),
         expected_universe_digest=provider.get("universe_digest"),
         expected_validated_trade_date=provider.get("validated_trade_date"),
+        _generation_attestation_must_be_latest=False,
+        _generation_attestation_head_mode="history",
     )
     previous_pointer = _read_json(root / POINTER_FILE)
     previous_pointer = (
@@ -431,6 +438,8 @@ def _promote_provider_evidence(
         manifest,
         expected_previous_attestation_digest=pointer_previous_attestation,
         require_latest=True,
+        head_mode="current",
+        runtime_head_full=_current_head_full(),
     )
     expected_previous_attestation = str(
         attestation_probe.get("previous_attestation_digest")
@@ -442,6 +451,8 @@ def _promote_provider_evidence(
         manifest,
         expected_previous_attestation_digest=expected_previous_attestation,
         require_latest=True,
+        head_mode="current",
+        runtime_head_full=_current_head_full(),
     )
     pointer = {
         "schema_version": PRODUCED_POINTER_SCHEMA_VERSION,

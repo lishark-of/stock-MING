@@ -949,6 +949,115 @@ class FullMarketIndustryProviderRunnerTests(unittest.TestCase):
                 ]
             )
 
+    def test_signed_generation_from_old_runtime_head_is_history_only(self):
+        symbols = _symbols()
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            task, upstream, meta_path = self._request(root, symbols)
+            result = self._run(
+                root,
+                meta_path,
+                task,
+                upstream,
+                _PagedIndustryClient({"Y": _provider_rows(symbols), "N": []}),
+            )
+            self.assertEqual(result["status"], "success", result)
+            pointer = json.loads(
+                (
+                    root
+                    / service.INDUSTRY_ROOT_RELATIVE
+                    / service.POINTER_FILE
+                ).read_text()
+            )
+            manifest = json.loads(
+                (
+                    root
+                    / service.INDUSTRY_ROOT_RELATIVE
+                    / pointer["manifest_file"]
+                ).read_text()
+            )
+            signed_head = manifest["producer_binding"]["producer_head_full"]
+            changed_head = "f" * 40 if signed_head != "f" * 40 else "e" * 40
+            historical = generation_trust.validate_generation_attestation(
+                manifest,
+                expected_previous_attestation_digest=pointer[
+                    "generation_attestation_previous_digest"
+                ],
+                require_latest=False,
+                head_mode="history",
+                runtime_head_full="",
+            )
+            self.assertTrue(historical["ready"], historical["blockers"])
+            with patch.object(
+                service,
+                "_current_head_full",
+                return_value=changed_head,
+            ):
+                current = service.validate_full_market_industry_membership(
+                    root,
+                    expected_symbols=symbols,
+                    expected_universe_digest=upstream["universe_digest"],
+                    expected_validated_trade_date=upstream[
+                        "validated_trade_date"
+                    ],
+                )
+            self.assertFalse(current["ready"])
+            self.assertIn(
+                "industry_generation_attestation_runtime_head_mismatch",
+                current["blockers"],
+            )
+
+    def test_staged_resume_rejects_request_and_manifest_from_old_head(self):
+        symbols = _symbols()
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            task, upstream, meta_path = self._request(root, symbols)
+            client = _PagedIndustryClient({"Y": _provider_rows(symbols), "N": []})
+            staged = self._run(
+                root,
+                meta_path,
+                task,
+                upstream,
+                client,
+                auto_attest=False,
+            )
+            self.generation_signer.append(
+                staged["payload_safe"]["generation_attestation_claims"]
+            )
+            signed_head = task["payload_safe"]["execution_request"]["head_full"]
+            changed_head = "f" * 40 if signed_head != "f" * 40 else "e" * 40
+            calls_before = list(client.calls)
+            with patch.object(
+                provider_service,
+                "_current_head_full",
+                return_value=changed_head,
+            ), patch.object(
+                evidence_writer,
+                "_current_head_full",
+                return_value=changed_head,
+            ), patch.object(
+                service,
+                "_current_head_full",
+                return_value=changed_head,
+            ):
+                blocked = self._run(
+                    root,
+                    meta_path,
+                    task,
+                    upstream,
+                    client,
+                    auto_attest=False,
+                )
+            self.assertEqual(blocked["status"], "failed")
+            self.assertIn(
+                "persisted_execution_request_head_mismatch",
+                blocked["payload_safe"]["blockers"],
+            )
+            self.assertEqual(client.calls, calls_before)
+            self.assertFalse(
+                (root / service.INDUSTRY_ROOT_RELATIVE / service.POINTER_FILE).exists()
+            )
+
     def test_generation_chain_replay_old_head_and_wrong_previous_fail_closed(self):
         symbols = _symbols()
         for attack in ("replay", "old_head", "wrong_previous"):

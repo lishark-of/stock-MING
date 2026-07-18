@@ -190,10 +190,16 @@ def validate_generation_attestation(
     *,
     expected_previous_attestation_digest: str,
     require_latest: bool,
+    head_mode: str,
+    runtime_head_full: str,
 ) -> dict[str, Any]:
     key, fingerprint = _trusted_public_key()
     history_bytes = _read_trusted(HISTORY_PATH)
     blockers: list[str] = []
+    if head_mode not in {"current", "history"}:
+        blockers.append("industry_generation_attestation_head_mode_invalid")
+    if head_mode == "current" and not _HEX_40.fullmatch(runtime_head_full):
+        blockers.append("industry_generation_attestation_runtime_head_invalid")
     if key is None:
         blockers.append("industry_generation_attestation_public_key_unavailable")
     try:
@@ -296,6 +302,12 @@ def validate_generation_attestation(
     }
     if target is None or target_contract != claims:
         blockers.append("industry_generation_attestation_generation_binding_invalid")
+    if (
+        target
+        and head_mode == "current"
+        and target_statement.get("producer_head_full") != runtime_head_full
+    ):
+        blockers.append("industry_generation_attestation_runtime_head_mismatch")
     if target and require_latest and target is not verified_events[-1]:
         blockers.append("industry_generation_attestation_not_latest")
     if target and require_latest:
@@ -314,4 +326,6 @@ def validate_generation_attestation(
         "blockers": blockers,
         "semantic_authority_is_separate": True,
         "application_generates_generation_signatures": False,
+        "head_mode": head_mode,
+        "runtime_head_full": runtime_head_full if head_mode == "current" else "",
     }
