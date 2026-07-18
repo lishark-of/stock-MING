@@ -39,7 +39,7 @@ POINTER_FILE = "pointer.json"
 POINTER_SCHEMA_VERSION = "full_market_industry_membership_pointer.v2"
 MANIFEST_SCHEMA_VERSION = "full_market_industry_membership_manifest.v2"
 ARTIFACT_SCHEMA_VERSION = "full_market_industry_membership_artifact.v1"
-PRODUCED_POINTER_SCHEMA_VERSION = "full_market_industry_membership_generation_pointer.v4"
+PRODUCED_POINTER_SCHEMA_VERSION = "full_market_industry_membership_generation_pointer.v5"
 PRODUCED_MANIFEST_SCHEMA_VERSION = "full_market_industry_membership_manifest.v3"
 RAW_ARTIFACT_SCHEMA_VERSION = "full_market_industry_membership_raw_artifact.v1"
 CALL_LEDGER_SCHEMA_VERSION = "full_market_industry_membership_call_ledger.v1"
@@ -82,7 +82,7 @@ PROVIDER_RAW_FIELDS = (
 )
 TRANSPORT_RECEIPT_FIELDS = {
     "api", "call_id", "completed_at_utc", "issued_at_utc",
-    "official_client_identity_verified", "provider_response_received",
+    "official_client_identity_verified", "provider", "provider_response_received",
     "request_params_safe", "schema_version", "sdk_method_invoked",
 }
 CALL_LEDGER_ROW_FIELDS = {
@@ -92,6 +92,25 @@ CALL_LEDGER_ROW_FIELDS = {
     "raw_start_index", "request_params_safe", "row_count", "transport_receipt",
     "transport_receipt_digest", "tushare_called", "external_calls_triggered",
     "does_not_execute_trades", "does_not_modify_strategy_action",
+}
+GENERATION_BINDING_FIELDS = {
+    "artifact_sha256",
+    "as_of_date",
+    "call_ledger_sha256",
+    "current_generation",
+    "execution_request_digest",
+    "manifest_digest",
+    "manifest_file",
+    "producer_binding_digest",
+    "producer_head_full",
+    "provider_scope_digest",
+    "provider_version_digest",
+    "raw_artifact_sha256",
+    "scope_digest",
+    "semantic_evidence_sha256",
+    "source_version_digest",
+    "universe_digest",
+    "validated_trade_date",
 }
 
 INDUSTRY_BINDING_DIGEST_KEYS = (
@@ -116,6 +135,10 @@ def _canonical_bytes(value: Any) -> bytes:
 
 def _digest(value: Any) -> str:
     return hashlib.sha256(_canonical_bytes(value)).hexdigest()
+
+
+def _generation_binding(pointer: Mapping[str, Any]) -> dict[str, Any]:
+    return {key: pointer.get(key) for key in sorted(GENERATION_BINDING_FIELDS)}
 
 
 def _execution_request_digest(value: Mapping[str, Any]) -> str:
@@ -371,6 +394,7 @@ def _transport_receipt_blockers(
         set(row) != TRANSPORT_RECEIPT_FIELDS
         or row.get("schema_version") != TRANSPORT_RECEIPT_SCHEMA_VERSION
         or row.get("api") != SOURCE_API
+        or row.get("provider") != "Tushare"
         or call_id != expected_call_id
         or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{7,127}", call_id)
         or type(row.get("request_params_safe")) is not dict
@@ -496,146 +520,6 @@ def _provider_ledger_replay_blockers(
     return list(dict.fromkeys(blockers))
 
 
-def _recovery_generation_blockers(
-    root: Path,
-    *,
-    generation_id: str,
-    manifest: Mapping[str, Any],
-    expected_manifest_keys: set[str],
-    expected_symbols: list[str],
-    semantic_sha256: str,
-) -> list[str]:
-    expected_prefix = Path("versions") / generation_id
-    expected_files = {
-        "artifact_file": expected_prefix / "artifact.json",
-        "raw_artifact_file": expected_prefix / "raw.json",
-        "call_ledger_file": expected_prefix / "call-ledger.json",
-        "semantic_evidence_file": expected_prefix / "semantic-authority.json",
-    }
-    paths = {
-        key: _safe_relative_file(root, manifest.get(key)) for key in expected_files
-    }
-    blockers: list[str] = []
-    if set(manifest) != expected_manifest_keys or any(
-        manifest.get(key) != expected.as_posix()
-        for key, expected in expected_files.items()
-    ):
-        blockers.append("industry_generation_pointer_recovery_manifest_invalid")
-
-    artifact = _read_json(paths["artifact_file"]) if paths["artifact_file"] else None
-    raw_artifact = (
-        _read_json(paths["raw_artifact_file"])
-        if paths["raw_artifact_file"]
-        else None
-    )
-    ledger_artifact = (
-        _read_json(paths["call_ledger_file"])
-        if paths["call_ledger_file"]
-        else None
-    )
-    artifact = dict(artifact) if isinstance(artifact, Mapping) else {}
-    raw_artifact = dict(raw_artifact) if isinstance(raw_artifact, Mapping) else {}
-    ledger_artifact = (
-        dict(ledger_artifact) if isinstance(ledger_artifact, Mapping) else {}
-    )
-    rows_value = artifact.get("rows")
-    raw_rows_value = raw_artifact.get("rows")
-    ledger_rows_value = ledger_artifact.get("rows")
-    rows = (
-        [dict(row) for row in rows_value]
-        if type(rows_value) is list and all(type(row) is dict for row in rows_value)
-        else []
-    )
-    raw_rows = (
-        [dict(row) for row in raw_rows_value]
-        if type(raw_rows_value) is list
-        and all(type(row) is dict for row in raw_rows_value)
-        else []
-    )
-    ledger_rows = (
-        [dict(row) for row in ledger_rows_value]
-        if type(ledger_rows_value) is list
-        and all(type(row) is dict for row in ledger_rows_value)
-        else []
-    )
-    if (
-        set(artifact) != {"rows", "schema_version"}
-        or artifact.get("schema_version") != ARTIFACT_SCHEMA_VERSION
-        or type(rows_value) is not list
-        or len(rows) != len(rows_value)
-        or manifest.get("artifact_sha256")
-        != (_file_digest(paths["artifact_file"]) if paths["artifact_file"] else "")
-        or manifest.get("artifact_row_count") != len(rows)
-        or set(raw_artifact) != {"rows", "schema_version"}
-        or raw_artifact.get("schema_version") != RAW_ARTIFACT_SCHEMA_VERSION
-        or type(raw_rows_value) is not list
-        or len(raw_rows) != len(raw_rows_value)
-        or manifest.get("raw_artifact_sha256")
-        != (
-            _file_digest(paths["raw_artifact_file"])
-            if paths["raw_artifact_file"]
-            else ""
-        )
-        or manifest.get("raw_artifact_row_count") != len(raw_rows)
-        or set(ledger_artifact) != {"ledger_digest", "rows", "schema_version"}
-        or ledger_artifact.get("schema_version") != CALL_LEDGER_SCHEMA_VERSION
-        or type(ledger_rows_value) is not list
-        or len(ledger_rows) != len(ledger_rows_value)
-        or ledger_artifact.get("ledger_digest") != _digest(ledger_rows)
-        or manifest.get("call_ledger_sha256")
-        != (
-            _file_digest(paths["call_ledger_file"])
-            if paths["call_ledger_file"]
-            else ""
-        )
-        or manifest.get("call_ledger_call_count") != len(ledger_rows)
-        or manifest.get("semantic_evidence_sha256") != semantic_sha256
-        or semantic_sha256
-        != (
-            _file_digest(paths["semantic_evidence_file"])
-            if paths["semantic_evidence_file"]
-            else ""
-        )
-    ):
-        blockers.append("industry_generation_pointer_recovery_artifacts_invalid")
-
-    scope = manifest.get("scope") if type(manifest.get("scope")) is dict else {}
-    source_version = (
-        manifest.get("source_version")
-        if type(manifest.get("source_version")) is dict
-        else {}
-    )
-    producer_binding = (
-        manifest.get("producer_binding")
-        if type(manifest.get("producer_binding")) is dict
-        else {}
-    )
-    if (
-        manifest.get("scope_digest") != _digest(scope)
-        or manifest.get("source_version_digest") != _digest(source_version)
-        or manifest.get("producer_binding_digest") != _digest(producer_binding)
-    ):
-        blockers.append("industry_generation_pointer_recovery_metadata_invalid")
-    blockers.extend(
-        _interval_blockers(
-            rows,
-            expected_symbols=expected_symbols,
-            validated_trade_date=_date(manifest.get("validated_trade_date")),
-        )
-    )
-    blockers.extend(
-        _provider_ledger_replay_blockers(
-            raw_rows,
-            rows,
-            ledger_rows,
-            observed_at=_utc_timestamp(
-                producer_binding.get("collection_observed_at_utc")
-            ),
-        )
-    )
-    return list(dict.fromkeys(blockers))
-
-
 def _symbols(values: Any) -> tuple[list[str], int, int]:
     raw = list(values) if isinstance(values, Sequence) and not isinstance(values, (str, bytes)) else []
     normalized: list[str] = []
@@ -744,6 +628,8 @@ def validate_full_market_industry_membership(
     expected_symbols: Any,
     expected_universe_digest: Any,
     expected_validated_trade_date: Any,
+    _pointer_override: Mapping[str, Any] | None = None,
+    _validate_last_good: bool = True,
 ) -> dict[str, Any]:
     """Read and verify the current full-market industry pointer without writes."""
 
@@ -763,11 +649,13 @@ def validate_full_market_industry_membership(
     root = evidence_root / INDUSTRY_ROOT_RELATIVE
     pointer_path = root / POINTER_FILE
     root_safe = not evidence_root.is_symlink() and not root.is_symlink()
-    pointer = (
-        _read_json(pointer_path)
-        if root_safe and pointer_path.is_file() and not pointer_path.is_symlink()
-        else None
-    )
+    pointer = _pointer_override
+    if pointer is None:
+        pointer = (
+            _read_json(pointer_path)
+            if root_safe and pointer_path.is_file() and not pointer_path.is_symlink()
+            else None
+        )
     pointer = dict(pointer) if isinstance(pointer, Mapping) else {}
     pointer_material = {key: value for key, value in pointer.items() if key != "pointer_digest"}
     legacy_pointer_keys = {
@@ -788,6 +676,7 @@ def validate_full_market_industry_membership(
         "call_ledger_sha256",
         "current_generation",
         "execution_request_digest",
+        "last_good_binding",
         "last_good_generation",
         "last_good_manifest_digest",
         "last_good_manifest_file",
@@ -1110,6 +999,11 @@ def validate_full_market_industry_membership(
         last_good_path = _safe_relative_file(root, last_good_file)
         last_good = _read_json(last_good_path) if last_good_path else None
         last_good = dict(last_good) if isinstance(last_good, Mapping) else {}
+        last_good_binding = (
+            pointer.get("last_good_binding")
+            if type(pointer.get("last_good_binding")) is dict
+            else {}
+        )
         last_good_material = {
             key: value for key, value in last_good.items() if key != "manifest_digest"
         }
@@ -1124,22 +1018,45 @@ def validate_full_market_industry_membership(
             or last_good.get("manifest_digest") != _digest(last_good_material)
             or pointer.get("last_good_manifest_digest")
             != last_good.get("manifest_digest")
+            or set(last_good_binding) != GENERATION_BINDING_FIELDS
+            or last_good_binding.get("current_generation") != last_good_id
+            or last_good_binding.get("manifest_file") != last_good_file
+            or last_good_binding.get("manifest_digest")
+            != pointer.get("last_good_manifest_digest")
         ):
             blockers.append("industry_generation_pointer_recovery_binding_invalid")
-        if last_good_id == version_id and last_good != manifest:
+        if last_good_id == version_id and (
+            last_good != manifest
+            or last_good_binding != _generation_binding(pointer)
+        ):
             blockers.append("industry_generation_pointer_same_generation_split")
-        if type(last_good_id) is str and _VERSION_ID.fullmatch(last_good_id):
-            recovery_blockers = _recovery_generation_blockers(
-                root,
-                generation_id=last_good_id,
-                manifest=last_good,
-                expected_manifest_keys=produced_manifest_keys,
+        if (
+            _validate_last_good
+            and type(last_good_id) is str
+            and _VERSION_ID.fullmatch(last_good_id)
+            and last_good_id != version_id
+        ):
+            recovery_pointer = {
+                **last_good_binding,
+                "schema_version": PRODUCED_POINTER_SCHEMA_VERSION,
+                "version_id": last_good_id,
+                "last_good_generation": last_good_id,
+                "last_good_manifest_file": last_good_file,
+                "last_good_manifest_digest": last_good.get("manifest_digest"),
+                "last_good_binding": dict(last_good_binding),
+            }
+            recovery_pointer["pointer_digest"] = _digest(recovery_pointer)
+            recovery = validate_full_market_industry_membership(
+                evidence_root,
                 expected_symbols=symbols,
-                semantic_sha256=semantic_sha256,
+                expected_universe_digest=universe_digest,
+                expected_validated_trade_date=validated_trade_date,
+                _pointer_override=recovery_pointer,
+                _validate_last_good=False,
             )
-            if recovery_blockers:
+            if recovery.get("ready") is not True:
                 blockers.append("industry_generation_pointer_recovery_invalid")
-                blockers.extend(recovery_blockers)
+                blockers.extend(recovery.get("blockers") or [])
     scope = manifest.get("scope") if type(manifest.get("scope")) is dict else {}
     expected_scope = {
         "schema_version": SCOPE_SCHEMA_VERSION,

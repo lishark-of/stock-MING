@@ -10,7 +10,6 @@ from storage.sqlite_meta import SQLiteMetaStore
 
 from . import task_service
 from .full_market_industry_evidence_writer import (
-    PROVIDER_EXECUTION_TASK_TYPE,
     _promote_provider_evidence,
     _provider_execution_task,
 )

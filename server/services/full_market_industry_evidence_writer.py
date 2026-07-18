@@ -31,6 +31,7 @@ from .full_market_industry_service import (
     _canonical_bytes,
     _current_head_full,
     _digest,
+    _generation_binding,
     _read_json,
     validate_full_market_industry_membership,
 )
@@ -264,6 +265,7 @@ def _promote_provider_evidence(
         "last_good_manifest_file": manifest_relative.as_posix(),
         "last_good_manifest_digest": manifest["manifest_digest"],
     }
+    pointer["last_good_binding"] = _generation_binding(pointer)
     pointer["pointer_digest"] = _digest(pointer)
     previous_validation = validate_full_market_industry_membership(
         evidence_root,
@@ -323,6 +325,7 @@ def _promote_provider_evidence(
                     "last_good_generation": previous_pointer["current_generation"],
                     "last_good_manifest_file": previous_pointer["manifest_file"],
                     "last_good_manifest_digest": previous_pointer["manifest_digest"],
+                    "last_good_binding": _generation_binding(previous_pointer),
                 }
             )
             final_pointer["pointer_digest"] = _digest(

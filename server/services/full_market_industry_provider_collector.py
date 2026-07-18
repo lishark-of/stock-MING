@@ -7,7 +7,6 @@ from typing import Any
 from .full_market_industry_service import (
     MINIMUM_ELIGIBLE_SYMBOLS,
     PROJECT_ROOT,
-    PROVIDER_RAW_FIELDS,
     SOURCE_API,
     _date,
     _digest,

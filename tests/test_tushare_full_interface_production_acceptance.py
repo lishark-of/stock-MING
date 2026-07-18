@@ -85,6 +85,47 @@ class TushareFullInterfaceProductionAcceptanceTests(unittest.TestCase):
         storage_service.PARQUET_ROOT = self.original_parquet_root
         self.tmp.cleanup()
 
+    def test_real_adapter_v2_receipt_is_verified_by_formal_consumer(self):
+        import tushare_adapter
+        from tushare.pro.client import DataApi
+
+        pro = DataApi("test-only-no-network", timeout=1)
+        pro.daily = lambda **_params: tushare_adapter.pd.DataFrame(
+            [{"ts_code": "000001.SZ", "trade_date": "20260717", "close": 10.0}]
+        )
+        tushare_adapter._TRANSPORT_RECEIPTS.clear()
+        with patch.object(tushare_adapter, "_get_pro_client", return_value=(pro, None)):
+            result = tushare_adapter._call_pro("daily", trade_date="20260717")
+        self.assertEqual(
+            result["transport_receipt_version"],
+            "tushare_runtime_transport_receipt.v2",
+        )
+        transport = tushare_task_service._consume_runtime_transport_evidence(
+            tushare_adapter,
+            result,
+            "daily",
+        )
+        self.assertTrue(transport["runtime_adapter_module_identity_verified"])
+        self.assertTrue(transport["provider_transport_verified"])
+        self.assertTrue(transport["official_client_identity_verified"])
+        self.assertEqual(transport["provider"], "Tushare")
+        self.assertEqual(transport["transport_receipt_count"], 1)
+        self.assertEqual(len(transport["transport_receipt_digest"]), 64)
+
+        with patch.object(tushare_adapter, "_get_pro_client", return_value=(pro, None)):
+            tampered_result = tushare_adapter._call_pro(
+                "daily", trade_date="20260717"
+            )
+        call_id = tampered_result["transport_call_id"]
+        tushare_adapter._TRANSPORT_RECEIPTS[call_id]["provider"] = "not-tushare"
+        tampered = tushare_task_service._consume_runtime_transport_evidence(
+            tushare_adapter,
+            tampered_result,
+            "daily",
+        )
+        self.assertFalse(tampered["provider_transport_verified"])
+        self.assertFalse(tampered["official_client_identity_verified"])
+
     def test_stock_basic_missing_status_uses_explicit_request_filter_provenance(self):
         normalized = tushare_task_service._normalize_stock_basic_row(
             {"ts_code": "000001.SZ", "list_date": "19910403"},

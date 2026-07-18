@@ -658,6 +658,7 @@ class _PagedIndustryClient:
             "schema_version": service.TRANSPORT_RECEIPT_SCHEMA_VERSION,
             "call_id": call_id,
             "api": service.SOURCE_API,
+            "provider": "Tushare",
             "request_params_safe": dict(params),
             "sdk_method_invoked": True,
             "provider_response_received": True,
@@ -1117,6 +1118,69 @@ class FullMarketIndustryProviderRunnerTests(unittest.TestCase):
                 damaged_recovery["blockers"],
             )
             prior_raw_path.write_bytes(prior_raw_bytes)
+
+            prior_manifest_bytes = prior_manifest_path.read_bytes()
+            promoted_pointer_bytes = pointer_path.read_bytes()
+            for field, replacement in (
+                ("provider_scope_digest", "e" * 64),
+                ("producer_head_full", "b" * 40),
+                ("execution_request_digest", "c" * 64),
+                ("semantic_authority_signature_sha256", "d" * 64),
+            ):
+                with self.subTest(resealed_last_good_field=field):
+                    resealed_manifest = json.loads(prior_manifest_bytes)
+                    resealed_manifest["producer_binding"][field] = replacement
+                    resealed_manifest["producer_binding_digest"] = service._digest(
+                        resealed_manifest["producer_binding"]
+                    )
+                    resealed_manifest["source_version"][
+                        "producer_binding_digest"
+                    ] = resealed_manifest["producer_binding_digest"]
+                    resealed_manifest["source_version_digest"] = service._digest(
+                        resealed_manifest["source_version"]
+                    )
+                    resealed_manifest["manifest_digest"] = service._digest(
+                        {
+                            key: value
+                            for key, value in resealed_manifest.items()
+                            if key != "manifest_digest"
+                        }
+                    )
+                    prior_manifest_path.write_bytes(
+                        service._canonical_bytes(resealed_manifest)
+                    )
+                    resealed_pointer = json.loads(promoted_pointer_bytes)
+                    resealed_pointer["last_good_manifest_digest"] = (
+                        resealed_manifest["manifest_digest"]
+                    )
+                    resealed_pointer["last_good_binding"]["manifest_digest"] = (
+                        resealed_manifest["manifest_digest"]
+                    )
+                    resealed_pointer["pointer_digest"] = service._digest(
+                        {
+                            key: value
+                            for key, value in resealed_pointer.items()
+                            if key != "pointer_digest"
+                        }
+                    )
+                    pointer_path.write_bytes(
+                        service._canonical_bytes(resealed_pointer)
+                    )
+                    resealed = service.validate_full_market_industry_membership(
+                        root,
+                        expected_symbols=symbols,
+                        expected_universe_digest=upstream["universe_digest"],
+                        expected_validated_trade_date=upstream[
+                            "validated_trade_date"
+                        ],
+                    )
+                    self.assertFalse(resealed["ready"])
+                    self.assertIn(
+                        "industry_generation_pointer_recovery_invalid",
+                        resealed["blockers"],
+                    )
+                    prior_manifest_path.write_bytes(prior_manifest_bytes)
+                    pointer_path.write_bytes(promoted_pointer_bytes)
 
             split = json.loads(pointer_path.read_text())
             split["last_good_manifest_digest"] = "0" * 64

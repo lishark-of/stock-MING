@@ -6011,17 +6011,58 @@ def _consume_runtime_transport_evidence(adapter_module: Any, result: Mapping[str
                 receipt = None
             if isinstance(receipt, Mapping):
                 receipts.append(dict(receipt))
+    receipt_fields = {
+        "api",
+        "call_id",
+        "completed_at_utc",
+        "issued_at_utc",
+        "official_client_identity_verified",
+        "provider",
+        "provider_response_received",
+        "request_params_safe",
+        "schema_version",
+        "sdk_method_invoked",
+    }
+
+    def receipt_times_valid(receipt: Mapping[str, Any]) -> bool:
+        try:
+            issued = _dt.datetime.fromisoformat(
+                str(receipt.get("issued_at_utc") or "").replace("Z", "+00:00")
+            )
+            completed = _dt.datetime.fromisoformat(
+                str(receipt.get("completed_at_utc") or "").replace("Z", "+00:00")
+            )
+        except ValueError:
+            return False
+        now = _dt.datetime.now(_dt.timezone.utc)
+        return bool(
+            issued.tzinfo is not None
+            and completed.tzinfo is not None
+            and issued <= completed
+            and (completed - issued).total_seconds() <= 120
+            and completed <= now + _dt.timedelta(seconds=30)
+            and (now - completed).total_seconds() <= 300
+        )
+
     verified = bool(
         module_identity_verified
         and call_ids
+        and len(set(call_ids)) == len(call_ids)
         and len(receipts) == len(call_ids)
+        and result.get("transport_receipt_version")
+        == "tushare_runtime_transport_receipt.v2"
         and all(
-            receipt.get("schema_version") == "tushare_runtime_transport_receipt.v1"
+            set(receipt) == receipt_fields
+            and receipt.get("schema_version") == "tushare_runtime_transport_receipt.v2"
+            and receipt.get("call_id") == call_id
             and receipt.get("provider") == "Tushare"
             and receipt.get("api") == api
+            and type(receipt.get("request_params_safe")) is dict
             and receipt.get("sdk_method_invoked") is True
             and receipt.get("provider_response_received") is True
-            for receipt in receipts
+            and receipt.get("official_client_identity_verified") is True
+            and receipt_times_valid(receipt)
+            for call_id, receipt in zip(call_ids, receipts)
         )
     )
     official_client_identity_verified = bool(
