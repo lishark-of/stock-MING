@@ -79,6 +79,7 @@ ALLOWED_KINDS = frozenset(
         "worker_runtime_lineage",
         "factor_full_market_lineage",
         "candidate_radar_lineage",
+        "tushare_provider_execution_authorization",
     }
 )
 _HEX_40 = re.compile(r"^[0-9a-f]{40}$")
@@ -156,6 +157,10 @@ _CLAIM_DIGEST_FIELDS = frozenset(
         "performance_evidence_digest",
         "legacy_retirement_evidence_digest",
         "phase_a_packet_digest",
+        "approval_scope_hash",
+        "execution_recipe_scope_hash",
+        "selected_api_digest",
+        "target_group_digest",
     }
 )
 
@@ -204,6 +209,17 @@ _CLAIM_SCHEMAS: dict[str, dict[str, type | tuple[type, ...]]] = {
         "candidate_is_not_buy_instruction": bool,
         "does_not_execute_trades": bool,
     },
+    "tushare_provider_execution_authorization": {
+        "approval_scope_hash": str,
+        "execution_recipe_scope_hash": str,
+        "selected_api_digest": str,
+        "target_group_digest": str,
+        "provider_attempt_id": str,
+        "provider_version_id": str,
+        "trade_cal_repeat_authorized": bool,
+        "provider_max_calls": int,
+        "does_not_execute_trades": bool,
+    },
 }
 
 
@@ -243,6 +259,24 @@ def _current_head_full() -> str:
         return ""
     head = result.stdout.strip().lower()
     return head if _HEX_40.fullmatch(head) else ""
+
+
+def _current_clean_head_full() -> str:
+    head = _current_head_full()
+    if not head:
+        return ""
+    try:
+        tracked_status = subprocess.run(
+            ["git", "status", "--porcelain", "--untracked-files=no"],
+            cwd=PROJECT_ROOT,
+            check=True,
+            capture_output=True,
+            text=True,
+            timeout=5,
+        ).stdout.strip()
+    except Exception:
+        return ""
+    return head if not tracked_status else ""
 
 
 def _read_registry_no_init() -> tuple[dict[str, Any], str]:
@@ -693,6 +727,18 @@ def _claims_ready(
             and claims.get("candidate_radar_production_replacement") is True
             and claims.get("candidate_is_not_buy_instruction") is True
         )
+    if kind == "tushare_provider_execution_authorization":
+        return bool(
+            subject == "tushare-full-interface-provider-execution"
+            and _SAFE_ID.fullmatch(str(claims.get("provider_attempt_id") or ""))
+            and len(str(claims.get("provider_attempt_id") or "")) == 32
+            and _SAFE_ID.fullmatch(str(claims.get("provider_version_id") or ""))
+            and str(claims.get("provider_version_id") or "").endswith(
+                f"-{claims.get('provider_attempt_id')}"
+            )
+            and claims.get("trade_cal_repeat_authorized") is True
+            and 1 <= claims.get("provider_max_calls", 0) <= 300
+        )
     return True
 
 
@@ -992,6 +1038,31 @@ def prepare_external_trusted_attestation(
             **_local_only_trust_state(),
             "writes_performed": False,
         }
+    if verified.get("attestation_kind") == "tushare_provider_execution_authorization":
+        claims = verified.get("claims") if isinstance(verified.get("claims"), Mapping) else {}
+        attempt_id = str(claims.get("provider_attempt_id") or "")
+        version_id = str(claims.get("provider_version_id") or "")
+        prior_provider_events = [
+            row
+            for row in prior_events
+            if isinstance(row, Mapping)
+            and row.get("attestation_kind")
+            == "tushare_provider_execution_authorization"
+        ]
+        if any(
+            isinstance(row.get("claims"), Mapping)
+            and (
+                row["claims"].get("provider_attempt_id") == attempt_id
+                or row["claims"].get("provider_version_id") == version_id
+            )
+            for row in prior_provider_events
+        ):
+            return {
+                **verified,
+                **_local_only_trust_state(local_integrity_ready=True),
+                "status": "provider_execution_attempt_or_version_replayed",
+                "writes_performed": False,
+            }
     key, trust = _load_trusted_public_key()
     if key is None:
         return {**trust, **_local_only_trust_state(), "writes_performed": False}
@@ -1075,7 +1146,44 @@ def prepare_external_trusted_attestation(
     }
 
 
-def validate_trusted_registry() -> dict[str, Any]:
+def validate_trusted_registry(
+    *,
+    head_mode: str = "current",
+    expected_head_full: str | None = None,
+) -> dict[str, Any]:
+    """Validate the persisted trust chain without reapplying issuance freshness.
+
+    Freshness is mandatory when an envelope is first consumed by
+    ``prepare_external_trusted_attestation``.  Once the envelope, signed key
+    epoch, and monotonic high-water anchor have been atomically persisted,
+    durable verification instead proves their signatures and exact chain
+    bindings.  Requiring an already-consumed envelope to remain inside its
+    short issuance window would make immutable production evidence expire.
+    """
+
+    if head_mode not in {"current", "history"}:
+        return {
+            **_local_only_trust_state(),
+            "status": "external_attestation_head_mode_invalid",
+            "historical_integrity_ready": False,
+            "head_mode": head_mode,
+            "blockers": ["external_attestation_head_mode_invalid"],
+        }
+    expected_head = str(expected_head_full or "").lower()
+    if (
+        head_mode == "history"
+        and not expected_head
+        or expected_head
+        and not _HEX_40.fullmatch(expected_head)
+    ):
+        return {
+            **_local_only_trust_state(),
+            "status": "external_attestation_expected_head_invalid",
+            "historical_integrity_ready": False,
+            "head_mode": head_mode,
+            "blockers": ["external_attestation_expected_head_invalid"],
+        }
+
     registry = validate_registry()
     events = list(registry.get("events") or [])
     if registry.get("local_integrity_ready") is not True or not events:
@@ -1088,38 +1196,130 @@ def validate_trusted_registry() -> dict[str, Any]:
             "blockers": list(PRODUCTION_TRUST_BLOCKERS),
         }
     latest = events[-1]
-    trusted = prepare_external_trusted_attestation(
-        {"signed_envelope": latest.get("signed_envelope")},
-        expected_kind=str(latest.get("attestation_kind") or ""),
+    # Historical audit must not depend on whichever checkout happens to be
+    # active now.  It validates the persisted signed chain and binds the
+    # selected historical event separately below.  Current promotion still
+    # requires the actual clean checkout and an exact expected-head match.
+    runtime_head_full = (
+        _current_clean_head_full()
+        if head_mode == "current"
+        else str(latest.get("head_full") or "").lower()
     )
-    if trusted.get("ready") is not True:
-        return trusted
+    selected_head_ready = bool(
+        not expected_head
+        or (head_mode == "current" and runtime_head_full == expected_head)
+        or (
+            head_mode == "history"
+            and any(event.get("head_full") == expected_head for event in events)
+        )
+    )
     source, _ = _read_registry_no_init()
     source_events = source.get("events") if isinstance(source.get("events"), list) else []
-    source_latest = source_events[-1] if source_events and isinstance(source_events[-1], Mapping) else {}
+    source_latest = (
+        source_events[-1]
+        if source_events and isinstance(source_events[-1], Mapping)
+        else {}
+    )
+    prior = events[-2] if len(events) > 1 else {}
+    anchor, anchor_read_status = _read_trusted_document(
+        MONOTONIC_ANCHOR_PATH,
+        expected_keys=_MONOTONIC_ANCHOR_KEYS,
+    )
+    verification_key, _ = _load_trusted_event_public_key(
+        epoch=latest.get("head_key_epoch"),
+        fingerprint=latest.get("key_fingerprint_sha256"),
+    )
+    anchor_issued_at = _parse_utc(anchor.get("issued_at"))
+    anchor_expires_at = _parse_utc(anchor.get("expires_at"))
+    epoch_document = latest.get("head_key_epoch_document")
+    epoch_valid_from = _parse_utc(
+        epoch_document.get("valid_from") if isinstance(epoch_document, Mapping) else None
+    )
+    epoch_expires_at = _parse_utc(
+        epoch_document.get("expires_at") if isinstance(epoch_document, Mapping) else None
+    )
+    previous_counter = int(prior.get("monotonic_counter") or 0)
+    previous_attestation = str(prior.get("attestation_id") or "")
+    anchor_ready = bool(
+        anchor_read_status == "trusted"
+        and verification_key is not None
+        and _HEX_40.fullmatch(runtime_head_full)
+        and selected_head_ready
+        and latest.get("head_full") == runtime_head_full
+        and anchor.get("head_full") == runtime_head_full
+        and anchor.get("schema_version") == MONOTONIC_ANCHOR_SCHEMA_VERSION
+        and anchor.get("algorithm") == "Ed25519"
+        and anchor.get("epoch") == latest.get("head_key_epoch")
+        and anchor.get("head_full") == latest.get("head_full")
+        and anchor.get("key_fingerprint_sha256")
+        == latest.get("key_fingerprint_sha256")
+        and anchor.get("epoch_digest") == latest.get("head_key_epoch_digest")
+        and anchor.get("monotonic_counter") == latest.get("monotonic_counter")
+        and anchor.get("cas_previous_counter") == previous_counter
+        and anchor.get("monotonic_counter") == previous_counter + 1
+        and anchor.get("previous_attestation_digest") == previous_attestation
+        and anchor.get("cas_previous_attestation_digest") == previous_attestation
+        and anchor.get("attestation_id") == latest.get("attestation_id")
+        and anchor.get("nonce_digest") == latest.get("nonce_digest")
+        and anchor.get("issued_at") == latest.get("issued_at")
+        and anchor.get("expires_at") == latest.get("expires_at")
+        and anchor_issued_at is not None
+        and anchor_expires_at is not None
+        and epoch_valid_from is not None
+        and epoch_expires_at is not None
+        and epoch_valid_from <= anchor_issued_at < anchor_expires_at <= epoch_expires_at
+        and _verify_document_signature(verification_key, anchor)
+    )
+    anchor_digest = _sha256(_signed_document_material(anchor)) if anchor_ready else ""
     metadata_ready = bool(
-        source.get("production_trusted") is True
+        anchor_ready
+        and source.get("head_full") == runtime_head_full
+        and source.get("production_trusted") is True
         and source.get("snapshot_rollback_resistant") is True
-        and source.get("head_key_epoch") == trusted.get("head_key_epoch")
-        and source.get("head_key_epoch_digest") == trusted.get("head_key_epoch_digest")
-        and source.get("monotonic_anchor_digest") == trusted.get("monotonic_anchor_digest")
-        and source.get("last_attestation_id") == trusted.get("attestation_id")
-        and source_latest.get("head_key_epoch") == trusted.get("head_key_epoch")
-        and source_latest.get("head_key_epoch_digest") == trusted.get("head_key_epoch_digest")
-        and source_latest.get("monotonic_anchor_digest") == trusted.get("monotonic_anchor_digest")
+        and source.get("head_key_epoch") == latest.get("head_key_epoch")
+        and source.get("head_key_epoch_digest") == latest.get("head_key_epoch_digest")
+        and source.get("monotonic_anchor_digest") == anchor_digest
+        and source.get("last_attestation_id") == latest.get("attestation_id")
+        and source_latest.get("head_key_epoch") == latest.get("head_key_epoch")
+        and source_latest.get("head_key_epoch_digest") == latest.get("head_key_epoch_digest")
+        and source_latest.get("monotonic_anchor_digest") == anchor_digest
         and source_latest.get("external_trust_verified") is True
         and source_latest.get("production_trusted") is True
         and source_latest.get("snapshot_rollback_resistant") is True
     )
+    historical_integrity_ready = metadata_ready
+    production_ready = metadata_ready and head_mode == "current"
     return {
-        **trusted,
-        "ready": metadata_ready,
-        "status": "external_attestation_registry_production_trust_verified"
-        if metadata_ready
-        else "external_attestation_registry_trust_metadata_mismatch",
-        "production_trusted": metadata_ready,
-        "snapshot_rollback_resistant": metadata_ready,
-        "blockers": [] if metadata_ready else ["external_monotonic_anchor_unavailable"],
+        **latest,
+        "ready": production_ready,
+        "status": (
+            "external_attestation_registry_production_trust_verified"
+            if production_ready
+            else "external_attestation_registry_historical_integrity_verified_non_promotable"
+            if historical_integrity_ready
+            else "external_attestation_registry_trust_metadata_mismatch"
+        ),
+        "production_trusted": production_ready,
+        "snapshot_rollback_resistant": historical_integrity_ready,
+        "historical_integrity_ready": historical_integrity_ready,
+        "persisted_validation_ignores_envelope_freshness": True,
+        "head_mode": head_mode,
+        "expected_head_full": expected_head,
+        "runtime_head_full": runtime_head_full,
+        "blockers": []
+        if historical_integrity_ready
+        else [
+            (
+                "external_attestation_expected_historical_head_missing"
+                if head_mode == "history" and not selected_head_ready
+                else "external_attestation_expected_current_head_mismatch"
+                if head_mode == "current" and not selected_head_ready
+                else "external_attestation_current_clean_head_mismatch"
+                if head_mode == "current"
+                and latest.get("head_full") != runtime_head_full
+                else "external_monotonic_anchor_unavailable"
+            )
+        ],
     }
 
 
@@ -1582,8 +1782,17 @@ def external_attestation_contract() -> dict[str, Any]:
             kind: sorted(schema)
             for kind, schema in sorted(_CLAIM_SCHEMAS.items())
         },
-        "planned_consumers": ["storage", "worker", "factor", "candidate_radar"],
-        "production_consumers_wired": ["storage_ttl"],
+        "planned_consumers": [
+            "storage",
+            "worker",
+            "factor",
+            "candidate_radar",
+            "tushare_provider_execution_authorization",
+        ],
+        "production_consumers_wired": [
+            "storage_ttl",
+            "tushare_provider_execution_authorization",
+        ],
         "post_accepts_signed_envelope_only": True,
         "caller_boolean_cannot_promote": True,
         "local_hmac_cannot_promote": True,

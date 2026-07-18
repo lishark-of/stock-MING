@@ -23,6 +23,7 @@ from server.services import external_production_consumer_service as phase2_consu
 from server.services import full_market_worker_service
 from server.services import storage_service
 from server.services import tushare_task_service
+from server.services import tushare_production_store
 from storage.sqlite_meta import SQLiteMetaStore
 
 
@@ -55,7 +56,17 @@ class ExternalProductionAttestationTests(unittest.TestCase):
                 TRUSTED_OWNER_UIDS=frozenset({os.getuid()}),
             )
         )
+        self.stack.enter_context(
+            patch.object(
+                external,
+                "_current_clean_head_full",
+                return_value=external._current_head_full(),
+            )
+        )
         self.stack.enter_context(patch.object(storage_service, "SQLITE_META_PATH", self.db_path))
+        self.stack.enter_context(
+            patch.object(tushare_production_store, "SQLITE_META_PATH", self.db_path)
+        )
         self.stack.enter_context(patch.object(storage_service, "PARQUET_ROOT", self.root / "parquet"))
         self.stack.enter_context(
             patch.multiple(
@@ -424,6 +435,18 @@ class ExternalProductionAttestationTests(unittest.TestCase):
                 "universe_count": 4000,
                 "metric_validation_digest": "4" * 64,
                 "full_market_factor_research": True,
+                "does_not_execute_trades": True,
+            }
+        if kind == "tushare_provider_execution_authorization":
+            return {
+                "approval_scope_hash": "a" * 64,
+                "execution_recipe_scope_hash": "b" * 64,
+                "selected_api_digest": "c" * 64,
+                "target_group_digest": "d" * 64,
+                "provider_attempt_id": "1" * 32,
+                "provider_version_id": f"{'b' * 16}-{'1' * 32}",
+                "trade_cal_repeat_authorized": True,
+                "provider_max_calls": 271,
                 "does_not_execute_trades": True,
             }
         return {
@@ -972,11 +995,286 @@ class ExternalProductionAttestationTests(unittest.TestCase):
         contract = external.external_attestation_contract()
         self.assertEqual(
             contract["planned_consumers"],
-            ["storage", "worker", "factor", "candidate_radar"],
+            [
+                "storage",
+                "worker",
+                "factor",
+                "candidate_radar",
+                "tushare_provider_execution_authorization",
+            ],
         )
-        self.assertEqual(contract["production_consumers_wired"], ["storage_ttl"])
+        self.assertEqual(
+            contract["production_consumers_wired"],
+            ["storage_ttl", "tushare_provider_execution_authorization"],
+        )
         self.assertFalse(contract["application_generates_private_key"])
         self.assertTrue(contract["caller_boolean_cannot_promote"])
+
+    def test_tushare_provider_authorization_requires_external_trust_and_repeat_claim(self) -> None:
+        subject = "tushare-full-interface-provider-execution"
+        signed = self._envelope(
+            "tushare_provider_execution_authorization",
+            subject,
+            1,
+            "",
+        )
+        self._install_external_proof(signed)
+        prepared = external.prepare_external_trusted_attestation(
+            {"signed_envelope": signed},
+            expected_kind="tushare_provider_execution_authorization",
+        )
+        self.assertTrue(prepared["ready"], prepared)
+        self.assertTrue(prepared["production_trusted"])
+        self.assertTrue(prepared["snapshot_rollback_resistant"])
+        self.assertTrue(prepared["claims"]["trade_cal_repeat_authorized"])
+
+    def test_tushare_provider_authorization_is_exact_bound_and_consumed_once(self) -> None:
+        head = external._current_head_full()
+        approval_scope = "a" * 64
+        recipe_scope = "b" * 64
+        execution_request_id = f"tushare-provider-request-{approval_scope[:32]}"
+        selected_apis = list(tushare_task_service.ALL_REFRESH_APIS)
+        requested_targets = list(
+            tushare_task_service.FULL_INTERFACE_PROVIDER_PRODUCTION_TARGETS
+        )
+        claims = {
+            "approval_scope_hash": approval_scope,
+            "execution_recipe_scope_hash": recipe_scope,
+            "selected_api_digest": tushare_task_service._canonical_sha256(
+                sorted(selected_apis)
+            ),
+            "target_group_digest": tushare_task_service._canonical_sha256(
+                sorted(requested_targets)
+            ),
+            "provider_attempt_id": "1" * 32,
+            "provider_version_id": f"{recipe_scope[:16]}-{'1' * 32}",
+            "trade_cal_repeat_authorized": True,
+            "provider_max_calls": 271,
+            "does_not_execute_trades": True,
+        }
+        signed = self._envelope(
+            "tushare_provider_execution_authorization",
+            "tushare-full-interface-provider-execution",
+            1,
+            "",
+            claims=claims,
+            head_full=head,
+        )
+        signed["statement"]["scope_hash"] = approval_scope
+        signed["statement"]["artifact_digest"] = recipe_scope
+        signed["statement"]["task_id"] = execution_request_id
+        signed["signature_base64"] = base64.b64encode(
+            self.private_key.sign(external._canonical_bytes(signed["statement"]))
+        ).decode("ascii")
+        self._install_external_proof(signed)
+        with patch.multiple(
+            tushare_task_service,
+            SQLITE_META_PATH=self.db_path,
+        ):
+            mismatched = tushare_task_service._consume_trusted_provider_execution_authorization(
+                {"signed_provider_execution_authorization": signed},
+                producer_head_full=head,
+                execution_request_authorization_id=execution_request_id,
+                approval_scope_hash=approval_scope,
+                execution_recipe_scope_hash=recipe_scope,
+                selected_apis=selected_apis,
+                requested_targets=requested_targets,
+                max_provider_calls=270,
+                provider_attempt_id=claims["provider_attempt_id"],
+                provider_version_id=claims["provider_version_id"],
+            )
+            first = tushare_task_service._consume_trusted_provider_execution_authorization(
+                {"signed_provider_execution_authorization": signed},
+                producer_head_full=head,
+                execution_request_authorization_id=execution_request_id,
+                approval_scope_hash=approval_scope,
+                execution_recipe_scope_hash=recipe_scope,
+                selected_apis=selected_apis,
+                requested_targets=requested_targets,
+                max_provider_calls=271,
+                provider_attempt_id=claims["provider_attempt_id"],
+                provider_version_id=claims["provider_version_id"],
+            )
+            second = tushare_task_service._consume_trusted_provider_execution_authorization(
+                {"signed_provider_execution_authorization": signed},
+                producer_head_full=head,
+                execution_request_authorization_id=execution_request_id,
+                approval_scope_hash=approval_scope,
+                execution_recipe_scope_hash=recipe_scope,
+                selected_apis=selected_apis,
+                requested_targets=requested_targets,
+                max_provider_calls=271,
+                provider_attempt_id=claims["provider_attempt_id"],
+                provider_version_id=claims["provider_version_id"],
+            )
+        self.assertFalse(mismatched["ready"])
+        self.assertFalse(mismatched["writes_performed"])
+        self.assertTrue(first["ready"], first)
+        self.assertTrue(first["production_trusted"])
+        self.assertFalse(second["ready"])
+        self.assertFalse(second["writes_performed"])
+        receipt = {
+            "provider_execution_authorization_attestation_id": first[
+                "attestation_id"
+            ],
+            "provider_execution_authorization_nonce_digest": first[
+                "authorization_nonce_digest"
+            ],
+            "provider_execution_authorization_task_id": execution_request_id,
+            "producer_head_full": head,
+            "approval_scope_hash": approval_scope,
+            "execution_recipe_scope_hash": recipe_scope,
+            "required_interface_apis": selected_apis,
+            "required_target_groups": requested_targets,
+            "provider_max_calls": 271,
+            "attempt_id": claims["provider_attempt_id"],
+            "provider_execution_authorization_attempt_id": claims[
+                "provider_attempt_id"
+            ],
+            "provider_execution_authorization_version_id": claims[
+                "provider_version_id"
+            ],
+            "provider_execution_authorization_consumption_packet_key": first[
+                "consumption_packet_key"
+            ],
+            "provider_execution_authorization_consumption_digest": first[
+                "consumption_digest"
+            ],
+        }
+        self.assertTrue(
+            tushare_production_store._trusted_provider_authorization_ready(receipt)
+        )
+        with patch.object(
+            external,
+            "_current_clean_head_full",
+            side_effect=AssertionError(
+                "historical verification must not inspect the active checkout"
+            ),
+        ):
+            historical = external.validate_trusted_registry(
+                head_mode="history",
+                expected_head_full=head,
+            )
+            self.assertFalse(historical["ready"])
+            self.assertTrue(historical["historical_integrity_ready"], historical)
+            self.assertFalse(historical["production_trusted"])
+            self.assertTrue(
+                tushare_production_store._trusted_provider_authorization_ready(
+                    receipt,
+                    head_mode="history",
+                    expected_head_full=head,
+                )
+            )
+        for field, value in (
+            ("provider_max_calls", 270),
+            ("attempt_id", "2" * 32),
+            ("provider_execution_authorization_attempt_id", "2" * 32),
+            (
+                "provider_execution_authorization_version_id",
+                f"{recipe_scope[:16]}-{'2' * 32}",
+            ),
+            (
+                "provider_execution_authorization_consumption_packet_key",
+                f"{tushare_task_service.PROVIDER_AUTHORIZATION_PACKET_KEY}:{'2' * 32}",
+            ),
+            ("provider_execution_authorization_consumption_digest", "0" * 64),
+        ):
+            with self.subTest(field=field):
+                self.assertFalse(
+                    tushare_production_store._trusted_provider_authorization_ready(
+                        {**receipt, field: value}
+                    )
+                )
+        self.assertFalse(
+            tushare_production_store._trusted_provider_authorization_ready(
+                {
+                    **receipt,
+                    "provider_execution_authorization_attestation_id": "0" * 64,
+                }
+            )
+        )
+
+    def test_provider_attempt_and_version_are_unique_across_signed_history(self) -> None:
+        subject = "tushare-full-interface-provider-execution"
+        claims = self._claims("tushare_provider_execution_authorization", subject)
+        first_envelope = self._envelope(
+            "tushare_provider_execution_authorization",
+            subject,
+            1,
+            "",
+            claims=dict(claims),
+        )
+        self._install_external_proof(first_envelope)
+        first = external.prepare_external_trusted_attestation(
+            {"signed_envelope": first_envelope},
+            expected_kind="tushare_provider_execution_authorization",
+        )
+        self.assertTrue(first["ready"], first)
+        registry_packet = first.pop("_registry_packet")
+        SQLiteMetaStore(self.db_path).promote_packet_atomic(
+            external.REGISTRY_PACKET_KEY,
+            registry_packet,
+        )
+
+        second_envelope = self._envelope(
+            "tushare_provider_execution_authorization",
+            subject,
+            2,
+            first["attestation_id"],
+            claims=dict(claims),
+            nonce_seed="second-nonce-same-attempt",
+        )
+        self._install_external_proof(second_envelope)
+        second = external.prepare_external_trusted_attestation(
+            {"signed_envelope": second_envelope},
+            expected_kind="tushare_provider_execution_authorization",
+        )
+        self.assertFalse(second["ready"])
+        self.assertEqual(
+            second["status"], "provider_execution_attempt_or_version_replayed"
+        )
+        self.assertFalse(second["writes_performed"])
+        self.assertEqual(external.validate_registry()["event_count"], 1)
+
+    def test_persisted_trust_survives_envelope_ttl_but_not_head_change(self) -> None:
+        subject = "tushare-full-interface-provider-execution"
+        envelope = self._envelope(
+            "tushare_provider_execution_authorization",
+            subject,
+            1,
+            "",
+        )
+        self._install_external_proof(envelope)
+        prepared = external.prepare_external_trusted_attestation(
+            {"signed_envelope": envelope},
+            expected_kind="tushare_provider_execution_authorization",
+        )
+        self.assertTrue(prepared["ready"], prepared)
+        SQLiteMetaStore(self.db_path).promote_packet_atomic(
+            external.REGISTRY_PACKET_KEY,
+            prepared.pop("_registry_packet"),
+        )
+
+        class _FutureDateTime(datetime):
+            @classmethod
+            def now(cls, tz=None):
+                value = datetime.now(tz)
+                return value + timedelta(days=1)
+
+        with patch.object(external, "datetime", _FutureDateTime):
+            durable = external.validate_trusted_registry()
+        self.assertTrue(durable["ready"], durable)
+        self.assertTrue(durable["persisted_validation_ignores_envelope_freshness"])
+
+        with patch.object(
+            external, "_current_clean_head_full", return_value="a" * 40
+        ):
+            wrong_head = external.validate_trusted_registry()
+        self.assertFalse(wrong_head["ready"])
+        self.assertIn(
+            "external_attestation_current_clean_head_mismatch",
+            wrong_head["blockers"],
+        )
 
     def test_registry_rollback_is_detected_as_local_only_not_production_trust(self) -> None:
         first_envelope = self._envelope("worker_runtime_lineage", "worker-run-1", 1, "")

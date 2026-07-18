@@ -8,22 +8,36 @@ read back from disk and recomputed.
 
 from __future__ import annotations
 
+import datetime as _dt
 import hashlib
 import json
 import os
+import subprocess
 import uuid
 from pathlib import Path
 from typing import Any, Mapping
 
+from storage.sqlite_meta import SQLiteMetaStore
+
+from . import external_production_attestation_service
+
 
 DATASETS = ("stock_basic", "trade_cal", "daily", "daily_basic", "moneyflow")
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+SQLITE_META_PATH = PROJECT_ROOT / ".stock_ming_3" / "meta.sqlite"
+PROVIDER_AUTHORIZATION_PACKET_KEY = (
+    "command_center_3_tushare_provider_execution_authorization"
+)
 MIN_UNIVERSE_ROWS = 3000
 REQUIRED_SESSIONS = 90
 MAX_PROVIDER_CALLS = 300
-POINTER_SCHEMA = "tushare_production_pointer.v2"
-MANIFEST_SCHEMA = "tushare_production_version_manifest.v2"
-EXECUTION_EVENT_SCHEMA = "tushare_official_execution_event.v2"
-TRANSPORT_EVENT_SCHEMA = "tushare_inline_transport_evidence.v2"
+POINTER_SCHEMA = "tushare_production_pointer.v3"
+MANIFEST_SCHEMA = "tushare_production_version_manifest.v3"
+EXECUTION_EVENT_SCHEMA = "tushare_official_execution_event.v3"
+TRANSPORT_EVENT_SCHEMA = "tushare_inline_transport_evidence.v3"
+PROVIDER_RATE_LIMIT_STRATEGY = "cross_process_serial_persistent_rolling_window"
+PROVIDER_MAX_CALLS_PER_MINUTE = 50
+PROVIDER_MIN_CALL_INTERVAL_MS = 50
 EXACT_REFRESH_APIS = (
     "daily", "daily_basic", "moneyflow", "trade_cal", "margin_detail", "top_list",
     "top_inst", "stk_limit", "limit_list_d", "limit_cpt_list", "cyq_perf", "cyq_chips",
@@ -60,6 +74,35 @@ def _canonical_bytes(value: Any) -> bytes:
         separators=(",", ":"),
         default=str,
     ).encode("utf-8")
+
+
+def _current_head_full() -> str:
+    try:
+        value = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            cwd=PROJECT_ROOT,
+            check=True,
+            capture_output=True,
+            text=True,
+            timeout=5,
+        ).stdout.strip().lower()
+        tracked_status = subprocess.run(
+            ["git", "status", "--porcelain", "--untracked-files=no"],
+            cwd=PROJECT_ROOT,
+            check=True,
+            capture_output=True,
+            text=True,
+            timeout=5,
+        ).stdout.strip()
+    except Exception:
+        return ""
+    return (
+        value
+        if not tracked_status
+        and len(value) == 40
+        and all(ch in "0123456789abcdef" for ch in value)
+        else ""
+    )
 
 
 def _digest_value(value: Any) -> str:
@@ -322,7 +365,14 @@ def _sha256_text(value: Any) -> bool:
     return len(text) == 64 and all(character in "0123456789abcdef" for character in text)
 
 
-def _receipt_ready(receipt: Any, *, scope_hash: str) -> bool:
+def _receipt_ready(
+    receipt: Any,
+    *,
+    scope_hash: str,
+    expected_producer_head_full: str,
+    expected_version_id: str,
+    head_mode: str = "current",
+) -> bool:
     if not isinstance(receipt, Mapping):
         return False
     material = dict(receipt)
@@ -363,18 +413,62 @@ def _receipt_ready(receipt: Any, *, scope_hash: str) -> bool:
         and receipt.get("official_provider_path_completed") is True
         and receipt.get("run_id") == scope_hash
         and receipt.get("scope_hash") == scope_hash
+        and receipt.get("producer_head_full") == expected_producer_head_full
+        and len(expected_producer_head_full) == 40
         and len(str(receipt.get("attempt_id") or "")) == 32
         and all(character in "0123456789abcdef" for character in str(receipt.get("attempt_id") or ""))
         and _sha256_text(receipt.get("approval_scope_hash"))
         and _sha256_text(receipt.get("execution_recipe_scope_hash"))
+        and expected_version_id
+        == f"{str(receipt.get('execution_recipe_scope_hash') or '')[:16]}-{receipt.get('attempt_id')}"
         and receipt.get("required_interface_apis") == exact_apis
         and receipt.get("required_interface_api_digest") == _digest_value(exact_apis)
         and receipt.get("required_target_groups") == exact_targets
         and receipt.get("required_target_group_digest") == _digest_value(exact_targets)
         and receipt.get("required_support_apis") == list(EXACT_SUPPORT_APIS)
         and receipt.get("required_support_api_digest") == _digest_value(list(EXACT_SUPPORT_APIS))
+        and receipt.get("provider_rate_limit_strategy") == PROVIDER_RATE_LIMIT_STRATEGY
+        and receipt.get("provider_max_calls_per_minute") == PROVIDER_MAX_CALLS_PER_MINUTE
+        and receipt.get("provider_min_call_interval_ms") == PROVIDER_MIN_CALL_INTERVAL_MS
+        and receipt.get("provider_execution_serial") is True
+        and receipt.get("trade_cal_repeat_explicitly_acknowledged") is True
+        and receipt.get("trade_cal_prior_ltg01_evidence_reused_as_same_run") is False
+        and _sha256_text(
+            receipt.get("provider_execution_authorization_attestation_id")
+        )
+        and receipt.get("provider_execution_authorization_task_id")
+        == f"tushare-provider-request-{str(receipt.get('approval_scope_hash') or '')[:32]}"
+        and _sha256_text(
+            receipt.get("provider_execution_authorization_nonce_digest")
+        )
+        and receipt.get(
+            "provider_execution_authorization_external_signature_verified"
+        )
+        is True
+        and receipt.get("provider_execution_authorization_production_trusted")
+        is True
+        and receipt.get(
+            "provider_execution_authorization_snapshot_rollback_resistant"
+        )
+        is True
+        and receipt.get("provider_execution_authorization_attempt_id")
+        == receipt.get("attempt_id")
+        and receipt.get("provider_execution_authorization_version_id")
+        == expected_version_id
+        and receipt.get("provider_execution_authorization_consumption_packet_key")
+        == f"{PROVIDER_AUTHORIZATION_PACKET_KEY}:{receipt.get('attempt_id')}"
+        and _sha256_text(
+            receipt.get("provider_execution_authorization_consumption_digest")
+        )
+        and type(receipt.get("provider_max_calls")) is int
+        and 1 <= receipt.get("provider_max_calls") <= MAX_PROVIDER_CALLS
+        and _trusted_provider_authorization_ready(
+            receipt,
+            head_mode=head_mode,
+            expected_head_full=expected_producer_head_full,
+        )
         and observed_apis == set(EXACT_REFRESH_APIS) | set(EXACT_SUPPORT_APIS)
-        and 0 < total_calls <= MAX_PROVIDER_CALLS
+        and 0 < total_calls <= receipt.get("provider_max_calls") <= MAX_PROVIDER_CALLS
         and int(receipt.get("original_actual_function_call_count") or 0) == total_calls
         and current_calls == total_calls
         and int(receipt.get("checkpoint_reused_function_call_count") or 0) == 0
@@ -393,6 +487,127 @@ def _receipt_ready(receipt: Any, *, scope_hash: str) -> bool:
     )
 
 
+def _trusted_provider_authorization_ready(
+    receipt: Mapping[str, Any],
+    *,
+    head_mode: str = "current",
+    expected_head_full: str | None = None,
+) -> bool:
+    """Revalidate the signed authorization chain; never trust receipt booleans."""
+
+    expected_head = str(
+        expected_head_full or receipt.get("producer_head_full") or ""
+    ).lower()
+    trusted = external_production_attestation_service.validate_trusted_registry(
+        head_mode=head_mode,
+        expected_head_full=expected_head,
+    )
+    registry = external_production_attestation_service.validate_registry()
+    trusted_mode_ready = bool(
+        (
+            trusted.get("ready") is True
+            and trusted.get("production_trusted") is True
+        )
+        if head_mode == "current"
+        else (
+            trusted.get("historical_integrity_ready") is True
+            and trusted.get("production_trusted") is False
+        )
+    )
+    if not (
+        trusted_mode_ready
+        and trusted.get("snapshot_rollback_resistant") is True
+        and registry.get("local_integrity_ready") is True
+    ):
+        return False
+    attestation_id = str(
+        receipt.get("provider_execution_authorization_attestation_id") or ""
+    )
+    events = [row for row in registry.get("events") or [] if isinstance(row, Mapping)]
+    event = next((row for row in events if row.get("attestation_id") == attestation_id), None)
+    claims = event.get("claims") if isinstance(event, Mapping) and isinstance(event.get("claims"), Mapping) else {}
+    attempt_id = str(receipt.get("attempt_id") or "")
+    version_id = str(receipt.get("provider_execution_authorization_version_id") or "")
+    consumption_packet_key = str(
+        receipt.get("provider_execution_authorization_consumption_packet_key") or ""
+    )
+    try:
+        consumption = SQLiteMetaStore(SQLITE_META_PATH, read_only=True).read_packet(
+            consumption_packet_key
+        )
+    except Exception:
+        consumption = None
+    consumption_material = dict(consumption) if isinstance(consumption, Mapping) else {}
+    consumption_digest = str(consumption_material.pop("consumption_digest", "") or "")
+    matching_attempt_events = [
+        row
+        for row in events
+        if row.get("attestation_kind")
+        == "tushare_provider_execution_authorization"
+        and isinstance(row.get("claims"), Mapping)
+        and (
+            row["claims"].get("provider_attempt_id") == attempt_id
+            or row["claims"].get("provider_version_id") == version_id
+        )
+    ]
+    return bool(
+        event
+        and event.get("attestation_kind")
+        == "tushare_provider_execution_authorization"
+        and head_mode in {"current", "history"}
+        and event.get("head_full") == expected_head
+        and event.get("head_full") == receipt.get("producer_head_full")
+        and event.get("subject") == "tushare-full-interface-provider-execution"
+        and event.get("task_id")
+        == receipt.get("provider_execution_authorization_task_id")
+        and event.get("scope_hash") == receipt.get("approval_scope_hash")
+        and event.get("artifact_digest")
+        == receipt.get("execution_recipe_scope_hash")
+        and event.get("nonce_digest")
+        == receipt.get("provider_execution_authorization_nonce_digest")
+        and claims.get("approval_scope_hash") == receipt.get("approval_scope_hash")
+        and claims.get("execution_recipe_scope_hash")
+        == receipt.get("execution_recipe_scope_hash")
+        and claims.get("selected_api_digest")
+        == _digest_value(sorted(receipt.get("required_interface_apis") or []))
+        and claims.get("target_group_digest")
+        == _digest_value(sorted(receipt.get("required_target_groups") or []))
+        and claims.get("provider_attempt_id") == attempt_id
+        and claims.get("provider_version_id") == version_id
+        and receipt.get("provider_execution_authorization_attempt_id")
+        == attempt_id
+        and receipt.get("provider_execution_authorization_version_id")
+        == version_id
+        and version_id
+        == f"{str(receipt.get('execution_recipe_scope_hash') or '')[:16]}-{attempt_id}"
+        and claims.get("trade_cal_repeat_authorized") is True
+        and claims.get("provider_max_calls") == receipt.get("provider_max_calls")
+        and claims.get("does_not_execute_trades") is True
+        and event.get("external_trust_verified") is True
+        and event.get("production_trusted") is True
+        and event.get("snapshot_rollback_resistant") is True
+        and len(matching_attempt_events) == 1
+        and matching_attempt_events[0].get("attestation_id") == attestation_id
+        and consumption_packet_key == f"{PROVIDER_AUTHORIZATION_PACKET_KEY}:{attempt_id}"
+        and isinstance(consumption, Mapping)
+        and consumption.get("packet_key") == consumption_packet_key
+        and consumption.get("attestation_id") == attestation_id
+        and consumption.get("execution_request_authorization_id")
+        == receipt.get("provider_execution_authorization_task_id")
+        and consumption.get("head_full") == receipt.get("producer_head_full")
+        and consumption.get("approval_scope_hash") == receipt.get("approval_scope_hash")
+        and consumption.get("execution_recipe_scope_hash")
+        == receipt.get("execution_recipe_scope_hash")
+        and consumption.get("provider_attempt_id") == attempt_id
+        and consumption.get("provider_version_id") == version_id
+        and consumption.get("authorization_nonce_digest")
+        == receipt.get("provider_execution_authorization_nonce_digest")
+        and consumption_digest
+        == receipt.get("provider_execution_authorization_consumption_digest")
+        == _digest_value(consumption_material)
+    )
+
+
 def _receipt_dataset_binding_ready(receipt: Mapping[str, Any], validation: Mapping[str, Any]) -> bool:
     return bool(
         receipt.get("production_dataset_digest") == _digest_value(validation.get("datasets"))
@@ -408,15 +623,21 @@ def _pointer_payload(
     version_id: str,
     manifest_digest: str,
     previous_pointer: Mapping[str, Any] | None,
+    *,
+    producer_head_full: str | None = None,
 ) -> dict[str, Any]:
+    current_head = str(producer_head_full or _current_head_full())
     previous_current = str((previous_pointer or {}).get("current_version") or "")
     previous_manifest = str((previous_pointer or {}).get("current_manifest_digest") or "")
+    previous_head = str((previous_pointer or {}).get("current_producer_head_full") or "")
     pointer = {
         "schema_version": POINTER_SCHEMA,
         "current_version": version_id,
         "last_good_version": previous_current or version_id,
         "current_manifest_digest": manifest_digest,
         "last_good_manifest_digest": previous_manifest or manifest_digest,
+        "current_producer_head_full": current_head,
+        "last_good_producer_head_full": previous_head or current_head,
     }
     pointer["pointer_digest"] = _digest_value(pointer)
     return pointer
@@ -436,8 +657,24 @@ def _restore_pointer(pointer_path: Path, previous: bytes | None) -> bool:
         return False
 
 
-def verify_current_version(root: Path) -> dict[str, Any]:
+def verify_current_version(
+    root: Path,
+    *,
+    head_mode: str = "current",
+    runtime_head_full: str | None = None,
+) -> dict[str, Any]:
     blockers: list[str] = []
+    # Current production truth always binds the actual clean checkout.  Only
+    # explicit historical audit may provide a historical runtime value.
+    runtime_head = (
+        _current_head_full()
+        if head_mode == "current"
+        else str(runtime_head_full or "")
+    )
+    if head_mode not in {"current", "history"}:
+        blockers.append("production_version_head_mode_invalid")
+    if head_mode == "current" and len(runtime_head) != 40:
+        blockers.append("production_version_runtime_head_unavailable")
     pointer_path = root / "pointer.json"
     try:
         pointer = json.loads(pointer_path.read_text(encoding="utf-8"))
@@ -449,12 +686,21 @@ def verify_current_version(root: Path) -> dict[str, Any]:
         blockers.append("pointer_digest_invalid")
     current = str(pointer.get("current_version") or "")
     last_good = str(pointer.get("last_good_version") or "")
+    current_head = str(pointer.get("current_producer_head_full") or "")
+    last_good_head = str(pointer.get("last_good_producer_head_full") or "")
     if (
         not current
         or not last_good
         or any(value for value in ("/", "..") if value in current or value in last_good)
     ):
         blockers.append("current_last_good_version_invalid")
+    if not (
+        len(current_head) == len(last_good_head) == 40
+        and all(ch in "0123456789abcdef" for ch in current_head + last_good_head)
+    ):
+        blockers.append("current_last_good_producer_head_invalid")
+    if head_mode == "current" and current_head != runtime_head:
+        blockers.append("current_production_version_head_mismatch")
     version_dir = root / "versions" / current
     expected_files = {"manifest.json", *(f"{name}.parquet" for name in DATASETS)}
     if not version_dir.is_dir() or {path.name for path in version_dir.iterdir()} != expected_files:
@@ -471,7 +717,13 @@ def verify_current_version(root: Path) -> dict[str, Any]:
         blockers.append("pointer_manifest_binding_invalid")
     scope = manifest.get("scope") if isinstance(manifest.get("scope"), Mapping) else {}
     receipt = manifest.get("official_run_receipt") if isinstance(manifest.get("official_run_receipt"), Mapping) else {}
-    if not _receipt_ready(receipt, scope_hash=str(scope.get("scope_hash") or "")):
+    if not _receipt_ready(
+        receipt,
+        scope_hash=str(scope.get("scope_hash") or ""),
+        expected_producer_head_full=current_head,
+        expected_version_id=current,
+        head_mode=head_mode,
+    ):
         blockers.append("official_provider_receipt_invalid")
 
     artifacts = manifest.get("artifacts") if isinstance(manifest.get("artifacts"), Mapping) else {}
@@ -530,8 +782,16 @@ def verify_current_version(root: Path) -> dict[str, Any]:
         and lineage.get("as_of") == scope.get("end_date")
         and receipt.get("approval_scope_hash") == lineage.get("approval_scope_hash")
         and receipt.get("execution_recipe_scope_hash") == lineage.get("execution_recipe_scope_hash")
+        and lineage.get("producer_head_full") == current_head
+        and receipt.get("producer_head_full") == current_head
     ):
         blockers.append("approval_recipe_as_of_lineage_invalid")
+    if (
+        head_mode == "current"
+        and str(lineage.get("as_of") or "").replace("-", "")
+        != _dt.date.today().strftime("%Y%m%d")
+    ):
+        blockers.append("current_production_version_as_of_stale")
     version_material = {
         "scope": scope,
         "artifacts": artifacts,
@@ -592,19 +852,27 @@ def verify_current_version(root: Path) -> dict[str, Any]:
                 or not _receipt_ready(
                     last_receipt,
                     scope_hash=str(last_scope.get("scope_hash") or ""),
+                    expected_producer_head_full=last_good_head,
+                    expected_version_id=last_good,
+                    head_mode="history",
                 )
                 or not _receipt_dataset_binding_ready(last_receipt, last_validation)
                 or last_manifest.get("version_digest") != _digest_value(last_version_material)
                 or last_receipt.get("approval_scope_hash") != last_lineage.get("approval_scope_hash")
                 or last_receipt.get("execution_recipe_scope_hash")
                 != last_lineage.get("execution_recipe_scope_hash")
+                or last_receipt.get("producer_head_full") != last_good_head
+                or last_lineage.get("producer_head_full") != last_good_head
             ):
                 blockers.append("last_good_semantic_or_lineage_readback_failed")
         except Exception:
             blockers.append("last_good_version_readback_failed")
     blockers = sorted(set(blockers))
+    historical_integrity_ready = not blockers
+    production_ready = historical_integrity_ready and head_mode == "current"
     return {
-        "ready": not blockers,
+        "ready": production_ready,
+        "historical_integrity_ready": historical_integrity_ready,
         "blockers": blockers,
         "root": str(root),
         "pointer": pointer,
@@ -612,6 +880,10 @@ def verify_current_version(root: Path) -> dict[str, Any]:
         "artifacts": recomputed,
         "current_version": current,
         "last_good_version": last_good,
+        "producer_head_full": current_head,
+        "last_good_producer_head_full": last_good_head,
+        "head_mode": head_mode,
+        "runtime_head_full": runtime_head if head_mode == "current" else "",
         "manifest_digest": manifest_digest,
         "version_digest": version_digest,
         "scope_hash": str(scope.get("scope_hash") or ""),
@@ -635,6 +907,8 @@ def validate_tushare_full_market_production_version(
     evidence_root: Path,
     *,
     include_frames: bool = False,
+    head_mode: str = "current",
+    runtime_head_full: str | None = None,
 ) -> dict[str, Any]:
     """The one shared read-only production truth verifier.
 
@@ -648,10 +922,24 @@ def validate_tushare_full_market_production_version(
         if (candidate / "pointer.json").is_file() or candidate.name == "full_market_universe"
         else candidate / "parquet" / "full_market_universe"
     )
-    result = verify_current_version(root)
+    result = verify_current_version(
+        root,
+        head_mode=head_mode,
+        runtime_head_full=runtime_head_full,
+    )
     shared = {
         "ready": result.get("ready") is True,
-        "status": "production_version_verified" if result.get("ready") is True else "production_version_blocked",
+        "historical_integrity_ready": (
+            result.get("historical_integrity_ready") is True
+        ),
+        "status": (
+            "production_version_verified"
+            if result.get("ready") is True
+            else "historical_production_version_integrity_verified_non_promotable"
+            if head_mode == "history"
+            and result.get("historical_integrity_ready") is True
+            else "production_version_blocked"
+        ),
         "blockers": list(result.get("blockers") or []),
         "scope_hash": str(result.get("scope_hash") or ""),
         "approval_scope_hash": str(result.get("approval_scope_hash") or ""),
@@ -669,6 +957,11 @@ def validate_tushare_full_market_production_version(
         "scored_universe_policy": str(result.get("scored_universe_policy") or ""),
         "artifact_manifest_digest": str(result.get("manifest_digest") or ""),
         "version_digest": str(result.get("version_digest") or ""),
+        "producer_head_full": str(result.get("producer_head_full") or ""),
+        "last_good_producer_head_full": str(
+            result.get("last_good_producer_head_full") or ""
+        ),
+        "head_mode": str(result.get("head_mode") or head_mode),
         "current_version": str(result.get("current_version") or ""),
         "official_call_ledger_digest": str(
             (

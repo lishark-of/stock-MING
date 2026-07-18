@@ -2,13 +2,33 @@ import tempfile
 import unittest
 import datetime as dt
 import json
+import multiprocessing
+import threading
+import time
 from contextlib import ExitStack
 from pathlib import Path
 from unittest.mock import patch
 
 from server.api import routes_tasks
-from server.services import storage_service, task_service, tushare_task_service
+from server.services import (
+    storage_service,
+    task_service,
+    tushare_production_store,
+    tushare_task_service,
+)
 from storage.sqlite_meta import SQLiteMetaStore
+
+
+def _hold_cross_process_provider_lock(runtime_root: str, output) -> None:
+    import tushare_adapter
+
+    root = Path(runtime_root)
+    tushare_adapter.PROVIDER_RUNTIME_ROOT = root
+    tushare_adapter.PROVIDER_EXECUTION_LOCK_PATH = root / "execution.lock"
+    with tushare_adapter._cross_process_provider_execution_lock():
+        started = time.time()
+        time.sleep(0.15)
+        output.put((started, time.time()))
 
 
 def _representative_row(api: str) -> dict:
@@ -67,8 +87,31 @@ class _FakeFullInterfaceAdapter:
 
 class TushareFullInterfaceProductionAcceptanceTests(unittest.TestCase):
     def setUp(self):
+        self.head_patch = patch.object(
+            tushare_task_service,
+            "_current_head_full",
+            return_value="f" * 40,
+        )
+        self.store_head_patch = patch.object(
+            tushare_production_store,
+            "_current_head_full",
+            return_value="f" * 40,
+        )
+        self.head_patch.start()
+        self.store_head_patch.start()
         self.tmp = tempfile.TemporaryDirectory()
         self.root = Path(self.tmp.name)
+        import tushare_adapter
+
+        provider_runtime_root = self.root / "provider-runtime"
+        self.adapter_runtime_patch = patch.multiple(
+            tushare_adapter,
+            PROVIDER_RUNTIME_ROOT=provider_runtime_root,
+            PROVIDER_RATE_LOCK_PATH=provider_runtime_root / "rate.lock",
+            PROVIDER_RATE_STATE_PATH=provider_runtime_root / "rate.json",
+            PROVIDER_EXECUTION_LOCK_PATH=provider_runtime_root / "execution.lock",
+        )
+        self.adapter_runtime_patch.start()
         self.db_path = self.root / "meta.sqlite"
         self.original_tushare_meta_path = tushare_task_service.SQLITE_META_PATH
         self.original_task_meta_path = task_service.SQLITE_META_PATH
@@ -79,11 +122,155 @@ class TushareFullInterfaceProductionAcceptanceTests(unittest.TestCase):
         task_service._TASKS.clear()
 
     def tearDown(self):
+        self.adapter_runtime_patch.stop()
+        self.store_head_patch.stop()
+        self.head_patch.stop()
         task_service._TASKS.clear()
         tushare_task_service.SQLITE_META_PATH = self.original_tushare_meta_path
         task_service.SQLITE_META_PATH = self.original_task_meta_path
         storage_service.PARQUET_ROOT = self.original_parquet_root
         self.tmp.cleanup()
+
+    def test_runtime_adapter_enforces_serial_minimum_interval(self):
+        import tushare_adapter
+
+        with patch.object(
+            tushare_adapter.time,
+            "time",
+            side_effect=[0.0, 0.01, 0.05],
+        ), patch.object(tushare_adapter.time, "sleep") as sleeper:
+            tushare_adapter._wait_for_provider_rate_slot()
+            tushare_adapter._wait_for_provider_rate_slot()
+        sleeper.assert_called_once()
+        self.assertAlmostEqual(sleeper.call_args.args[0], 0.04)
+        state = json.loads(
+            tushare_adapter.PROVIDER_RATE_STATE_PATH.read_text(encoding="utf-8")
+        )
+        self.assertEqual(state["timestamps"], [0.0, 0.05])
+
+    def test_runtime_adapter_enforces_rolling_minute_cap(self):
+        import tushare_adapter
+
+        tushare_adapter._write_provider_rate_window(
+            [0.0] * tushare_adapter.PROVIDER_MAX_CALLS_PER_MINUTE
+        )
+        with patch.object(
+            tushare_adapter.time,
+            "time",
+            side_effect=[59.0, 60.0],
+        ), patch.object(tushare_adapter.time, "sleep") as sleeper:
+            tushare_adapter._wait_for_provider_rate_slot()
+        sleeper.assert_called_once_with(1.0)
+        state = json.loads(
+            tushare_adapter.PROVIDER_RATE_STATE_PATH.read_text(encoding="utf-8")
+        )
+        self.assertEqual(state["timestamps"], [60.0])
+
+    def test_runtime_adapter_rate_window_fails_closed_on_wall_clock_rollback(self):
+        import tushare_adapter
+
+        tushare_adapter._write_provider_rate_window([200.0])
+        with patch.object(tushare_adapter.time, "time", return_value=100.0):
+            with self.assertRaisesRegex(
+                RuntimeError, "provider_rate_wall_clock_rollback"
+            ):
+                tushare_adapter._wait_for_provider_rate_slot()
+
+    def test_runtime_adapter_execution_lock_serializes_processes(self):
+        context = multiprocessing.get_context("fork")
+        output = context.Queue()
+        processes = [
+            context.Process(
+                target=_hold_cross_process_provider_lock,
+                args=(str(self.root / "cross-process-runtime"), output),
+            )
+            for _ in range(2)
+        ]
+        for process in processes:
+            process.start()
+        intervals = [output.get(timeout=5) for _ in processes]
+        for process in processes:
+            process.join(timeout=5)
+            self.assertEqual(process.exitcode, 0)
+        intervals.sort()
+        self.assertGreaterEqual(intervals[1][0], intervals[0][1] - 0.01)
+
+    def test_runtime_adapter_provider_methods_do_not_overlap(self):
+        import tushare_adapter
+
+        active = 0
+        maximum_active = 0
+        counter_lock = threading.Lock()
+
+        class _Provider:
+            def daily(self, **_params):
+                nonlocal active, maximum_active
+                with counter_lock:
+                    active += 1
+                    maximum_active = max(maximum_active, active)
+                time.sleep(0.06)
+                with counter_lock:
+                    active -= 1
+                return tushare_adapter.pd.DataFrame(
+                    [{"ts_code": "000001.SZ", "trade_date": "20260710"}]
+                )
+
+        provider = _Provider()
+        with patch.object(
+            tushare_adapter,
+            "_get_pro_client",
+            return_value=(provider, None),
+        ):
+            threads = [
+                threading.Thread(
+                    target=tushare_adapter._call_pro,
+                    args=("daily",),
+                    kwargs={"trade_date": "20260710"},
+                )
+                for _ in range(2)
+            ]
+            for thread in threads:
+                thread.start()
+            for thread in threads:
+                thread.join(timeout=2)
+        self.assertTrue(all(not thread.is_alive() for thread in threads))
+        self.assertEqual(maximum_active, 1)
+
+    def test_multi_exchange_call_rechecks_head_before_each_transport(self):
+        calls = []
+
+        def provider(**params):
+            calls.append(dict(params))
+            return {
+                "ok": True,
+                "data": [
+                    {
+                        "exchange": params["exchange"],
+                        "cal_date": "20260710",
+                        "is_open": 1,
+                    }
+                ],
+                "error": "",
+            }
+
+        with patch.object(
+            tushare_task_service,
+            "_current_head_full",
+            side_effect=["f" * 40, ""],
+        ):
+            result, _safe, _expected = tushare_task_service._call_tushare_api(
+                fn=provider,
+                api="trade_cal",
+                params={
+                    "exchange": ["SSE", "SZSE"],
+                    "start_date": "20260701",
+                    "end_date": "20260710",
+                },
+                expected_producer_head_full="f" * 40,
+            )
+        self.assertFalse(result["ok"])
+        self.assertEqual(len(calls), 1)
+        self.assertIn("provider_runtime_head_changed_or_dirty", result["error"])
 
     def test_real_adapter_v2_receipt_is_verified_by_formal_consumer(self):
         import tushare_adapter
@@ -383,6 +570,7 @@ class TushareFullInterfaceProductionAcceptanceTests(unittest.TestCase):
                 "operator_approved": True,
                 "apis": list(tushare_task_service.ALL_REFRESH_APIS),
                 "target_sample_acceptance_groups": list(tushare_task_service.FULL_INTERFACE_PROVIDER_PRODUCTION_TARGETS),
+                "acknowledge_trade_cal_repeat_for_full_interface_same_run": True,
             }
         )
         self.assertEqual(request["status"], "success")
@@ -391,9 +579,123 @@ class TushareFullInterfaceProductionAcceptanceTests(unittest.TestCase):
         )
         receipt = packet["receipt"]
         self.assertTrue(receipt["full_interface_production_execution_request_ready"])
+        self.assertEqual(receipt["producer_head_full"], tushare_task_service._current_head_full())
+        self.assertTrue(receipt["trade_cal_repeat_acknowledged"])
         payload = dict(receipt["target_payload_safe"])
         payload["approved_by_user"] = True
         return payload, recipe, receipt
+
+    def test_full_interface_recipe_and_request_bind_current_head_and_repeat_policy(self):
+        seed = tushare_task_service.run_tushare_provider_target_sample_execution_recipe_seed(
+            self._seed_payload()
+        )
+        self.assertEqual(seed["status"], "success")
+        recipe = SQLiteMetaStore(self.db_path).read_packet(
+            tushare_task_service.PROVIDER_TARGET_SAMPLE_EXECUTION_RECIPE_PACKET_KEY
+        )["provider_target_sample_execution_recipe"]
+        self.assertEqual(recipe["producer_head_full"], tushare_task_service._current_head_full())
+        self.assertEqual(
+            recipe["trade_cal_evidence_policy"],
+            tushare_task_service.FULL_INTERFACE_TRADE_CAL_EVIDENCE_POLICY,
+        )
+        self.assertEqual(
+            recipe["provider_rate_limit"]["max_calls_per_minute"],
+            tushare_task_service.FULL_INTERFACE_PROVIDER_MAX_CALLS_PER_MINUTE,
+        )
+
+        blocked = tushare_task_service.run_tushare_provider_target_sample_execution_request(
+            {
+                "execution_recipe_scope_hash": recipe["execution_recipe_scope_hash"],
+                "operator_approved": True,
+                "apis": list(tushare_task_service.ALL_REFRESH_APIS),
+                "target_sample_acceptance_groups": list(
+                    tushare_task_service.FULL_INTERFACE_PROVIDER_PRODUCTION_TARGETS
+                ),
+            }
+        )
+        self.assertEqual(blocked["status"], "success")
+        receipt = SQLiteMetaStore(self.db_path).read_packet(
+            "command_center_tushare_provider_target_sample_execution_request_packet"
+        )["receipt"]
+        self.assertEqual(
+            receipt["status"],
+            "target_sample_execution_request_blocked_trade_cal_repeat_acknowledgement_missing",
+        )
+        self.assertFalse(receipt["full_interface_production_execution_request_ready"])
+
+    def test_stale_or_old_head_recipe_cannot_create_executable_request(self):
+        with patch.object(
+            tushare_task_service,
+            "_production_universe_context_ready",
+            return_value=True,
+        ):
+            tushare_task_service.run_tushare_provider_target_sample_execution_recipe_seed(
+                self._seed_payload()
+            )
+        recipe = SQLiteMetaStore(self.db_path).read_packet(
+            tushare_task_service.PROVIDER_TARGET_SAMPLE_EXECUTION_RECIPE_PACKET_KEY
+        )["provider_target_sample_execution_recipe"]
+        stale = dict(recipe)
+        stale["universe_context"] = {
+            **dict(recipe["universe_context"]),
+            "as_of_date": "20000101",
+            "feature_end_date": "20000101",
+        }
+        packet = SQLiteMetaStore(self.db_path).read_packet(
+            tushare_task_service.PROVIDER_TARGET_SAMPLE_EXECUTION_RECIPE_PACKET_KEY
+        )
+        packet["provider_target_sample_execution_recipe"] = stale
+        SQLiteMetaStore(self.db_path).write_packet(
+            tushare_task_service.PROVIDER_TARGET_SAMPLE_EXECUTION_RECIPE_PACKET_KEY,
+            packet,
+        )
+        tushare_task_service.run_tushare_provider_target_sample_execution_request(
+            {
+                "execution_recipe_scope_hash": stale["execution_recipe_scope_hash"],
+                "operator_approved": True,
+                "acknowledge_trade_cal_repeat_for_full_interface_same_run": True,
+                "apis": list(tushare_task_service.ALL_REFRESH_APIS),
+                "target_sample_acceptance_groups": list(
+                    tushare_task_service.FULL_INTERFACE_PROVIDER_PRODUCTION_TARGETS
+                ),
+            }
+        )
+        stale_receipt = SQLiteMetaStore(self.db_path).read_packet(
+            "command_center_tushare_provider_target_sample_execution_request_packet"
+        )["receipt"]
+        self.assertEqual(
+            stale_receipt["status"],
+            "target_sample_execution_request_blocked_stale_as_of_scope",
+        )
+        self.assertFalse(stale_receipt["full_interface_production_execution_request_ready"])
+
+        packet["provider_target_sample_execution_recipe"] = {
+            **recipe,
+            "producer_head_full": "0" * 40,
+        }
+        SQLiteMetaStore(self.db_path).write_packet(
+            tushare_task_service.PROVIDER_TARGET_SAMPLE_EXECUTION_RECIPE_PACKET_KEY,
+            packet,
+        )
+        tushare_task_service.run_tushare_provider_target_sample_execution_request(
+            {
+                "execution_recipe_scope_hash": recipe["execution_recipe_scope_hash"],
+                "operator_approved": True,
+                "acknowledge_trade_cal_repeat_for_full_interface_same_run": True,
+                "apis": list(tushare_task_service.ALL_REFRESH_APIS),
+                "target_sample_acceptance_groups": list(
+                    tushare_task_service.FULL_INTERFACE_PROVIDER_PRODUCTION_TARGETS
+                ),
+            }
+        )
+        old_head = SQLiteMetaStore(self.db_path).read_packet(
+            "command_center_tushare_provider_target_sample_execution_request_packet"
+        )["receipt"]
+        self.assertEqual(
+            old_head["status"],
+            "target_sample_execution_request_blocked_producer_head_mismatch",
+        )
+        self.assertFalse(old_head["full_interface_production_execution_request_ready"])
 
     @staticmethod
     def _staged_parquet_result(api, _data, *, payload=None, scope=None):
@@ -462,6 +764,33 @@ class TushareFullInterfaceProductionAcceptanceTests(unittest.TestCase):
         self.assertEqual(adapter.calls, [])
         self.assertIn("missing_target_sample_execution_request", task["current_step"])
         self.assertIsNone(SQLiteMetaStore(self.db_path).read_packet(tushare_task_service.FULL_INTERFACE_PROVIDER_PRODUCTION_PACKET_KEY))
+
+    def test_caller_booleans_cannot_self_seal_real_provider_execution(self):
+        payload, _recipe, _receipt = self._seed_request_chain()
+        payload.update(
+            {
+                "approved_by_user": True,
+                "operator_approved": True,
+                "user_confirmed": True,
+                "manual_confirmation": True,
+                "provider_execution_approved": True,
+            }
+        )
+        task = (
+            tushare_task_service.run_tushare_full_interface_provider_production_acceptance(
+                payload
+            )
+        )
+        self.assertEqual(task["status"], "failed")
+        self.assertIn(
+            "trusted_provider_execution_authorization_missing_or_invalid",
+            task["current_step"],
+        )
+        self.assertFalse(
+            SQLiteMetaStore(self.db_path).read_packet(
+                tushare_task_service.PROVIDER_AUTHORIZATION_PACKET_KEY
+            )
+        )
 
     def test_real_seed_request_chain_calls_exact_scope_but_injected_adapter_never_promotes(self):
         payload, recipe, receipt = self._seed_request_chain()
@@ -822,6 +1151,19 @@ class TushareFullInterfaceProductionAcceptanceTests(unittest.TestCase):
                     return_value={"ok": True, "data": [{"ts_code": "000001.SZ", "list_status": "L", "list_date": "19910403"}], "error": ""},
                 )
             )
+            stack.enter_context(
+                patch.object(
+                    tushare_task_service,
+                    "_consume_trusted_provider_execution_authorization",
+                    return_value={
+                        "ready": True,
+                        "status": "trusted_provider_execution_authorization_consumed",
+                        "attestation_id": "d" * 64,
+                        "authorization_nonce_digest": "e" * 64,
+                        "writes_performed": True,
+                    },
+                )
+            )
             stack.enter_context(patch.object(tushare_task_service, "_write_parquet_dataset", side_effect=self._staged_parquet_result))
             task = tushare_task_service.run_tushare_full_interface_provider_production_acceptance(payload)
         self.assertTrue(all(row["runtime_adapter_module_identity_verified"] for row in task["call_ledger"]))
@@ -832,6 +1174,19 @@ class TushareFullInterfaceProductionAcceptanceTests(unittest.TestCase):
 
         task_service._TASKS.clear()
         with ExitStack() as stack:
+            stack.enter_context(
+                patch.object(
+                    tushare_task_service,
+                    "_consume_trusted_provider_execution_authorization",
+                    return_value={
+                        "ready": True,
+                        "status": "trusted_provider_execution_authorization_consumed",
+                        "attestation_id": "d" * 64,
+                        "authorization_nonce_digest": "e" * 64,
+                        "writes_performed": True,
+                    },
+                )
+            )
             for spec in tushare_task_service.REFRESH_API_SPECS.values():
                 stack.enter_context(
                     patch.object(

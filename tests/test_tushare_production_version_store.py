@@ -64,7 +64,11 @@ def _datasets(*, recent_listing=False):
     }
 
 
-def _write_valid_immutable_version(root: Path, *, version_id="version-1"):
+def _write_valid_immutable_version(
+    root: Path,
+    *,
+    version_id=f"{'c' * 16}-{'1' * 32}",
+):
     import pandas as pd
     import pyarrow.parquet as pq
 
@@ -84,7 +88,9 @@ def _write_valid_immutable_version(root: Path, *, version_id="version-1"):
     if not validation["ready"]:
         raise AssertionError(validation["blockers"])
     scope_hash = "a" * 64
+    producer_head_full = store._current_head_full()
     attempt_id = "1" * 32
+    version_id = version_id or f"{'c' * 16}-{attempt_id}"
     events = []
     for api in (*store.EXACT_REFRESH_APIS, *store.EXACT_SUPPORT_APIS):
         event = {
@@ -109,6 +115,7 @@ def _write_valid_immutable_version(root: Path, *, version_id="version-1"):
         "run_id": scope_hash,
         "attempt_id": attempt_id,
         "scope_hash": scope_hash,
+        "producer_head_full": producer_head_full,
         "approval_scope_hash": "b" * 64,
         "execution_recipe_scope_hash": "c" * 64,
         "required_interface_apis": list(store.EXACT_REFRESH_APIS),
@@ -117,6 +124,27 @@ def _write_valid_immutable_version(root: Path, *, version_id="version-1"):
         "required_target_group_digest": store._digest_value(list(store.EXACT_TARGET_GROUPS)),
         "required_support_apis": list(store.EXACT_SUPPORT_APIS),
         "required_support_api_digest": store._digest_value(list(store.EXACT_SUPPORT_APIS)),
+        "provider_rate_limit_strategy": store.PROVIDER_RATE_LIMIT_STRATEGY,
+        "provider_max_calls_per_minute": store.PROVIDER_MAX_CALLS_PER_MINUTE,
+        "provider_min_call_interval_ms": store.PROVIDER_MIN_CALL_INTERVAL_MS,
+        "provider_execution_serial": True,
+        "trade_cal_repeat_explicitly_acknowledged": True,
+        "trade_cal_prior_ltg01_evidence_reused_as_same_run": False,
+        "provider_execution_authorization_attestation_id": "d" * 64,
+        "provider_execution_authorization_task_id": (
+            f"tushare-provider-request-{'b' * 32}"
+        ),
+        "provider_execution_authorization_nonce_digest": "e" * 64,
+        "provider_execution_authorization_external_signature_verified": True,
+        "provider_execution_authorization_production_trusted": True,
+        "provider_execution_authorization_snapshot_rollback_resistant": True,
+        "provider_execution_authorization_attempt_id": attempt_id,
+        "provider_execution_authorization_version_id": version_id,
+        "provider_execution_authorization_consumption_packet_key": (
+            f"{store.PROVIDER_AUTHORIZATION_PACKET_KEY}:{attempt_id}"
+        ),
+        "provider_execution_authorization_consumption_digest": "f" * 64,
+        "provider_max_calls": 271,
         "transport_evidence": events,
         "original_actual_function_call_count": len(events),
         "current_attempt_actual_function_call_count": len(events),
@@ -158,6 +186,7 @@ def _write_valid_immutable_version(root: Path, *, version_id="version-1"):
         "scored_universe_policy": validation["scored_universe_policy"],
     }
     lineage = {
+        "producer_head_full": producer_head_full,
         "approval_scope_hash": receipt["approval_scope_hash"],
         "execution_recipe_scope_hash": receipt["execution_recipe_scope_hash"],
         "as_of": validation["end_date"],
@@ -178,19 +207,43 @@ def _write_valid_immutable_version(root: Path, *, version_id="version-1"):
     }
     manifest["manifest_digest"] = store._digest_value(manifest)
     store._atomic_json(version_dir / "manifest.json", manifest)
-    pointer = store._pointer_payload(version_id, manifest["manifest_digest"], {})
+    pointer = store._pointer_payload(
+        version_id,
+        manifest["manifest_digest"],
+        {},
+        producer_head_full=producer_head_full,
+    )
     store._atomic_json(root / "pointer.json", pointer)
     return manifest, pointer
 
 
 class TushareProductionVersionStoreTests(unittest.TestCase):
     def setUp(self):
+        class _FixtureDate(store._dt.date):
+            @classmethod
+            def today(cls):
+                return cls(2026, 7, 10)
+
         self.tmp = tempfile.TemporaryDirectory()
         self.root = Path(self.tmp.name) / "full_market_universe"
         self.constants = patch.multiple(store, MIN_UNIVERSE_ROWS=2, REQUIRED_SESSIONS=3)
         self.constants.start()
+        self.head_patch = patch.object(store, "_current_head_full", return_value="f" * 40)
+        self.date_patch = patch.object(store._dt, "date", _FixtureDate)
+        self.original_authorization_validator = store._trusted_provider_authorization_ready
+        self.authorization_patch = patch.object(
+            store,
+            "_trusted_provider_authorization_ready",
+            return_value=True,
+        )
+        self.head_patch.start()
+        self.date_patch.start()
+        self.authorization_patch.start()
 
     def tearDown(self):
+        self.authorization_patch.stop()
+        self.date_patch.stop()
+        self.head_patch.stop()
         self.constants.stop()
         self.tmp.cleanup()
 
@@ -205,6 +258,17 @@ class TushareProductionVersionStoreTests(unittest.TestCase):
             ),
         )
         self.assertFalse(store.validate_tushare_full_market_production_version(self.root)["ready"])
+
+    def test_forged_authorization_receipt_cannot_validate_without_trusted_registry(self):
+        _write_valid_immutable_version(self.root)
+        with patch.object(
+            store,
+            "_trusted_provider_authorization_ready",
+            new=self.original_authorization_validator,
+        ):
+            result = store.verify_current_version(self.root)
+        self.assertFalse(result["ready"])
+        self.assertIn("official_provider_receipt_invalid", result["blockers"])
 
     def test_wrong_exchange_code_families_are_rejected(self):
         for code, exchange in (
@@ -362,6 +426,101 @@ class TushareProductionVersionStoreTests(unittest.TestCase):
         second = store.verify_current_version(self.root)
         self.assertTrue(second["ready"], second["blockers"])
         self.assertEqual(first["manifest_digest"], second["manifest_digest"])
+
+    def test_signed_call_budget_cannot_be_exceeded_by_digest_consistent_receipt(self):
+        manifest, pointer = _write_valid_immutable_version(self.root)
+        receipt = manifest["official_run_receipt"]
+        total_calls = sum(
+            int(event["function_call_count"])
+            for event in receipt["transport_evidence"]
+        )
+        receipt["provider_max_calls"] = total_calls - 1
+        receipt_material = dict(receipt)
+        receipt_material.pop("execution_event_digest", None)
+        receipt["execution_event_digest"] = store._digest_value(receipt_material)
+        version_material = {
+            "scope": manifest["scope"],
+            "artifacts": manifest["artifacts"],
+            "dataset_validation": manifest["dataset_validation"],
+            "official_run_receipt": receipt,
+            "lineage": manifest["lineage"],
+        }
+        manifest["version_digest"] = store._digest_value(version_material)
+        manifest_material = dict(manifest)
+        manifest_material.pop("manifest_digest", None)
+        manifest["manifest_digest"] = store._digest_value(manifest_material)
+        store._atomic_json(
+            self.root / "versions" / manifest["version_id"] / "manifest.json",
+            manifest,
+        )
+        pointer["current_manifest_digest"] = manifest["manifest_digest"]
+        pointer["last_good_manifest_digest"] = manifest["manifest_digest"]
+        pointer_material = dict(pointer)
+        pointer_material.pop("pointer_digest", None)
+        pointer["pointer_digest"] = store._digest_value(pointer_material)
+        store._atomic_json(self.root / "pointer.json", pointer)
+
+        result = store.verify_current_version(self.root)
+        self.assertFalse(result["ready"])
+        self.assertIn("official_provider_receipt_invalid", result["blockers"])
+
+    def test_current_head_is_required_but_history_mode_preserves_old_version(self):
+        manifest, _pointer = _write_valid_immutable_version(self.root)
+        producer_head = manifest["lineage"]["producer_head_full"]
+        self.assertTrue(
+            store.verify_current_version(self.root)["ready"]
+        )
+        different_head = "0" * 40 if producer_head != "0" * 40 else "1" * 40
+        with patch.object(store, "_current_head_full", return_value=different_head):
+            current = store.verify_current_version(self.root)
+        self.assertFalse(current["ready"])
+        self.assertIn("current_production_version_head_mismatch", current["blockers"])
+        historical = store.verify_current_version(
+            self.root,
+            head_mode="history",
+            runtime_head_full=different_head,
+        )
+        self.assertFalse(historical["ready"])
+        self.assertTrue(
+            historical["historical_integrity_ready"], historical["blockers"]
+        )
+
+    def test_receipt_pointer_and_manifest_producer_heads_must_match(self):
+        manifest, pointer = _write_valid_immutable_version(self.root)
+        pointer["current_producer_head_full"] = "0" * 40
+        pointer_material = dict(pointer)
+        pointer_material.pop("pointer_digest", None)
+        pointer["pointer_digest"] = store._digest_value(pointer_material)
+        store._atomic_json(self.root / "pointer.json", pointer)
+        result = store.verify_current_version(
+            self.root,
+            runtime_head_full=manifest["lineage"]["producer_head_full"],
+        )
+        self.assertFalse(result["ready"])
+        self.assertIn("current_production_version_head_mismatch", result["blockers"])
+        self.assertIn("approval_recipe_as_of_lineage_invalid", result["blockers"])
+
+    def test_current_mode_rejects_next_day_but_history_remains_readable(self):
+        _write_valid_immutable_version(self.root)
+
+        class _NextDay(store._dt.date):
+            @classmethod
+            def today(cls):
+                return cls(2026, 7, 11)
+
+        with patch.object(store._dt, "date", _NextDay):
+            current = store.verify_current_version(self.root)
+            historical = store.verify_current_version(
+                self.root,
+                head_mode="history",
+                runtime_head_full="0" * 40,
+            )
+        self.assertFalse(current["ready"])
+        self.assertIn("current_production_version_as_of_stale", current["blockers"])
+        self.assertFalse(historical["ready"])
+        self.assertTrue(
+            historical["historical_integrity_ready"], historical["blockers"]
+        )
 
     def test_first_version_last_good_manifest_digest_is_always_validated(self):
         _manifest, pointer = _write_valid_immutable_version(self.root)

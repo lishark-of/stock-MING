@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import datetime as _dt
+import fcntl
 import hashlib
 import json
 import os
 import shutil
+import subprocess
 import uuid
 from pathlib import Path
 from typing import Any, Iterable, Mapping
@@ -12,11 +14,31 @@ from typing import Any, Iterable, Mapping
 from storage import parquet_store
 from storage.sqlite_meta import SQLiteMetaStore
 
-from . import storage_service, tushare_production_store
+from . import (
+    external_production_attestation_service,
+    storage_service,
+    tushare_production_store,
+)
 from .task_service import create_task_record, list_task_statuses, update_task_status
 
 
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
 SQLITE_META_PATH = Path(__file__).resolve().parents[2] / ".stock_ming_3" / "meta.sqlite"
+PROVIDER_AUTHORIZATION_PACKET_KEY = (
+    "command_center_3_tushare_provider_execution_authorization"
+)
+PROVIDER_AUTHORIZATION_KIND = "tushare_provider_execution_authorization"
+PROVIDER_AUTHORIZATION_SUBJECT = "tushare-full-interface-provider-execution"
+
+
+def _provider_authorization_consumption_packet_key(provider_attempt_id: str) -> str:
+    attempt_id = str(provider_attempt_id or "").lower()
+    if not (
+        len(attempt_id) == 32
+        and all(character in "0123456789abcdef" for character in attempt_id)
+    ):
+        return ""
+    return f"{PROVIDER_AUTHORIZATION_PACKET_KEY}:{attempt_id}"
 CORE_REFRESH_APIS = ("daily", "daily_basic", "moneyflow")
 CALENDAR_REFRESH_APIS = ("trade_cal",)
 EXTENDED_REFRESH_APIS = (
@@ -297,6 +319,11 @@ FULL_MARKET_UNIVERSE_LAST_GOOD_PACKET_KEY = (
 FULL_MARKET_UNIVERSE_SCHEMA_VERSION = "tushare_full_market_universe_production.v1"
 FULL_MARKET_UNIVERSE_MIN_ROWS = 3000
 FULL_INTERFACE_PROVIDER_PRODUCTION_RECIPE_VERSION = "tushare_full_interface_provider_recipe.v2"
+FULL_INTERFACE_TRADE_CAL_EVIDENCE_POLICY = (
+    "ltg01_history_reusable_for_calendar_goal_only_full_interface_requires_explicit_same_run_repeat"
+)
+FULL_INTERFACE_PROVIDER_MAX_CALLS_PER_MINUTE = 50
+FULL_INTERFACE_PROVIDER_MIN_CALL_INTERVAL_MS = 50
 PRODUCTION_VALID_EMPTY_APIS = frozenset(EXTENDED_REFRESH_APIS)
 # ``anns_d`` is a separately purchased Tushare permission.  Probe it before
 # the ordinary point/feature interfaces during the all-interface production
@@ -2448,6 +2475,37 @@ def _canonical_sha256(value: Any) -> str:
     return hashlib.sha256(serialized.encode("utf-8")).hexdigest()
 
 
+def _current_head_full() -> str:
+    """Return the exact clean runtime source revision or fail closed."""
+
+    try:
+        value = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            cwd=PROJECT_ROOT,
+            check=True,
+            capture_output=True,
+            text=True,
+            timeout=5,
+        ).stdout.strip().lower()
+        tracked_status = subprocess.run(
+            ["git", "status", "--porcelain", "--untracked-files=no"],
+            cwd=PROJECT_ROOT,
+            check=True,
+            capture_output=True,
+            text=True,
+            timeout=5,
+        ).stdout.strip()
+    except Exception:
+        return ""
+    return (
+        value
+        if not tracked_status
+        and len(value) == 40
+        and all(ch in "0123456789abcdef" for ch in value)
+        else ""
+    )
+
+
 def _production_api_contexts(payload: Any, selected_apis: Iterable[str]) -> dict[str, dict[str, Any]]:
     safe = _safe_payload(payload)
     provided = safe.get("api_contexts") if isinstance(safe.get("api_contexts"), Mapping) else {}
@@ -2525,6 +2583,7 @@ def _production_universe_context_ready(context: Mapping[str, Any]) -> bool:
 
 def _production_approval_scope_material(
     *,
+    producer_head_full: str,
     recipe_scope_hash: str,
     recipe_version: str,
     selected_apis: Iterable[str],
@@ -2535,6 +2594,7 @@ def _production_approval_scope_material(
 ) -> dict[str, Any]:
     return {
         "schema_version": "tushare_full_interface_provider_approval_scope.v1",
+        "producer_head_full": str(producer_head_full or ""),
         "recipe_scope_hash": str(recipe_scope_hash or ""),
         "recipe_version": str(recipe_version or ""),
         "selected_apis": sorted(str(api) for api in selected_apis),
@@ -2546,11 +2606,18 @@ def _production_approval_scope_material(
         "universe_context": _safe_payload({"universe_context": dict(universe_context)}).get(
             "universe_context", {}
         ),
+        "provider_rate_limit": {
+            "strategy": "cross_process_serial_persistent_rolling_window",
+            "max_calls_per_minute": FULL_INTERFACE_PROVIDER_MAX_CALLS_PER_MINUTE,
+            "min_call_interval_ms": FULL_INTERFACE_PROVIDER_MIN_CALL_INTERVAL_MS,
+        },
+        "trade_cal_evidence_policy": FULL_INTERFACE_TRADE_CAL_EVIDENCE_POLICY,
     }
 
 
 def _provider_target_sample_execution_recipe_seed(payload: Any = None) -> dict[str, Any]:
     payload_safe = _safe_payload(payload)
+    producer_head_full = _current_head_full()
     target_specs = {target: (label, tuple(apis)) for target, label, apis in VALIDATION_TARGET_GROUPS}
     requested_targets, unknown_targets = _target_sample_acceptance_requested_targets(payload_safe)
     if not requested_targets and not unknown_targets:
@@ -2694,6 +2761,7 @@ def _provider_target_sample_execution_recipe_seed(payload: Any = None) -> dict[s
         and full_api_scope_requested
         and all(_production_api_context_ready(api, api_contexts.get(api, {})) for api in ALL_REFRESH_APIS)
         and _production_universe_context_ready(universe_context)
+        and len(producer_head_full) == 40
     )
     recipe_schema_version = (
         "tushare_provider_target_sample_execution_recipe.v2"
@@ -2705,6 +2773,7 @@ def _provider_target_sample_execution_recipe_seed(payload: Any = None) -> dict[s
         "schema_version": recipe_schema_version,
         "recipe_version": FULL_INTERFACE_PROVIDER_PRODUCTION_RECIPE_VERSION,
         "recipe_issued_at": recipe_issued_at,
+        "producer_head_full": producer_head_full,
         "scope": "local_target_sample_execution_recipe_seed_no_provider_execution",
         "post_task_route": "POST /api/tasks/refresh-tushare-facts",
         "required_acceptance_mode": PROVIDER_TARGET_SAMPLE_ACCEPTANCE_MODE,
@@ -2713,6 +2782,12 @@ def _provider_target_sample_execution_recipe_seed(payload: Any = None) -> dict[s
         "api_contexts": api_contexts,
         "target_contexts": target_contexts,
         "universe_context": universe_context,
+        "provider_rate_limit": {
+            "strategy": "cross_process_serial_persistent_rolling_window",
+            "max_calls_per_minute": FULL_INTERFACE_PROVIDER_MAX_CALLS_PER_MINUTE,
+            "min_call_interval_ms": FULL_INTERFACE_PROVIDER_MIN_CALL_INTERVAL_MS,
+        },
+        "trade_cal_evidence_policy": FULL_INTERFACE_TRADE_CAL_EVIDENCE_POLICY,
         "phase_keys": phase_keys,
         "target_rows": [
             {
@@ -2738,6 +2813,7 @@ def _provider_target_sample_execution_recipe_seed(payload: Any = None) -> dict[s
         "required_acceptance_mode": PROVIDER_TARGET_SAMPLE_ACCEPTANCE_MODE,
         "recipe_version": FULL_INTERFACE_PROVIDER_PRODUCTION_RECIPE_VERSION,
         "recipe_issued_at": recipe_issued_at,
+        "producer_head_full": producer_head_full,
         "runbook_ready": recipe_ready,
         "activation_receipt_ready": True,
         "requested_targets": valid_requested_targets,
@@ -2745,6 +2821,8 @@ def _provider_target_sample_execution_recipe_seed(payload: Any = None) -> dict[s
         "api_contexts": api_contexts,
         "target_contexts": target_contexts,
         "universe_context": universe_context,
+        "provider_rate_limit": dict(scope_payload["provider_rate_limit"]),
+        "trade_cal_evidence_policy": FULL_INTERFACE_TRADE_CAL_EVIDENCE_POLICY,
         "full_target_scope_requested": full_target_scope_requested,
         "full_api_scope_requested": full_api_scope_requested,
         "full_interface_recipe_ready": full_interface_recipe_ready,
@@ -2940,6 +3018,11 @@ def _provider_target_sample_execution_request_receipt(
         and recipe.get("tushare_called_by_recipe") is False
     )
     recipe_version = str(recipe.get("recipe_version") or recipe.get("schema_version") or "")
+    producer_head_full = str(recipe.get("producer_head_full") or "")
+    runtime_head_full = _current_head_full()
+    head_matches_runtime = bool(
+        len(runtime_head_full) == 40 and producer_head_full == runtime_head_full
+    )
     api_contexts = recipe.get("api_contexts") if isinstance(recipe.get("api_contexts"), Mapping) else {}
     target_contexts = (
         recipe.get("target_contexts") if isinstance(recipe.get("target_contexts"), Mapping) else {}
@@ -2947,7 +3030,7 @@ def _provider_target_sample_execution_request_receipt(
     universe_context = (
         recipe.get("universe_context") if isinstance(recipe.get("universe_context"), Mapping) else {}
     )
-    full_interface_recipe_ready = bool(
+    full_interface_recipe_scope = bool(
         recipe.get("schema_version") == "tushare_provider_target_sample_execution_recipe.v2"
         and recipe.get("recipe_version") == FULL_INTERFACE_PROVIDER_PRODUCTION_RECIPE_VERSION
         and recipe.get("full_interface_recipe_ready") is True
@@ -2956,7 +3039,17 @@ def _provider_target_sample_execution_request_receipt(
         and len(latest_targets) == len(FULL_INTERFACE_PROVIDER_PRODUCTION_TARGETS)
         and set(latest_targets) == set(FULL_INTERFACE_PROVIDER_PRODUCTION_TARGETS)
     )
+    full_interface_recipe_ready = bool(
+        full_interface_recipe_scope
+        and head_matches_runtime
+        and _production_universe_context_ready(universe_context)
+    )
+    trade_cal_repeat_acknowledged = bool(
+        payload_safe.get("acknowledge_trade_cal_repeat_for_full_interface_same_run")
+        is True
+    )
     approval_scope_material = _production_approval_scope_material(
+        producer_head_full=producer_head_full,
         recipe_scope_hash=latest_scope_hash,
         recipe_version=recipe_version,
         selected_apis=recipe_selected_apis,
@@ -2966,6 +3059,17 @@ def _provider_target_sample_execution_request_receipt(
         universe_context=universe_context,
     )
     approval_scope_hash = _canonical_sha256(approval_scope_material)
+    execution_request_authorization_id = (
+        f"tushare-provider-request-{approval_scope_hash[:32]}"
+        if full_interface_recipe_scope
+        else ""
+    )
+    provider_attempt_id = uuid.uuid4().hex if full_interface_recipe_scope else ""
+    provider_version_id = (
+        f"{latest_scope_hash[:16]}-{provider_attempt_id}"
+        if full_interface_recipe_scope
+        else ""
+    )
     target_payload_safe = {
         "apis": selected_apis,
         "acceptance_mode": (
@@ -2978,11 +3082,27 @@ def _provider_target_sample_execution_request_receipt(
         "execution_recipe_scope_hash_short": latest_scope_hash_short,
         "approval_scope_hash": approval_scope_hash,
         "recipe_version": recipe_version,
+        "producer_head_full": producer_head_full,
         "api_contexts": dict(api_contexts),
         "target_contexts": dict(target_contexts),
         "universe_context": dict(universe_context),
+        "provider_rate_limit": dict(recipe.get("provider_rate_limit") or {}),
+        "trade_cal_evidence_policy": recipe.get("trade_cal_evidence_policy") or "",
+        "acknowledge_trade_cal_repeat_for_full_interface_same_run": (
+            trade_cal_repeat_acknowledged
+        ),
         "provider_execution_requires_separate_post_task": True,
     }
+    if full_interface_recipe_scope:
+        target_payload_safe.update(
+            {
+                "execution_request_authorization_id": (
+                    execution_request_authorization_id
+                ),
+                "provider_attempt_id": provider_attempt_id,
+                "provider_version_id": provider_version_id,
+            }
+        )
     for key in ("ts_code", "trade_date", "start_date", "end_date", "ann_date", "period", "float_date", "limit_type"):
         if payload_safe.get(key) not in (None, ""):
             target_payload_safe[key] = payload_safe.get(key)
@@ -3014,8 +3134,24 @@ def _provider_target_sample_execution_request_receipt(
         ),
         (
             "full_sha256_scope_bound_for_production",
-            not full_interface_recipe_ready or full_scope_hash_matches,
+            not full_interface_recipe_scope or full_scope_hash_matches,
             "full-interface production approval requires the complete 64-character SHA-256 recipe scope",
+        ),
+        (
+            "producer_head_bound_to_runtime",
+            not full_interface_recipe_scope or head_matches_runtime,
+            "recipe, request, and future provider task must bind the exact current 40-character HEAD",
+        ),
+        (
+            "current_as_of_scope_not_stale",
+            not full_interface_recipe_scope
+            or _production_universe_context_ready(universe_context),
+            "full-interface as_of/feature_end must equal today's bounded execution scope",
+        ),
+        (
+            "trade_cal_repeat_explicitly_acknowledged",
+            not full_interface_recipe_scope or trade_cal_repeat_acknowledged,
+            "sealed LTG-01 evidence remains reusable only for LTG-01; the exact 20-interface run requires an explicit bounded trade_cal repeat acknowledgement",
         ),
         (
             "operator_confirmation_recorded",
@@ -3082,6 +3218,17 @@ def _provider_target_sample_execution_request_receipt(
     elif not scope_matches:
         status = "target_sample_execution_request_blocked_scope_hash_mismatch"
         allowed_next_step = "copy_latest_execution_recipe_scope_hash_then_confirm"
+    elif full_interface_recipe_scope and not head_matches_runtime:
+        status = "target_sample_execution_request_blocked_producer_head_mismatch"
+        allowed_next_step = "regenerate_recipe_on_current_head"
+    elif full_interface_recipe_scope and not _production_universe_context_ready(
+        universe_context
+    ):
+        status = "target_sample_execution_request_blocked_stale_as_of_scope"
+        allowed_next_step = "regenerate_recipe_with_today_as_of_and_feature_end"
+    elif full_interface_recipe_scope and not trade_cal_repeat_acknowledged:
+        status = "target_sample_execution_request_blocked_trade_cal_repeat_acknowledgement_missing"
+        allowed_next_step = "explicitly_acknowledge_bounded_trade_cal_repeat_for_same_run"
     elif not operator_confirmed:
         status = "target_sample_execution_request_blocked_operator_confirmation_missing"
         allowed_next_step = "set_operator_approved_true_after_manual_review"
@@ -3103,6 +3250,8 @@ def _provider_target_sample_execution_request_receipt(
         and set(selected_apis) == set(recipe_selected_apis)
         and len(requested_targets) == len(FULL_INTERFACE_PROVIDER_PRODUCTION_TARGETS)
         and set(requested_targets) == set(FULL_INTERFACE_PROVIDER_PRODUCTION_TARGETS)
+        and head_matches_runtime
+        and trade_cal_repeat_acknowledged
     )
     receipt = {
         "schema_version": PROVIDER_TARGET_SAMPLE_EXECUTION_REQUEST_SCHEMA_VERSION,
@@ -3116,6 +3265,9 @@ def _provider_target_sample_execution_request_receipt(
         "authoritative_recipe_source_packet_key": authoritative_source_packet_key,
         "authoritative_recipe_updated_at": authoritative_recipe_updated_at,
         "authoritative_recipe_version": recipe_version,
+        "producer_head_full": producer_head_full,
+        "runtime_head_full": runtime_head_full,
+        "producer_head_matches_runtime": head_matches_runtime,
         "latest_execution_recipe_visible": recipe_visible,
         "latest_execution_recipe_status": recipe.get("status") or "",
         "latest_execution_recipe_ready_for_user_confirmation": recipe.get("recipe_ready_for_user_confirmation") is True,
@@ -3134,8 +3286,14 @@ def _provider_target_sample_execution_request_receipt(
         "api_contexts": dict(api_contexts),
         "target_contexts": dict(target_contexts),
         "universe_context": dict(universe_context),
+        "provider_rate_limit": dict(recipe.get("provider_rate_limit") or {}),
+        "trade_cal_evidence_policy": recipe.get("trade_cal_evidence_policy") or "",
+        "trade_cal_repeat_acknowledged": trade_cal_repeat_acknowledged,
         "approval_scope_material": approval_scope_material,
         "approval_scope_hash": approval_scope_hash,
+        "execution_request_authorization_id": execution_request_authorization_id,
+        "provider_attempt_id": provider_attempt_id,
+        "provider_version_id": provider_version_id,
         "target_payload_safe": target_payload_safe,
         "blocking_criterion_count": blocker_count,
         "row_count": len(rows),
@@ -6250,14 +6408,32 @@ def _call_tushare_api(
     fn: Any,
     api: str,
     params: dict[str, Any],
+    expected_producer_head_full: str = "",
 ) -> tuple[dict[str, Any], dict[str, Any], list[dict[str, Any]]]:
-    if api != "trade_cal":
+    def _invoke(call_params: Mapping[str, Any]) -> dict[str, Any]:
+        if (
+            expected_producer_head_full
+            and _current_head_full() != expected_producer_head_full
+        ):
+            return {
+                "ok": False,
+                "data": None,
+                "error": "provider_runtime_head_changed_or_dirty",
+            }
         try:
-            result = fn(**params)
-            if not isinstance(result, Mapping):
-                result = {"ok": False, "data": None, "error": f"invalid result type: {type(result).__name__}"}
+            value = fn(**dict(call_params))
+            if not isinstance(value, Mapping):
+                return {
+                    "ok": False,
+                    "data": None,
+                    "error": f"invalid result type: {type(value).__name__}",
+                }
+            return dict(value)
         except Exception as exc:
-            result = {"ok": False, "data": None, "error": _safe_text(exc)}
+            return {"ok": False, "data": None, "error": _safe_text(exc)}
+
+    if api != "trade_cal":
+        result = _invoke(params)
         return dict(result), params, [
             {key: value for key, value in params.items() if value is not None}
         ]
@@ -6267,12 +6443,7 @@ def _call_tushare_api(
         call_params = dict(params)
         if exchanges:
             call_params["exchange"] = exchanges[0]
-        try:
-            result = fn(**call_params)
-            if not isinstance(result, Mapping):
-                result = {"ok": False, "data": None, "error": f"invalid result type: {type(result).__name__}"}
-        except Exception as exc:
-            result = {"ok": False, "data": None, "error": _safe_text(exc)}
+        result = _invoke(call_params)
         return dict(result), call_params, [
             {key: value for key, value in call_params.items() if value is not None}
         ]
@@ -6290,12 +6461,7 @@ def _call_tushare_api(
         transport_expected_params.append(
             {key: value for key, value in call_params.items() if value is not None}
         )
-        try:
-            result = fn(**call_params)
-            if not isinstance(result, Mapping):
-                result = {"ok": False, "data": None, "error": f"invalid result type: {type(result).__name__}"}
-        except Exception as exc:
-            result = {"ok": False, "data": None, "error": _safe_text(exc)}
+        result = _invoke(call_params)
         rows = _trade_cal_acceptance_rows_from_data(result.get("data") if isinstance(result, Mapping) else None)
         for call_id in result.get("transport_call_ids") or [] if isinstance(result, Mapping) else []:
             value = str(call_id or "")
@@ -6608,10 +6774,193 @@ def _latest_target_sample_execution_request_packet() -> dict[str, Any]:
     return dict(packet) if isinstance(packet, Mapping) else {}
 
 
+def _consume_trusted_provider_execution_authorization(
+    payload: Any,
+    *,
+    producer_head_full: str,
+    execution_request_authorization_id: str,
+    approval_scope_hash: str,
+    execution_recipe_scope_hash: str,
+    selected_apis: list[str],
+    requested_targets: list[str],
+    max_provider_calls: int,
+    provider_attempt_id: str,
+    provider_version_id: str,
+) -> dict[str, Any]:
+    """Consume one root-anchored authorization before any provider call.
+
+    Caller booleans are never authority.  The signed envelope is verified
+    against the externally provisioned Ed25519 key, exact head, monotonic
+    high-water anchor, exact scope, and explicit trade_cal repeat claim.  Its
+    registry event and local consumption packet are committed atomically so a
+    retry needs a new signed nonce.
+    """
+
+    envelope = _payload_field(payload, "signed_provider_execution_authorization", None)
+    if not isinstance(envelope, Mapping):
+        return {
+            "ready": False,
+            "status": "trusted_provider_execution_authorization_missing",
+            "blockers": ["trusted_provider_execution_authorization_missing"],
+            "writes_performed": False,
+        }
+    trust_lock = external_production_attestation_service.IMPORT_LOCK_PATH
+    trust_lock.parent.mkdir(parents=True, exist_ok=True)
+    with trust_lock.open("a+b") as lock_handle:
+        fcntl.flock(lock_handle.fileno(), fcntl.LOCK_EX)
+        prepared = external_production_attestation_service.prepare_external_trusted_attestation(
+            {"signed_envelope": dict(envelope)},
+            expected_kind=PROVIDER_AUTHORIZATION_KIND,
+        )
+        registry_packet = prepared.pop("_registry_packet", None)
+        claims = prepared.get("claims") if isinstance(prepared.get("claims"), Mapping) else {}
+        expected_api_digest = _canonical_sha256(sorted(selected_apis))
+        expected_target_digest = _canonical_sha256(sorted(requested_targets))
+        bindings_ready = bool(
+            prepared.get("ready") is True
+            and prepared.get("production_trusted") is True
+            and prepared.get("snapshot_rollback_resistant") is True
+            and prepared.get("idempotent_reuse") is not True
+            and isinstance(registry_packet, Mapping)
+            and prepared.get("attestation_kind") == PROVIDER_AUTHORIZATION_KIND
+            and prepared.get("head_full") == producer_head_full
+            and prepared.get("subject") == PROVIDER_AUTHORIZATION_SUBJECT
+            and prepared.get("task_id") == execution_request_authorization_id
+            and prepared.get("scope_hash") == approval_scope_hash
+            and prepared.get("artifact_digest") == execution_recipe_scope_hash
+            and claims.get("approval_scope_hash") == approval_scope_hash
+            and claims.get("execution_recipe_scope_hash")
+            == execution_recipe_scope_hash
+            and claims.get("selected_api_digest") == expected_api_digest
+            and claims.get("target_group_digest") == expected_target_digest
+            and claims.get("provider_attempt_id") == provider_attempt_id
+            and claims.get("provider_version_id") == provider_version_id
+            and provider_version_id
+            == f"{execution_recipe_scope_hash[:16]}-{provider_attempt_id}"
+            and claims.get("trade_cal_repeat_authorized") is True
+            and claims.get("provider_max_calls") == max_provider_calls
+            and claims.get("does_not_execute_trades") is True
+        )
+        if not bindings_ready:
+            return {
+                "ready": False,
+                "status": str(
+                    prepared.get("status")
+                    or "trusted_provider_execution_authorization_binding_invalid"
+                ),
+                "blockers": ["trusted_provider_execution_authorization_binding_invalid"],
+                "writes_performed": False,
+            }
+        consumption_packet_key = _provider_authorization_consumption_packet_key(
+            provider_attempt_id
+        )
+        if not consumption_packet_key:
+            return {
+                "ready": False,
+                "status": "trusted_provider_execution_attempt_identity_invalid",
+                "blockers": ["trusted_provider_execution_attempt_identity_invalid"],
+                "writes_performed": False,
+            }
+        authorization_packet = {
+            "schema_version": "tushare_provider_execution_authorization_consumption.v1",
+            "packet_key": consumption_packet_key,
+            "status": "trusted_provider_execution_authorization_consumed",
+            "attestation_id": prepared.get("attestation_id"),
+            "execution_request_authorization_id": execution_request_authorization_id,
+            "head_full": producer_head_full,
+            "approval_scope_hash": approval_scope_hash,
+            "execution_recipe_scope_hash": execution_recipe_scope_hash,
+            "selected_api_digest": expected_api_digest,
+            "target_group_digest": expected_target_digest,
+            "provider_attempt_id": provider_attempt_id,
+            "provider_version_id": provider_version_id,
+            "trade_cal_repeat_authorized": True,
+            "provider_max_calls": max_provider_calls,
+            "authorization_nonce_digest": prepared.get("nonce_digest"),
+            "raw_nonce_stored": False,
+            "external_signature_verified": True,
+            "production_trusted": True,
+            "snapshot_rollback_resistant": True,
+            "contains_secret": False,
+            "does_not_execute_trades": True,
+        }
+        authorization_packet["consumption_digest"] = _canonical_sha256(
+            authorization_packet
+        )
+        store = SQLiteMetaStore(SQLITE_META_PATH)
+        if store.read_packet(consumption_packet_key) is not None:
+            return {
+                "ready": False,
+                "status": "trusted_provider_execution_attempt_already_consumed",
+                "blockers": ["trusted_provider_execution_attempt_already_consumed"],
+                "writes_performed": False,
+            }
+        try:
+            store.promote_packet_pair_atomic(
+                external_production_attestation_service.REGISTRY_PACKET_KEY,
+                dict(registry_packet),
+                consumption_packet_key,
+                authorization_packet,
+            )
+        except Exception:
+            registry_readback = (
+                external_production_attestation_service.validate_trusted_registry()
+            )
+            authorization_readback = store.read_packet(consumption_packet_key)
+            if not (
+                registry_readback.get("ready") is True
+                and authorization_readback == authorization_packet
+            ):
+                return {
+                    "ready": False,
+                    "status": "trusted_provider_execution_authorization_atomic_consume_failed",
+                    "blockers": [
+                        "trusted_provider_execution_authorization_atomic_consume_failed"
+                    ],
+                    "writes_performed": False,
+                }
+        registry_readback = (
+            external_production_attestation_service.validate_trusted_registry()
+        )
+        authorization_readback = store.read_packet(consumption_packet_key)
+        if not (
+            registry_readback.get("ready") is True
+            and registry_readback.get("attestation_id")
+            == prepared.get("attestation_id")
+            and authorization_readback == authorization_packet
+        ):
+            return {
+                "ready": False,
+                "status": "trusted_provider_execution_authorization_readback_failed",
+                "blockers": [
+                    "trusted_provider_execution_authorization_readback_failed"
+                ],
+                "writes_performed": True,
+            }
+        return {
+            "ready": True,
+            "status": "trusted_provider_execution_authorization_consumed",
+            "attestation_id": prepared.get("attestation_id"),
+            "execution_request_authorization_id": execution_request_authorization_id,
+            "authorization_nonce_digest": prepared.get("nonce_digest"),
+            "provider_attempt_id": provider_attempt_id,
+            "provider_version_id": provider_version_id,
+            "consumption_packet_key": consumption_packet_key,
+            "consumption_digest": authorization_packet["consumption_digest"],
+            "external_signature_verified": True,
+            "production_trusted": True,
+            "snapshot_rollback_resistant": True,
+            "trade_cal_repeat_authorized": True,
+            "writes_performed": True,
+            "blockers": [],
+        }
+
+
 def _full_interface_provider_production_execution_gate(
     payload: Any,
     *,
     selected_apis: list[str],
+    require_external_authorization: bool = False,
 ) -> dict[str, Any]:
     packet = _latest_target_sample_execution_request_packet()
     receipt = packet.get("receipt") if isinstance(packet.get("receipt"), Mapping) else {}
@@ -6628,6 +6977,11 @@ def _full_interface_provider_production_execution_gate(
     expected_targets = list(FULL_INTERFACE_PROVIDER_PRODUCTION_TARGETS)
     receipt_apis = [str(item) for item in receipt.get("selected_apis") or [] if str(item or "")]
     receipt_targets = [str(item) for item in receipt.get("requested_targets") or [] if str(item or "")]
+    execution_request_authorization_id = str(
+        receipt.get("execution_request_authorization_id") or ""
+    )
+    provider_attempt_id = str(receipt.get("provider_attempt_id") or "")
+    provider_version_id = str(receipt.get("provider_version_id") or "")
     expected_scope_hash = str(
         receipt.get("latest_execution_recipe_scope_hash")
         or target_payload.get("execution_recipe_scope_hash")
@@ -6638,6 +6992,17 @@ def _full_interface_provider_production_execution_gate(
     )
     authoritative_scope_hash = str(latest_recipe.get("execution_recipe_scope_hash") or "")
     authoritative_recipe_version = str(latest_recipe.get("recipe_version") or "")
+    runtime_head_full = _current_head_full()
+    recipe_head_full = str(latest_recipe.get("producer_head_full") or "")
+    receipt_head_full = str(receipt.get("producer_head_full") or "")
+    requested_head_full = str(_payload_field(payload, "producer_head_full", "") or "")
+    producer_head_matches = bool(
+        len(runtime_head_full) == 40
+        and requested_head_full
+        == receipt_head_full
+        == recipe_head_full
+        == runtime_head_full
+    )
     authoritative_source_packet_key = str(
         authoritative_packet.get("authoritative_recipe_source_packet_key") or ""
     )
@@ -6650,6 +7015,17 @@ def _full_interface_provider_production_execution_gate(
         and receipt.get("full_sha256_scope_hash_matches_latest") is True
         and receipt.get("full_interface_production_execution_request_ready") is True
         and receipt.get("operator_confirmation_recorded") is True
+        and receipt.get("producer_head_matches_runtime") is True
+        and receipt.get("trade_cal_repeat_acknowledged") is True
+        and execution_request_authorization_id
+        == target_payload.get("execution_request_authorization_id")
+        == f"tushare-provider-request-{str(receipt.get('approval_scope_hash') or '')[:32]}"
+        and len(provider_attempt_id) == 32
+        and all(ch in "0123456789abcdef" for ch in provider_attempt_id)
+        and target_payload.get("provider_attempt_id") == provider_attempt_id
+        and provider_version_id
+        == target_payload.get("provider_version_id")
+        == f"{expected_scope_hash[:16]}-{provider_attempt_id}"
     )
     api_scope_exact = bool(
         len(requested_apis) == len(expected_apis)
@@ -6728,6 +7104,7 @@ def _full_interface_provider_production_execution_gate(
         and _production_universe_context_ready(payload_universe_context)
     )
     approval_material = _production_approval_scope_material(
+        producer_head_full=recipe_head_full,
         recipe_scope_hash=requested_scope_hash,
         recipe_version=authoritative_recipe_version,
         selected_apis=requested_apis,
@@ -6746,6 +7123,31 @@ def _full_interface_provider_production_execution_gate(
         == computed_approval_scope_hash
         and receipt.get("approval_scope_material") == approval_material
     )
+    trade_cal_repeat_acknowledged = bool(
+        _payload_field(
+            payload,
+            "acknowledge_trade_cal_repeat_for_full_interface_same_run",
+            False,
+        )
+        is True
+        and receipt.get("trade_cal_repeat_acknowledged") is True
+        and target_payload.get(
+            "acknowledge_trade_cal_repeat_for_full_interface_same_run"
+        )
+        is True
+    )
+    rate_limit_exact = bool(
+        receipt.get("provider_rate_limit")
+        == latest_recipe.get("provider_rate_limit")
+        == _payload_field(payload, "provider_rate_limit", {})
+        == approval_material.get("provider_rate_limit")
+    )
+    trade_cal_policy_exact = bool(
+        receipt.get("trade_cal_evidence_policy")
+        == latest_recipe.get("trade_cal_evidence_policy")
+        == _payload_field(payload, "trade_cal_evidence_policy", "")
+        == FULL_INTERFACE_TRADE_CAL_EVIDENCE_POLICY
+    )
 
     blockers: list[str] = []
     if not receipt:
@@ -6760,6 +7162,8 @@ def _full_interface_provider_production_execution_gate(
         blockers.append("scope_hash_not_bound_to_execution_request")
     if not execution_request_still_current:
         blockers.append("execution_request_not_bound_to_authoritative_recipe")
+    if not producer_head_matches:
+        blockers.append("producer_head_not_bound_to_current_runtime")
     if not api_scope_exact:
         blockers.append("full_interface_api_scope_not_exact_or_not_receipt_bound")
     if not target_scope_exact:
@@ -6768,6 +7172,37 @@ def _full_interface_provider_production_execution_gate(
         blockers.append("provider_context_not_bound_to_execution_request")
     if not approval_scope_matches:
         blockers.append("approval_scope_hash_or_material_mismatch")
+    if not trade_cal_repeat_acknowledged:
+        blockers.append("explicit_trade_cal_repeat_acknowledgement_missing")
+    if not rate_limit_exact:
+        blockers.append("provider_rate_limit_not_exact_or_not_receipt_bound")
+    if not trade_cal_policy_exact:
+        blockers.append("trade_cal_evidence_policy_not_exact_or_not_receipt_bound")
+    trusted_authorization: dict[str, Any] = {
+        "ready": False,
+        "status": "trusted_provider_execution_authorization_not_required_for_non_production_adapter",
+        "writes_performed": False,
+        "blockers": [],
+    }
+    if require_external_authorization and not blockers:
+        trusted_authorization = _consume_trusted_provider_execution_authorization(
+            payload,
+            producer_head_full=recipe_head_full,
+            execution_request_authorization_id=str(
+                receipt.get("execution_request_authorization_id") or ""
+            ),
+            approval_scope_hash=requested_approval_scope_hash,
+            execution_recipe_scope_hash=requested_scope_hash,
+            selected_apis=requested_apis,
+            requested_targets=requested_targets,
+            max_provider_calls=_safe_int(
+                payload_universe_context.get("max_provider_calls")
+            ),
+            provider_attempt_id=provider_attempt_id,
+            provider_version_id=provider_version_id,
+        )
+        if trusted_authorization.get("ready") is not True:
+            blockers.append("trusted_provider_execution_authorization_missing_or_invalid")
     ready = not blockers
     return {
         "applies": True,
@@ -6796,12 +7231,49 @@ def _full_interface_provider_production_execution_gate(
         "authoritative_recipe_version": authoritative_recipe_version,
         "authoritative_recipe_source_packet_key": authoritative_source_packet_key,
         "execution_request_still_current": execution_request_still_current,
+        "runtime_head_full": runtime_head_full,
+        "producer_head_full": recipe_head_full,
+        "producer_head_matches_runtime": producer_head_matches,
         "api_scope_exact": api_scope_exact,
         "target_scope_exact": target_scope_exact,
         "context_matches_execution_request": context_matches,
         "approval_scope_hash": requested_approval_scope_hash,
         "computed_approval_scope_hash": computed_approval_scope_hash,
         "approval_scope_matches": approval_scope_matches,
+        "trade_cal_repeat_acknowledged": trade_cal_repeat_acknowledged,
+        "provider_rate_limit_exact": rate_limit_exact,
+        "trade_cal_evidence_policy_exact": trade_cal_policy_exact,
+        "trusted_provider_execution_authorization_required": require_external_authorization,
+        "trusted_provider_execution_authorization_ready": (
+            trusted_authorization.get("ready") is True
+        ),
+        "trusted_provider_execution_authorization_status": str(
+            trusted_authorization.get("status") or ""
+        ),
+        "trusted_provider_execution_attestation_id": str(
+            trusted_authorization.get("attestation_id") or ""
+        ),
+        "trusted_provider_execution_authorization_task_id": str(
+            trusted_authorization.get("execution_request_authorization_id") or ""
+        ),
+        "trusted_provider_execution_authorization_nonce_digest": str(
+            trusted_authorization.get("authorization_nonce_digest") or ""
+        ),
+        "trusted_provider_execution_attempt_id": str(
+            trusted_authorization.get("provider_attempt_id") or ""
+        ),
+        "trusted_provider_execution_version_id": str(
+            trusted_authorization.get("provider_version_id") or ""
+        ),
+        "trusted_provider_execution_consumption_packet_key": str(
+            trusted_authorization.get("consumption_packet_key") or ""
+        ),
+        "trusted_provider_execution_consumption_digest": str(
+            trusted_authorization.get("consumption_digest") or ""
+        ),
+        "trusted_provider_execution_authorization_writes_performed": (
+            trusted_authorization.get("writes_performed") is True
+        ),
         "requested_apis": requested_apis,
         "expected_apis": expected_apis,
         "requested_targets": requested_targets,
@@ -6819,6 +7291,7 @@ def _full_interface_provider_production_gate_ledger_row(
     return {
         "api": "local_full_interface_provider_production_execution_gate",
         "scope_hash": str(scope.get("scope_hash") or ""),
+        "producer_head_full": str(gate.get("producer_head_full") or ""),
         "scope_hash_short": str(scope.get("scope_hash_short") or ""),
         "payload_hash": str(scope.get("payload_hash") or ""),
         "endpoint": FULL_INTERFACE_PROVIDER_PRODUCTION_ROUTE,
@@ -7153,6 +7626,7 @@ def _paginated_provider_rows(
     call_budget: dict[str, Any],
     checkpoint_root: Path,
     runtime_event_recorder: Any,
+    expected_producer_head_full: str = "",
 ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
     """Fetch one endpoint; checkpoints are diagnostics, never transport proof."""
 
@@ -7175,6 +7649,12 @@ def _paginated_provider_rows(
         page: dict[str, Any] | None = None
         if page is None:
             for _attempt in range(3):
+                if (
+                    expected_producer_head_full
+                    and _current_head_full() != expected_producer_head_full
+                ):
+                    error = "provider_runtime_head_changed_or_dirty"
+                    break
                 if call_budget.get("used", 0) + call_budget.get("historical", 0) >= call_budget.get(
                     "limit", tushare_production_store.MAX_PROVIDER_CALLS
                 ):
@@ -7282,6 +7762,7 @@ def _full_market_dataset_batch(
     call_budget: dict[str, Any],
     checkpoint_root: Path,
     runtime_event_recorder: Any,
+    expected_producer_head_full: str = "",
 ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
     return _paginated_provider_rows(
         adapter_module,
@@ -7291,6 +7772,7 @@ def _full_market_dataset_batch(
         call_budget=call_budget,
         checkpoint_root=checkpoint_root,
         runtime_event_recorder=runtime_event_recorder,
+        expected_producer_head_full=expected_producer_head_full,
     )
 
 
@@ -7303,6 +7785,7 @@ def _full_market_dataset_trade_date_batches(
     call_budget: dict[str, Any],
     checkpoint_root: Path,
     runtime_event_recorder: Any,
+    expected_producer_head_full: str = "",
 ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
     """Fetch a full-market endpoint one validated trade date at a time.
 
@@ -7322,6 +7805,7 @@ def _full_market_dataset_trade_date_batches(
             call_budget=call_budget,
             checkpoint_root=checkpoint_root,
             runtime_event_recorder=runtime_event_recorder,
+            expected_producer_head_full=expected_producer_head_full,
         )
         ledgers.append(batch_ledger)
         if batch_ledger.get("call_status") != "success":
@@ -7421,6 +7905,9 @@ def _run_full_market_universe_acceptance(
             call_budget=call_budget,
             checkpoint_root=checkpoint_root,
             runtime_event_recorder=record_runtime_event,
+            expected_producer_head_full=str(
+                execution_gate.get("producer_head_full") or ""
+            ),
         )
         stock_rows.extend(exchange_rows)
         stock_pages.append(page_ledger)
@@ -7455,6 +7942,9 @@ def _run_full_market_universe_acceptance(
         call_budget=call_budget,
         checkpoint_root=checkpoint_root,
         runtime_event_recorder=record_runtime_event,
+        expected_producer_head_full=str(
+            execution_gate.get("producer_head_full") or ""
+        ),
     )
     ledger.append(trade_page_ledger)
     normalized_stock = [
@@ -7508,6 +7998,9 @@ def _run_full_market_universe_acceptance(
                     call_budget=call_budget,
                     checkpoint_root=checkpoint_root,
                     runtime_event_recorder=record_runtime_event,
+                    expected_producer_head_full=str(
+                        execution_gate.get("producer_head_full") or ""
+                    ),
                 )
             else:
                 api_start = selected_dates[-5] if api == "moneyflow" else selected_dates[0]
@@ -7520,6 +8013,9 @@ def _run_full_market_universe_acceptance(
                     call_budget=call_budget,
                     checkpoint_root=checkpoint_root,
                     runtime_event_recorder=record_runtime_event,
+                    expected_producer_head_full=str(
+                        execution_gate.get("producer_head_full") or ""
+                    ),
                 )
             datasets[api] = rows
             ledger.append(batch_ledger)
@@ -7534,6 +8030,7 @@ def _run_full_market_universe_acceptance(
                 "scope_hash": str(scope.get("scope_hash") or ""),
                 "approval_scope_hash": execution_gate.get("approval_scope_hash") or "",
                 "execution_recipe_scope_hash": execution_gate.get("authoritative_recipe_scope_hash") or "",
+                "producer_head_full": execution_gate.get("producer_head_full") or "",
                 "as_of": context.get("as_of_date") or "",
             }
         )
@@ -7608,6 +8105,7 @@ def _run_full_market_universe_acceptance(
         "schema_version": FULL_MARKET_UNIVERSE_SCHEMA_VERSION,
         "status": "full_market_universe_production_complete" if complete else "full_market_universe_production_blocked",
         "scope_hash": str(scope.get("scope_hash") or ""),
+        "producer_head_full": str(execution_gate.get("producer_head_full") or ""),
         "approval_scope_hash": execution_gate.get("approval_scope_hash") or "",
         "execution_recipe_scope_hash": execution_gate.get("authoritative_recipe_scope_hash") or "",
         "validated_trade_date": selected_dates[-1] if selected_dates else "",
@@ -7898,11 +8396,23 @@ def run_tushare_refresh_task(
     production_acceptance: bool = False,
 ) -> dict[str, Any]:
     public_production_executor = bool(production_acceptance and adapter is None)
+    producer_head_full = _current_head_full()
     selected_apis = _selected_apis(payload, default_apis)
     provider_call_scope = _provider_call_scope(payload, selected_apis)
     official_runtime: dict[str, Any] | None = None
     if public_production_executor:
-        attempt_id = uuid.uuid4().hex
+        request_packet = _latest_target_sample_execution_request_packet()
+        request_receipt = (
+            request_packet.get("receipt")
+            if isinstance(request_packet.get("receipt"), Mapping)
+            else {}
+        )
+        attempt_id = str(request_receipt.get("provider_attempt_id") or "")
+        if not (
+            len(attempt_id) == 32
+            and all(ch in "0123456789abcdef" for ch in attempt_id)
+        ):
+            attempt_id = "invalid-unbound-attempt"
         production_root = storage_service.PARQUET_ROOT / "full_market_universe"
         attempt_root = (
             production_root
@@ -7963,6 +8473,8 @@ def run_tushare_refresh_task(
             as_of: str,
             call_ledger: list[Mapping[str, Any]],
         ) -> dict[str, Any]:
+            final_runtime_head_full = _current_head_full()
+            final_today = _dt.date.today().strftime("%Y%m%d")
             receipt_observed_at = (
                 _dt.datetime.now(_dt.timezone.utc)
                 .replace(microsecond=0)
@@ -7988,6 +8500,11 @@ def run_tushare_refresh_task(
                 and 0 < actual_calls <= tushare_production_store.MAX_PROVIDER_CALLS
                 and len(approval_scope_hash) == len(execution_recipe_scope_hash) == 64
                 and str(as_of or "").replace("-", "") == validation.get("end_date")
+                and str(as_of or "").replace("-", "") == final_today
+                and producer_head_full
+                == execution_gate.get("producer_head_full")
+                == execution_gate.get("runtime_head_full")
+                == final_runtime_head_full
             ):
                 return {
                     "promotion_verified": False,
@@ -8002,6 +8519,16 @@ def run_tushare_refresh_task(
                 .isoformat()
                 .replace("+00:00", "Z")
             )
+            version_id = str(
+                execution_gate.get("trusted_provider_execution_version_id") or ""
+            )
+            if version_id != f"{execution_recipe_scope_hash[:16]}-{attempt_id}":
+                return {
+                    "promotion_verified": False,
+                    "status": "provider_authorization_version_binding_invalid",
+                    "blockers": ["provider_authorization_version_binding_invalid"],
+                    "artifacts": {},
+                }
             receipt = {
                 "schema_version": tushare_production_store.EXECUTION_EVENT_SCHEMA,
                 "source": "public_non_injected_tushare_executor",
@@ -8010,6 +8537,7 @@ def run_tushare_refresh_task(
                 "run_id": scope_hash,
                 "attempt_id": attempt_id,
                 "scope_hash": scope_hash,
+                "producer_head_full": producer_head_full,
                 "approval_scope_hash": approval_scope_hash,
                 "execution_recipe_scope_hash": execution_recipe_scope_hash,
                 "required_interface_apis": list(tushare_production_store.EXACT_REFRESH_APIS),
@@ -8023,6 +8551,62 @@ def run_tushare_refresh_task(
                 "required_support_apis": list(tushare_production_store.EXACT_SUPPORT_APIS),
                 "required_support_api_digest": _canonical_sha256(
                     list(tushare_production_store.EXACT_SUPPORT_APIS)
+                ),
+                "provider_rate_limit_strategy": (
+                    tushare_production_store.PROVIDER_RATE_LIMIT_STRATEGY
+                ),
+                "provider_max_calls_per_minute": (
+                    tushare_production_store.PROVIDER_MAX_CALLS_PER_MINUTE
+                ),
+                "provider_min_call_interval_ms": (
+                    tushare_production_store.PROVIDER_MIN_CALL_INTERVAL_MS
+                ),
+                "provider_execution_serial": True,
+                "trade_cal_repeat_explicitly_acknowledged": (
+                    execution_gate.get("trade_cal_repeat_acknowledged") is True
+                ),
+                "trade_cal_prior_ltg01_evidence_reused_as_same_run": False,
+                "provider_execution_authorization_attestation_id": str(
+                    execution_gate.get(
+                        "trusted_provider_execution_attestation_id"
+                    )
+                    or ""
+                ),
+                "provider_execution_authorization_task_id": str(
+                    execution_gate.get(
+                        "trusted_provider_execution_authorization_task_id"
+                    )
+                    or ""
+                ),
+                "provider_execution_authorization_nonce_digest": str(
+                    execution_gate.get(
+                        "trusted_provider_execution_authorization_nonce_digest"
+                    )
+                    or ""
+                ),
+                "provider_execution_authorization_external_signature_verified": True,
+                "provider_execution_authorization_production_trusted": True,
+                "provider_execution_authorization_snapshot_rollback_resistant": True,
+                "provider_execution_authorization_attempt_id": str(
+                    execution_gate.get("trusted_provider_execution_attempt_id") or ""
+                ),
+                "provider_execution_authorization_version_id": str(
+                    execution_gate.get("trusted_provider_execution_version_id") or ""
+                ),
+                "provider_execution_authorization_consumption_packet_key": str(
+                    execution_gate.get(
+                        "trusted_provider_execution_consumption_packet_key"
+                    )
+                    or ""
+                ),
+                "provider_execution_authorization_consumption_digest": str(
+                    execution_gate.get(
+                        "trusted_provider_execution_consumption_digest"
+                    )
+                    or ""
+                ),
+                "provider_max_calls": _safe_int(
+                    _production_universe_context(payload).get("max_provider_calls")
                 ),
                 "transport_evidence": [dict(event) for event in runtime_events],
                 "original_actual_function_call_count": actual_calls,
@@ -8048,7 +8632,12 @@ def run_tushare_refresh_task(
                 "does_not_execute_trades": True,
             }
             receipt["execution_event_digest"] = _canonical_sha256(receipt)
-            if not tushare_production_store._receipt_ready(receipt, scope_hash=scope_hash):
+            if not tushare_production_store._receipt_ready(
+                receipt,
+                scope_hash=scope_hash,
+                expected_producer_head_full=producer_head_full,
+                expected_version_id=version_id,
+            ):
                 return {
                     "promotion_verified": False,
                     "status": "official_runtime_receipt_invalid",
@@ -8058,7 +8647,6 @@ def run_tushare_refresh_task(
 
             pointer_path = production_root / "pointer.json"
             pointer_before = pointer_path.read_bytes() if pointer_path.is_file() else None
-            version_id = f"{scope_hash[:16]}-{attempt_id}"
             staging = attempt_root / "staging" / version_id
             version_dir = production_root / "versions" / version_id
             pointer_switched = False
@@ -8097,6 +8685,7 @@ def run_tushare_refresh_task(
                     "dataset_validation": validation["dataset_validation"],
                     "official_run_receipt": receipt,
                     "lineage": {
+                        "producer_head_full": producer_head_full,
                         "approval_scope_hash": approval_scope_hash,
                         "execution_recipe_scope_hash": execution_recipe_scope_hash,
                         "as_of": str(as_of).replace("-", ""),
@@ -8120,10 +8709,15 @@ def run_tushare_refresh_task(
                     version_id,
                     manifest["manifest_digest"],
                     previous_pointer,
+                    producer_head_full=producer_head_full,
                 )
                 _atomic_json_write(pointer_path, pointer)
                 pointer_switched = True
-                disk = tushare_production_store.verify_current_version(production_root)
+                disk = tushare_production_store.verify_current_version(
+                    production_root,
+                    head_mode="current",
+                    runtime_head_full=producer_head_full,
+                )
                 if not disk.get("ready"):
                     raise RuntimeError("production_disk_readback_failed")
 
@@ -8134,6 +8728,7 @@ def run_tushare_refresh_task(
                     "full_interface_provider_production": True,
                     "production_root": str(production_root),
                     "current_version": version_id,
+                    "producer_head_full": producer_head_full,
                     "last_good_version": pointer["last_good_version"],
                     "manifest_digest": manifest["manifest_digest"],
                     "pointer_digest": pointer["pointer_digest"],
@@ -8217,7 +8812,11 @@ def run_tushare_refresh_task(
     if task.get("dedupe_reused_existing"):
         return task
     execution_gate = (
-        _full_interface_provider_production_execution_gate(payload, selected_apis=selected_apis)
+        _full_interface_provider_production_execution_gate(
+            payload,
+            selected_apis=selected_apis,
+            require_external_authorization=public_production_executor,
+        )
         if production_acceptance
         else _trade_cal_provider_execution_gate(payload, selected_apis=selected_apis, adapter=adapter)
     )
@@ -8302,11 +8901,32 @@ def run_tushare_refresh_task(
                 {key: value for key, value in safe_params.items() if value is not None}
             ]
         else:
-            result, safe_params, transport_expected_params = _call_tushare_api(
-                fn=fn,
-                api=api,
-                params=params,
-            )
+            if (
+                public_production_executor
+                and _current_head_full() != producer_head_full
+            ):
+                result = {
+                    "ok": False,
+                    "data": None,
+                    "error": "provider_runtime_head_changed_or_dirty",
+                }
+                safe_params = params
+                transport_expected_params = [
+                    {
+                        key: value
+                        for key, value in safe_params.items()
+                        if value is not None
+                    }
+                ]
+            else:
+                result, safe_params, transport_expected_params = _call_tushare_api(
+                    fn=fn,
+                    api=api,
+                    params=params,
+                    expected_producer_head_full=(
+                        producer_head_full if public_production_executor else ""
+                    ),
+                )
         if isinstance(result, dict):
             result["runtime_transport_evidence"] = _consume_runtime_transport_evidence(
                 adapter_module,
@@ -8683,6 +9303,7 @@ def run_tushare_refresh_task(
         "api_validation_matrix_policy": {
             "scope": "selected APIs use real task call_ledger; unselected APIs are capability matrix only.",
             "selected_apis": list(selected_apis),
+            "producer_head_full": execution_gate.get("producer_head_full") or "",
             "matrix_only_apis": [row["api"] for row in api_validation_rows if row.get("validation_scope") == "capability_matrix_only"],
             "target_readiness_scope": "目标领域 readiness 只汇总本次按钮任务的 call_ledger；matrix_only 不代表真实验证。",
             "acceptance_audit_scope": "api_acceptance_audit 只审计 call_ledger 语义和安全边界，不发起 provider 调用。",

@@ -1,4 +1,12 @@
 import datetime
+from contextlib import contextmanager
+import fcntl
+import json
+import math
+import os
+from pathlib import Path
+import threading
+import time
 import uuid
 
 try:
@@ -29,6 +37,108 @@ _PRO_CLIENT = None
 _INIT_ERROR = None
 _TRANSPORT_RECEIPTS = {}
 TRANSPORT_RECEIPT_VERSION = "tushare_runtime_transport_receipt.v2"
+PROVIDER_RATE_LIMIT_STRATEGY = "cross_process_serial_persistent_rolling_window"
+PROVIDER_MAX_CALLS_PER_MINUTE = 50
+PROVIDER_MIN_CALL_INTERVAL_SECONDS = 0.05
+PROJECT_ROOT = Path(__file__).resolve().parent
+PROVIDER_RUNTIME_ROOT = PROJECT_ROOT / ".stock_ming_3" / "provider_runtime"
+PROVIDER_RATE_LOCK_PATH = PROVIDER_RUNTIME_ROOT / "tushare-rate-window.lock"
+PROVIDER_RATE_STATE_PATH = PROVIDER_RUNTIME_ROOT / "tushare-rate-window.json"
+PROVIDER_EXECUTION_LOCK_PATH = PROVIDER_RUNTIME_ROOT / "tushare-execution.lock"
+_PROVIDER_EXECUTION_LOCK = threading.Lock()
+
+
+def _read_provider_rate_window() -> list[float]:
+    if not PROVIDER_RATE_STATE_PATH.exists():
+        return []
+    if PROVIDER_RATE_STATE_PATH.is_symlink() or not PROVIDER_RATE_STATE_PATH.is_file():
+        raise RuntimeError("provider_rate_state_path_invalid")
+    try:
+        payload = json.loads(PROVIDER_RATE_STATE_PATH.read_text(encoding="utf-8"))
+    except Exception as exc:
+        raise RuntimeError("provider_rate_state_invalid") from exc
+    timestamps = payload.get("timestamps") if isinstance(payload, dict) else None
+    if (
+        not isinstance(timestamps, list)
+        or payload.get("schema_version") != "tushare_provider_rate_window.v1"
+        or any(
+            isinstance(value, bool)
+            or not isinstance(value, (int, float))
+            or not math.isfinite(float(value))
+            or float(value) < 0
+            for value in timestamps
+        )
+    ):
+        raise RuntimeError("provider_rate_state_invalid")
+    normalized = [float(value) for value in timestamps]
+    if normalized != sorted(normalized):
+        raise RuntimeError("provider_rate_state_not_monotonic")
+    return normalized
+
+
+def _write_provider_rate_window(timestamps):
+    PROVIDER_RUNTIME_ROOT.mkdir(parents=True, exist_ok=True)
+    payload = json.dumps(
+        {
+            "schema_version": "tushare_provider_rate_window.v1",
+            "timestamps": [float(value) for value in timestamps],
+        },
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+    temporary = PROVIDER_RATE_STATE_PATH.with_name(
+        f".{PROVIDER_RATE_STATE_PATH.name}.{os.getpid()}.{uuid.uuid4().hex}.tmp"
+    )
+    try:
+        with temporary.open("x", encoding="utf-8") as handle:
+            handle.write(payload)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temporary, PROVIDER_RATE_STATE_PATH)
+        directory_fd = os.open(PROVIDER_RUNTIME_ROOT, os.O_RDONLY)
+        try:
+            os.fsync(directory_fd)
+        finally:
+            os.close(directory_fd)
+    finally:
+        temporary.unlink(missing_ok=True)
+
+
+def _wait_for_provider_rate_slot():
+    """Reserve one cross-process slot in a durable rolling-minute window."""
+
+    PROVIDER_RUNTIME_ROOT.mkdir(parents=True, exist_ok=True)
+    with PROVIDER_RATE_LOCK_PATH.open("a+b") as lock_handle:
+        fcntl.flock(lock_handle.fileno(), fcntl.LOCK_EX)
+        timestamps = _read_provider_rate_window()
+        while True:
+            now = time.time()
+            if timestamps and now + 1.0 < timestamps[-1]:
+                raise RuntimeError("provider_rate_wall_clock_rollback")
+            timestamps = [value for value in timestamps if now - value < 60.0]
+            waits = [0.0]
+            if timestamps:
+                waits.append(
+                    PROVIDER_MIN_CALL_INTERVAL_SECONDS
+                    - (now - timestamps[-1])
+                )
+            if len(timestamps) >= PROVIDER_MAX_CALLS_PER_MINUTE:
+                waits.append(60.0 - (now - timestamps[0]))
+            delay = max(waits)
+            if delay <= 0:
+                timestamps.append(now)
+                _write_provider_rate_window(timestamps)
+                return
+            time.sleep(delay)
+
+
+@contextmanager
+def _cross_process_provider_execution_lock():
+    PROVIDER_RUNTIME_ROOT.mkdir(parents=True, exist_ok=True)
+    with PROVIDER_EXECUTION_LOCK_PATH.open("a+b") as lock_handle:
+        fcntl.flock(lock_handle.fileno(), fcntl.LOCK_EX)
+        yield
 
 
 def _now():
@@ -133,9 +243,12 @@ def _call_pro(api, **params):
     except AttributeError:
         return _result(api, error=f"Tushare pro_api 不支持接口：{api}")
 
-    issued_at_utc = _now_utc()
     try:
-        data = method(**cleaned)
+        with _PROVIDER_EXECUTION_LOCK:
+            with _cross_process_provider_execution_lock():
+                _wait_for_provider_rate_slot()
+                issued_at_utc = _now_utc()
+                data = method(**cleaned)
         if pd is not None and not isinstance(data, pd.DataFrame):
             return _result(api, error=f"{api} 返回类型异常：{type(data).__name__}")
         call_id = uuid.uuid4().hex
