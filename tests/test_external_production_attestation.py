@@ -32,6 +32,7 @@ class ExternalProductionAttestationTests(unittest.TestCase):
         self.lock_path = self.root / "state" / "external-trust.lock"
         self.epoch_path = self.trust_root / "head-key-epoch.json"
         self.anchor_path = self.trust_root / "monotonic-high-water.json"
+        self.key_history_root = self.trust_root / "key-history"
         self.phase_a_digest = "9" * 64
         self.phase_a_task_id = "phase-a-task-1"
         self.private_key = Ed25519PrivateKey.generate()
@@ -43,6 +44,7 @@ class ExternalProductionAttestationTests(unittest.TestCase):
                 TRUST_ANCHOR=self.root,
                 PUBLIC_KEY_PATH=self.trust_root / "ed25519-public.pem",
                 FINGERPRINT_PATH=self.trust_root / "ed25519-public.sha256",
+                KEY_HISTORY_ROOT=self.key_history_root,
                 HEAD_KEY_EPOCH_PATH=self.epoch_path,
                 MONOTONIC_ANCHOR_PATH=self.anchor_path,
                 IMPORT_LOCK_PATH=self.lock_path,
@@ -76,6 +78,48 @@ class ExternalProductionAttestationTests(unittest.TestCase):
         fingerprint_path.chmod(0o444)
         self.trust_root.chmod(0o555)
         return fingerprint
+
+    def _replace_public_key(self, private_key: Ed25519PrivateKey) -> str:
+        public_key = private_key.public_key()
+        pem = public_key.public_bytes(
+            encoding=serialization.Encoding.PEM,
+            format=serialization.PublicFormat.SubjectPublicKeyInfo,
+        )
+        der = public_key.public_bytes(
+            encoding=serialization.Encoding.DER,
+            format=serialization.PublicFormat.SubjectPublicKeyInfo,
+        )
+        fingerprint = hashlib.sha256(der).hexdigest()
+        key_path = self.trust_root / "ed25519-public.pem"
+        fingerprint_path = self.trust_root / "ed25519-public.sha256"
+        self.trust_root.chmod(0o755)
+        key_path.unlink()
+        fingerprint_path.unlink()
+        key_path.write_bytes(pem)
+        fingerprint_path.write_text(fingerprint + "\n", encoding="ascii")
+        key_path.chmod(0o444)
+        fingerprint_path.chmod(0o444)
+        self.trust_root.chmod(0o555)
+        return fingerprint
+
+    def _install_history_key(
+        self,
+        *,
+        epoch: int,
+        private_key: Ed25519PrivateKey,
+        fingerprint: str,
+    ) -> None:
+        pem = private_key.public_key().public_bytes(
+            encoding=serialization.Encoding.PEM,
+            format=serialization.PublicFormat.SubjectPublicKeyInfo,
+        )
+        self.trust_root.chmod(0o755)
+        self.key_history_root.mkdir(mode=0o755, exist_ok=True)
+        path = self.key_history_root / f"{epoch:08d}-{fingerprint}.pem"
+        path.write_bytes(pem)
+        path.chmod(0o444)
+        self.key_history_root.chmod(0o555)
+        self.trust_root.chmod(0o555)
 
     def _install_phase_a(self) -> dict:
         packet = {
@@ -122,6 +166,7 @@ class ExternalProductionAttestationTests(unittest.TestCase):
         proof_key: Ed25519PrivateKey | None = None,
         fingerprint: str | None = None,
         epoch_head: str | None = None,
+        previous_epoch_digest: str | None = None,
     ) -> tuple[dict, dict]:
         signing_key = proof_key or self.private_key
         resolved_fingerprint = fingerprint or self.fingerprint
@@ -151,7 +196,11 @@ class ExternalProductionAttestationTests(unittest.TestCase):
                 "valid_from": (now - timedelta(minutes=1)).isoformat(),
                 "expires_at": (now + timedelta(days=1)).isoformat(),
                 "nonce_digest": hashlib.sha256(f"epoch:{epoch_number}".encode()).hexdigest(),
-                "previous_epoch_digest": "0" * 64 if epoch_number == 1 else "a" * 64,
+                "previous_epoch_digest": (
+                    "0" * 64
+                    if epoch_number == 1
+                    else previous_epoch_digest or "a" * 64
+                ),
             }
             epoch["signature_base64"] = base64.b64encode(
                 signing_key.sign(external._canonical_bytes(epoch))
@@ -249,6 +298,7 @@ class ExternalProductionAttestationTests(unittest.TestCase):
         nonce_seed: str = "",
         head_full: str | None = None,
         private_key: Ed25519PrivateKey | None = None,
+        fingerprint: str | None = None,
     ) -> dict:
         now = datetime.now(timezone.utc)
         resolved_claims = claims or self._claims(kind, subject)
@@ -279,7 +329,7 @@ class ExternalProductionAttestationTests(unittest.TestCase):
         return {
             "schema_version": external.ENVELOPE_SCHEMA_VERSION,
             "algorithm": "Ed25519",
-            "key_fingerprint_sha256": self.fingerprint,
+            "key_fingerprint_sha256": fingerprint or self.fingerprint,
             "statement": statement,
             "signature_base64": base64.b64encode(signature).decode("ascii"),
         }
@@ -571,6 +621,48 @@ class ExternalProductionAttestationTests(unittest.TestCase):
             )
         )
 
+    def test_storage_pair_post_commit_exception_reconciles_production_truth(self) -> None:
+        self._install_phase_a()
+        previous = ""
+        datasets = list(storage_service.CANONICAL_PARQUET_DATASETS)
+        original_promote = SQLiteMetaStore.promote_packet_pair_atomic
+        result: dict = {}
+        for counter, dataset in enumerate(datasets, start=1):
+            signed = self._envelope(
+                "storage_ttl_resolution",
+                dataset,
+                counter,
+                previous,
+            )
+            self._install_external_proof(signed)
+            if counter == len(datasets):
+                def commit_then_raise(store: SQLiteMetaStore, *args: object) -> dict:
+                    original_promote(store, *args)
+                    raise RuntimeError("injected_post_commit_pair_failure")
+
+                with patch.object(
+                    SQLiteMetaStore,
+                    "promote_packet_pair_atomic",
+                    new=commit_then_raise,
+                ):
+                    result = storage_service.import_storage_cache_ttl_external_attestation(
+                        {"signed_envelope": signed}
+                    )
+            else:
+                result = storage_service.import_storage_cache_ttl_external_attestation(
+                    {"signed_envelope": signed}
+                )
+            previous = result["attestation_id"]
+
+        self.assertTrue(result["ready"], result)
+        self.assertTrue(result["production_trusted"])
+        self.assertTrue(result["production_storage_complete"])
+        self.assertTrue(result["writes_performed"])
+        self.assertTrue(result["post_commit_exception_reconciled"])
+        validation = storage_service.storage_cache_ttl_refresh_evidence()
+        self.assertTrue(validation["production_storage_complete"])
+        self.assertTrue(validation["production_trusted"])
+
     def test_worker_factor_and_radar_lineages_stay_local_integrity_only(self) -> None:
         previous = ""
         rows = (
@@ -784,6 +876,56 @@ class ExternalProductionAttestationTests(unittest.TestCase):
         registry = SQLiteMetaStore(self.db_path).read_packet(external.REGISTRY_PACKET_KEY)
         self.assertEqual(registry["last_attestation_id"], first["attestation_id"])
         self.assertEqual(registry["last_monotonic_counter"], 1)
+
+    def test_trusted_key_history_allows_exact_epoch_key_rotation(self) -> None:
+        self._install_phase_a()
+        first_envelope = self._envelope("storage_ttl_resolution", "daily", 1, "")
+        self._install_external_proof(first_envelope)
+        first = storage_service.import_storage_cache_ttl_external_attestation(
+            {"signed_envelope": first_envelope}
+        )
+        self.assertTrue(first["consumer_readback_verified"])
+        first_registry = SQLiteMetaStore(self.db_path).read_packet(external.REGISTRY_PACKET_KEY)
+        first_epoch_digest = first_registry["events"][0]["head_key_epoch_digest"]
+
+        old_key = self.private_key
+        old_fingerprint = self.fingerprint
+        rotated_key = Ed25519PrivateKey.generate()
+        rotated_fingerprint = self._replace_public_key(rotated_key)
+        missing_history = external.validate_registry()
+        self.assertFalse(missing_history["local_integrity_ready"])
+        self._install_history_key(
+            epoch=1,
+            private_key=old_key,
+            fingerprint=old_fingerprint,
+        )
+        second_envelope = self._envelope(
+            "storage_ttl_resolution",
+            "daily_basic",
+            2,
+            first["attestation_id"],
+            private_key=rotated_key,
+            fingerprint=rotated_fingerprint,
+        )
+        self._install_external_proof(
+            second_envelope,
+            epoch_number=2,
+            proof_key=rotated_key,
+            fingerprint=rotated_fingerprint,
+            previous_epoch_digest=first_epoch_digest,
+        )
+        second = storage_service.import_storage_cache_ttl_external_attestation(
+            {"signed_envelope": second_envelope}
+        )
+        self.assertTrue(second["consumer_readback_verified"], second)
+        registry = external.validate_registry()
+        self.assertTrue(registry["local_integrity_ready"])
+        self.assertEqual(registry["event_count"], 2)
+        self.assertEqual(registry["events"][0]["key_fingerprint_sha256"], old_fingerprint)
+        self.assertEqual(
+            registry["events"][1]["key_fingerprint_sha256"],
+            rotated_fingerprint,
+        )
 
     def test_registry_atomic_write_failure_leaves_registry_consumer_and_pointer_unchanged(self) -> None:
         self._install_phase_a()

@@ -1117,6 +1117,7 @@ def import_storage_cache_ttl_external_attestation(payload: Any) -> dict[str, Any
                 ),
                 "pointers_written": False,
             }
+        registry_before, _ = external_production_attestation_service._read_registry_no_init()
         consumer, consumer_read_status = _read_storage_ttl_production_consumer()
         if consumer_read_status == "packet_present" and consumer.get("schema_version") != STORAGE_TTL_PRODUCTION_CONSUMER_SCHEMA_VERSION:
             return {
@@ -1189,6 +1190,7 @@ def import_storage_cache_ttl_external_attestation(payload: Any) -> dict[str, Any
             "does_not_modify_strategy_action": True,
             "contains_secret": False,
         }
+        write_exception_reconciled = False
         try:
             SQLiteMetaStore(SQLITE_META_PATH).promote_packet_pair_atomic(
                 external_production_attestation_service.REGISTRY_PACKET_KEY,
@@ -1197,21 +1199,39 @@ def import_storage_cache_ttl_external_attestation(payload: Any) -> dict[str, Any
                 consumer_packet,
             )
         except Exception:
-            return {
-                **prepared,
-                "ready": False,
-                "status": "storage_ttl_registry_consumer_atomic_write_failed",
-                "storage_packet_written": False,
-                "consumer_state_unchanged": True,
-                "production_ttl_evidence_ready": False,
-                "production_storage_complete": False,
-                "production_trusted": False,
-                "snapshot_rollback_resistant": False,
-                "production_blockers": list(
-                    external_production_attestation_service.PRODUCTION_TRUST_BLOCKERS
-                ),
-                "pointers_written": False,
-            }
+            registry_after, registry_after_status = (
+                external_production_attestation_service._read_registry_no_init()
+            )
+            consumer_after, consumer_after_status = _read_storage_ttl_production_consumer()
+            pair_exact = bool(
+                registry_after_status == "packet_present"
+                and consumer_after_status == "packet_present"
+                and registry_after == dict(registry_packet)
+                and consumer_after == consumer_packet
+            )
+            if pair_exact:
+                write_exception_reconciled = True
+            else:
+                registry_changed = registry_after != registry_before
+                consumer_changed = consumer_after != consumer
+                return {
+                    **prepared,
+                    "ready": False,
+                    "status": "storage_ttl_registry_consumer_atomic_write_failed",
+                    "storage_packet_written": consumer_changed,
+                    "consumer_state_unchanged": not consumer_changed,
+                    "registry_state_unchanged": not registry_changed,
+                    "production_ttl_evidence_ready": False,
+                    "production_storage_complete": False,
+                    "production_trusted": False,
+                    "snapshot_rollback_resistant": False,
+                    "production_blockers": [
+                        "storage_ttl_registry_consumer_partial_or_mismatched_write"
+                    ],
+                    "post_commit_exception_reconciled": False,
+                    "pointers_written": False,
+                    "writes_performed": registry_changed or consumer_changed,
+                }
         readback = _validate_storage_ttl_production_consumer()
         expected_readback = complete
         readback_ready = bool(
@@ -1239,6 +1259,7 @@ def import_storage_cache_ttl_external_attestation(payload: Any) -> dict[str, Any
             else ["storage_ttl_six_dataset_consumer_incomplete"],
             "pointers_written": False,
             "writes_performed": True,
+            "post_commit_exception_reconciled": write_exception_reconciled,
         }
 
 

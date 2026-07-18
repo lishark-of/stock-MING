@@ -37,6 +37,7 @@ TRUST_ROOT = Path("/Library/Application Support/stock-MING/production-trust")
 TRUST_ANCHOR = Path("/Library/Application Support")
 PUBLIC_KEY_PATH = TRUST_ROOT / "ed25519-public.pem"
 FINGERPRINT_PATH = TRUST_ROOT / "ed25519-public.sha256"
+KEY_HISTORY_ROOT = TRUST_ROOT / "key-history"
 HEAD_KEY_EPOCH_PATH = TRUST_ROOT / "head-key-epoch.json"
 MONOTONIC_ANCHOR_PATH = TRUST_ROOT / "monotonic-high-water.json"
 IMPORT_LOCK_PATH = PROJECT_ROOT / ".stock_ming_3" / "external_trust" / "import.lock"
@@ -363,6 +364,59 @@ def _load_trusted_public_key() -> tuple[Ed25519PublicKey | None, dict[str, Any]]
     }
 
 
+def _load_trusted_event_public_key(
+    *,
+    epoch: Any,
+    fingerprint: Any,
+) -> tuple[Ed25519PublicKey | None, dict[str, Any]]:
+    """Load the current key or an externally retained historical public key."""
+
+    fingerprint_text = str(fingerprint or "").lower()
+    if type(epoch) is not int or epoch < 1 or not _HEX_64.fullmatch(fingerprint_text):
+        return None, {"status": "trusted_key_history_binding_invalid"}
+    current_key, current_trust = _load_trusted_public_key()
+    if current_key is None:
+        return None, current_trust
+    if current_trust.get("key_fingerprint_sha256") == fingerprint_text:
+        return current_key, current_trust
+    history_ready, history_status = _trusted_path_status(KEY_HISTORY_ROOT, directory=True)
+    key_path = KEY_HISTORY_ROOT / f"{epoch:08d}-{fingerprint_text}.pem"
+    key_ready, key_status = _trusted_path_status(key_path, directory=False)
+    if not history_ready or not key_ready:
+        return None, {
+            "status": "trusted_key_history_material_unavailable_or_untrusted",
+            "key_history_status": history_status,
+            "historical_public_key_status": key_status,
+        }
+    try:
+        key_bytes = key_path.read_bytes()
+    except Exception:
+        return None, {"status": "trusted_key_history_material_read_failed"}
+    if len(key_bytes) > 16_384 or b"PRIVATE KEY" in key_bytes:
+        return None, {"status": "trusted_key_history_material_shape_invalid"}
+    try:
+        key = serialization.load_pem_public_key(key_bytes)
+    except Exception:
+        return None, {"status": "trusted_key_history_public_key_parse_failed"}
+    if not isinstance(key, Ed25519PublicKey):
+        return None, {"status": "trusted_key_history_public_key_algorithm_invalid"}
+    actual_fingerprint = _sha256_bytes(
+        key.public_bytes(
+            encoding=serialization.Encoding.DER,
+            format=serialization.PublicFormat.SubjectPublicKeyInfo,
+        )
+    )
+    if not bytes_eq(actual_fingerprint.encode("ascii"), fingerprint_text.encode("ascii")):
+        return None, {"status": "trusted_key_history_public_key_fingerprint_mismatch"}
+    return key, {
+        "status": "trusted_historical_public_key_verified",
+        "key_fingerprint_sha256": actual_fingerprint,
+        "private_key_generated": False,
+        "private_key_loaded": False,
+        "contains_secret": False,
+    }
+
+
 def _parse_utc(value: Any) -> datetime | None:
     text = str(value or "")
     try:
@@ -482,6 +536,8 @@ def _verify_head_key_epoch(
         "status": "trusted_head_key_epoch_verified",
         "epoch": epoch_number,
         "epoch_digest": epoch_digest,
+        "previous_epoch_digest": previous_epoch_digest,
+        "document": dict(epoch),
         "valid_from": epoch["valid_from"],
         "expires_at": epoch["expires_at"],
         "nonce_digest": epoch["nonce_digest"],
@@ -647,6 +703,8 @@ def _verify_envelope(
     enforce_freshness: bool,
     enforce_current_head: bool = True,
     expected_kind: str | None = None,
+    verification_key: Ed25519PublicKey | None = None,
+    verification_trust: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     if not isinstance(envelope, Mapping) or set(envelope) != _ENVELOPE_KEYS:
         return {"ready": False, "status": "signed_envelope_shape_invalid"}
@@ -714,7 +772,12 @@ def _verify_envelope(
         return {"ready": False, "status": "signed_statement_monotonic_chain_invalid"}
     if any(row.get("nonce_digest") == nonce_digest for row in prior_events):
         return {"ready": False, "status": "signed_statement_nonce_replayed"}
-    key, trust = _load_trusted_public_key()
+    if verification_key is None and verification_trust is None:
+        key, trust = _load_trusted_public_key()
+    elif verification_key is not None and verification_trust is not None:
+        key, trust = verification_key, dict(verification_trust)
+    else:
+        return {"ready": False, "status": "signed_envelope_verification_key_invalid"}
     if key is None:
         return {**trust, "ready": False}
     if envelope.get("key_fingerprint_sha256") != trust.get("key_fingerprint_sha256"):
@@ -768,6 +831,65 @@ def _verify_envelope(
         "contains_secret": False,
         "does_not_execute_trades": True,
     }
+
+
+def _verify_stored_epoch_binding(
+    event: Mapping[str, Any],
+    *,
+    key: Ed25519PublicKey,
+    prior_event: Mapping[str, Any] | None,
+) -> bool:
+    document = event.get("head_key_epoch_document")
+    if not isinstance(document, Mapping) or set(document) != _HEAD_KEY_EPOCH_KEYS:
+        return False
+    epoch_number = document.get("epoch")
+    epoch_digest = _sha256(_signed_document_material(document))
+    previous_epoch_digest = str(document.get("previous_epoch_digest") or "").lower()
+    issued_at = _parse_utc(event.get("issued_at"))
+    valid_from = _parse_utc(document.get("valid_from"))
+    expires_at = _parse_utc(document.get("expires_at"))
+    fingerprint = str(event.get("key_fingerprint_sha256") or "").lower()
+    base_ready = bool(
+        document.get("schema_version") == HEAD_KEY_EPOCH_SCHEMA_VERSION
+        and document.get("algorithm") == "Ed25519"
+        and type(epoch_number) is int
+        and epoch_number >= 1
+        and document.get("head_full") == event.get("head_full")
+        and document.get("key_fingerprint_sha256") == fingerprint
+        and event.get("head_key_epoch") == epoch_number
+        and event.get("head_key_epoch_digest") == epoch_digest
+        and event.get("head_key_previous_epoch_digest") == previous_epoch_digest
+        and _digest_ready(document.get("nonce_digest"))
+        and valid_from is not None
+        and expires_at is not None
+        and issued_at is not None
+        and valid_from <= issued_at <= expires_at
+        and valid_from < expires_at
+        and (expires_at - valid_from).total_seconds() <= 31 * 24 * 60 * 60
+        and _verify_document_signature(key, document)
+    )
+    if not base_ready:
+        return False
+    if prior_event is None:
+        return epoch_number == 1 and previous_epoch_digest == "0" * 64
+    prior_epoch = prior_event.get("head_key_epoch")
+    prior_epoch_digest = str(prior_event.get("head_key_epoch_digest") or "").lower()
+    prior_fingerprint = str(prior_event.get("key_fingerprint_sha256") or "").lower()
+    return bool(
+        type(prior_epoch) is int
+        and _digest_ready(prior_epoch_digest)
+        and (
+            (
+                epoch_number == prior_epoch
+                and epoch_digest == prior_epoch_digest
+                and fingerprint == prior_fingerprint
+            )
+            or (
+                epoch_number == prior_epoch + 1
+                and previous_epoch_digest == prior_epoch_digest
+            )
+        )
+    )
 
 
 def _trusted_registry_packet(
@@ -917,6 +1039,8 @@ def prepare_external_trusted_attestation(
         {
             "head_key_epoch": epoch["epoch"],
             "head_key_epoch_digest": epoch["epoch_digest"],
+            "head_key_previous_epoch_digest": epoch["previous_epoch_digest"],
+            "head_key_epoch_document": dict(epoch["document"]),
             "monotonic_anchor_digest": anchor["anchor_digest"],
             "external_trust_verified": True,
             "production_trusted": True,
@@ -1002,6 +1126,7 @@ def validate_trusted_registry() -> dict[str, Any]:
 def validate_registry() -> dict[str, Any]:
     source, read_status = _read_registry_no_init()
     events = source.get("events") if isinstance(source.get("events"), list) else []
+    production_registry = source.get("production_trusted") is True
     validated: list[dict[str, Any]] = []
     for event in events:
         if not isinstance(event, Mapping) or not isinstance(event.get("signed_envelope"), Mapping):
@@ -1017,13 +1142,38 @@ def validate_registry() -> dict[str, Any]:
                 "contains_secret": False,
                 "does_not_execute_trades": True,
             }
+        verification_key: Ed25519PublicKey | None = None
+        verification_trust: Mapping[str, Any] | None = None
+        epoch_binding_ready = True
+        if production_registry:
+            verification_key, verification_trust = _load_trusted_event_public_key(
+                epoch=event.get("head_key_epoch"),
+                fingerprint=event.get("key_fingerprint_sha256"),
+            )
+            epoch_binding_ready = bool(
+                verification_key is not None
+                and _verify_stored_epoch_binding(
+                    event,
+                    key=verification_key,
+                    prior_event=validated[-1] if validated else None,
+                )
+                and event.get("external_trust_verified") is True
+                and event.get("production_trusted") is True
+                and event.get("snapshot_rollback_resistant") is True
+            )
         result = _verify_envelope(
             event["signed_envelope"],
             prior_events=validated,
             enforce_freshness=False,
             enforce_current_head=False,
+            verification_key=verification_key,
+            verification_trust=verification_trust,
         )
-        if not result.get("ready") or result.get("attestation_id") != event.get("attestation_id"):
+        if (
+            not result.get("ready")
+            or result.get("attestation_id") != event.get("attestation_id")
+            or not epoch_binding_ready
+        ):
             return {
                 **_local_only_trust_state(),
                 "status": "external_attestation_registry_chain_invalid",
@@ -1036,6 +1186,22 @@ def validate_registry() -> dict[str, Any]:
                 "contains_secret": False,
                 "does_not_execute_trades": True,
             }
+        if production_registry:
+            result.update(
+                {
+                    "head_key_epoch": event["head_key_epoch"],
+                    "head_key_epoch_digest": event["head_key_epoch_digest"],
+                    "head_key_previous_epoch_digest": event[
+                        "head_key_previous_epoch_digest"
+                    ],
+                    "head_key_epoch_document": dict(event["head_key_epoch_document"]),
+                    "monotonic_anchor_digest": event["monotonic_anchor_digest"],
+                    "external_trust_verified": True,
+                    "production_trusted": True,
+                    "snapshot_rollback_resistant": True,
+                    "blockers": [],
+                }
+            )
         validated.append(result)
     local_integrity_ready = bool(
         source.get("schema_version") == REGISTRY_SCHEMA_VERSION
