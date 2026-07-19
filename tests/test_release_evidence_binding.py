@@ -8,9 +8,9 @@ from pathlib import Path
 from unittest.mock import patch
 
 from scripts import record_release_gate_review_receipt
-from scripts import record_remote_ci_review_receipt
 from scripts import record_secret_artifact_allowlist_review_receipt
 from server.services import audit_service
+from tests.release_artifact_fixture import build_verified_remote_ci_fixture
 
 
 HEAD_FULL = "d" * 40
@@ -26,30 +26,12 @@ def _current_head() -> dict[str, object]:
     }
 
 
-def _remote_receipt() -> dict[str, object]:
-    args = argparse.Namespace(
-        branch="main",
-        head=HEAD_FULL[:8],
+def _remote_fixture(directory: str) -> dict[str, object]:
+    return build_verified_remote_ci_fixture(
+        Path(directory),
         head_full=HEAD_FULL,
         run_id=RUN_ID,
-        run_url=f"https://github.com/lishark-of/stock-MING/actions/runs/{RUN_ID}",
-        workflow_name=record_remote_ci_review_receipt.EXPECTED_WORKFLOW_NAME,
-        event="push",
-        actions_status="completed",
-        actions_conclusion="success",
-        job_name="push-gate",
-        job_conclusion="success",
-        artifact_name=f"command-center-3-push-gate-evidence-{RUN_ID}",
-        artifact_digest=ARTIFACT_DIGEST,
-        artifact_digest_unavailable_public_job_page=False,
-        artifact_download_status="",
-        safe_failure_log_excerpt="",
-        no_matching_run_found=False,
-        lookup_source="manual_actions_page_or_commit_status_review",
-        reviewed_at_utc="2026-07-18T00:00:00Z",
-        review_authorized=True,
     )
-    return record_remote_ci_review_receipt.build_receipt(args)
 
 
 def _allowlist_receipt() -> dict[str, object]:
@@ -101,11 +83,22 @@ class ReleaseEvidenceBindingTests(unittest.TestCase):
         )
         for changes in attacks:
             with self.subTest(changes=changes), tempfile.TemporaryDirectory() as directory:
-                receipt = _remote_receipt()
+                fixture = _remote_fixture(directory)
+                receipt = dict(fixture["remote_receipt"])
                 receipt.update(changes)
                 path = self._write(directory, "remote.json", receipt)
                 with (
                     patch.object(audit_service, "REMOTE_CI_REVIEW_RECEIPT_PATH", path),
+                    patch.object(
+                        audit_service,
+                        "REMOTE_PUSH_GATE_ARTIFACT_IMPORT_RECEIPT_PATH",
+                        fixture["import_receipt_path"],
+                    ),
+                    patch.object(
+                        audit_service,
+                        "LOCAL_PUSH_GATE_RUN_RECEIPT_PATH",
+                        fixture["local_receipt_path"],
+                    ),
                     patch.object(audit_service, "_current_git_head_summary", return_value=_current_head()),
                 ):
                     result = audit_service._read_remote_ci_review_receipt()
@@ -114,9 +107,20 @@ class ReleaseEvidenceBindingTests(unittest.TestCase):
 
     def test_remote_reader_accepts_formal_eight_char_head_with_seven_char_display_head(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
-            path = self._write(directory, "remote.json", _remote_receipt())
+            fixture = _remote_fixture(directory)
+            path = self._write(directory, "remote.json", fixture["remote_receipt"])
             with (
                 patch.object(audit_service, "REMOTE_CI_REVIEW_RECEIPT_PATH", path),
+                patch.object(
+                    audit_service,
+                    "REMOTE_PUSH_GATE_ARTIFACT_IMPORT_RECEIPT_PATH",
+                    fixture["import_receipt_path"],
+                ),
+                patch.object(
+                    audit_service,
+                    "LOCAL_PUSH_GATE_RUN_RECEIPT_PATH",
+                    fixture["local_receipt_path"],
+                ),
                 patch.object(audit_service, "_current_git_head_summary", return_value=_current_head()),
             ):
                 result = audit_service._read_remote_ci_review_receipt()

@@ -24,6 +24,7 @@ from server.services.task_service import (
     update_task_status,
 )
 from tests.test_motion_current_head_evidence import write_attested_pair
+from tests.release_artifact_fixture import build_verified_remote_ci_fixture
 from storage.sqlite_meta import SQLiteMetaStore
 
 
@@ -2239,16 +2240,17 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         original_release_review_path = audit_service.RELEASE_GATE_REVIEW_RECEIPT_PATH
         original_next_session_path = next_session_service.LOCAL_PUSH_GATE_RUN_RECEIPT_PATH
         temp_dir = tempfile.TemporaryDirectory()
-        receipt_path = Path(temp_dir.name) / "release_gate" / "local_push_gate_run_receipt.json"
-        remote_receipt_path = Path(temp_dir.name) / "release_gate" / "remote_ci_review_receipt.json"
+        release_gate_root = Path(temp_dir.name) / ".stock_ming_3" / "release_gate"
+        receipt_path = release_gate_root / "local_push_gate_run_receipt.json"
+        remote_receipt_path = release_gate_root / "remote_ci_review_receipt.json"
         artifact_import_path = (
-            Path(temp_dir.name) / "release_gate" / "remote_push_gate_artifact_import_receipt.json"
+            release_gate_root / "remote_push_gate_artifact_import_receipt.json"
         )
         allowlist_receipt_path = (
-            Path(temp_dir.name) / "release_gate" / "secret_artifact_allowlist_review_receipt.json"
+            release_gate_root / "secret_artifact_allowlist_review_receipt.json"
         )
         release_review_receipt_path = (
-            Path(temp_dir.name) / "release_gate" / "release_gate_review_receipt.json"
+            release_gate_root / "release_gate_review_receipt.json"
         )
         audit_service.LOCAL_PUSH_GATE_RUN_RECEIPT_PATH = receipt_path
         audit_service.REMOTE_CI_REVIEW_RECEIPT_PATH = remote_receipt_path
@@ -2307,26 +2309,19 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         return json.loads(output_path.read_text(encoding="utf-8"))
 
-    def _record_current_head_remote_ci_green(self, current_head, *, run_id, artifact_digest):
-        return self._run_release_receipt_recorder(
-            "record_remote_ci_review_receipt.py",
-            audit_service.REMOTE_CI_REVIEW_RECEIPT_PATH,
-            "--branch",
-            current_head["branch"],
-            "--head-full",
-            current_head["head_full"],
-            "--run-id",
-            run_id,
-            "--run-url",
-            f"https://github.com/lishark-of/stock-MING/actions/runs/{run_id}",
-            "--artifact-name",
-            f"command-center-3-push-gate-evidence-{run_id}",
-            "--artifact-digest",
-            artifact_digest,
-            "--reviewed-at-utc",
-            "2026-06-29T00:00:00Z",
-            "--review-authorized",
+    def _record_current_head_remote_ci_green(self, current_head, *, run_id):
+        test_root = audit_service.LOCAL_PUSH_GATE_RUN_RECEIPT_PATH.parents[2]
+        fixture = build_verified_remote_ci_fixture(
+            test_root,
+            head_full=current_head["head_full"],
+            run_id=run_id,
         )
+        remote_receipt = dict(fixture["remote_receipt"])
+        audit_service.REMOTE_CI_REVIEW_RECEIPT_PATH.write_text(
+            json.dumps(remote_receipt, ensure_ascii=False),
+            encoding="utf-8",
+        )
+        return remote_receipt
 
     def _record_current_head_allowlist_review(self, current_head):
         return self._run_release_receipt_recorder(
@@ -26701,12 +26696,6 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
             + "\n",
             encoding="utf-8",
         )
-        self._record_current_head_remote_ci_green(
-            current_head,
-            run_id=123456789,
-            artifact_digest="sha256:" + ("a" * 64),
-        )
-
         packet = audit_service.read_call_ledger_audit_cache()
         migration = migration_status_service.build_migration_status()
 
@@ -26726,13 +26715,21 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertFalse(packet["counts"]["local_push_gate_run_observed"])
 
         release_split = migration["release_gate_remote_review_split_summary"]
-        self.assertEqual(release_split["status"], "release_gate_remote_ci_green_local_gate_recheck_required")
+        self.assertEqual(release_split["status"], "release_gate_direct_evidence_missing")
         self.assertTrue(release_split["local_push_gate_report_reached_clean_worktree_check"])
         self.assertTrue(release_split["local_push_gate_report_is_not_pass_receipt"])
         self.assertFalse(release_split["local_complete"])
-        self.assertTrue(release_split["remote_ci_green_for_current_head"])
+        self.assertFalse(release_split["remote_ci_green_for_current_head"])
         self.assertIn(
             "clean worktree before local gate pass receipt",
+            release_split["missing_evidence_items"],
+        )
+        self.assertIn(
+            "matching remote Actions status for current HEAD",
+            release_split["missing_evidence_items"],
+        )
+        self.assertIn(
+            "latest green remote run evidence",
             release_split["missing_evidence_items"],
         )
         self.assertNotIn("fresh local gate run for current HEAD", release_split["missing_evidence_items"])
@@ -26747,7 +26744,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         handoff = migration["ltg11_release_gate_remote_review_handoff_summary"]
         self.assertTrue(handoff["local_push_gate_report_reached_clean_worktree_check"])
         self.assertTrue(handoff["fresh_local_gate_blocked_by_clean_worktree_after_report"])
-        self.assertTrue(handoff["release_review_blocked_by_local_gate_recheck"])
+        self.assertFalse(handoff["release_review_blocked_by_local_gate_recheck"])
         self.assertFalse(handoff["release_gate_complete"])
         self.assertFalse(handoff["can_close_goal"])
 
@@ -26804,7 +26801,6 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self._record_current_head_remote_ci_green(
             current_head,
             run_id=123456789,
-            artifact_digest="sha256:" + ("a" * 64),
         )
         self._record_current_head_allowlist_review(current_head)
 
@@ -26860,7 +26856,6 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         receipt_path = self._with_release_gate_receipt_path()
         self._with_clean_worktree_status()
         current_head = audit_service._current_git_head_summary()
-        artifact_digest = "sha256:" + ("b" * 64)
         receipt_path.parent.mkdir(parents=True, exist_ok=True)
         receipt_path.write_text(
             json.dumps(
@@ -26895,11 +26890,11 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
             ),
             encoding="utf-8",
         )
-        self._record_current_head_remote_ci_green(
+        remote_receipt = self._record_current_head_remote_ci_green(
             current_head,
             run_id=123456789,
-            artifact_digest=artifact_digest,
         )
+        artifact_digest = remote_receipt["artifact_digest"]
         self._record_current_head_allowlist_review(current_head)
         self._record_current_head_release_review(
             current_head,
