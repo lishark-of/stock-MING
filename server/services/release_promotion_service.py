@@ -41,6 +41,16 @@ _REMOTE_CI_RECEIPT_WRITER = "scripts/record_remote_ci_review_receipt.py"
 _REMOTE_CI_WORKFLOW_NAME = "Command Center 3 Push Gate"
 _REMOTE_CI_RUN_URL_PREFIX = "https://github.com/lishark-of/stock-MING/actions/runs/"
 _REMOTE_CI_ARTIFACT_PREFIX = "command-center-3-push-gate-evidence-"
+_REMOTE_ARTIFACT_IMPORT_SCHEMA = (
+    "command_center_3_remote_push_gate_artifact_import_receipt.v1"
+)
+_REMOTE_ARTIFACT_IMPORT_WRITER = "scripts/import_remote_push_gate_artifact.py"
+_REMOTE_ARTIFACT_IMPORT_NAME = "remote_push_gate_artifact_import_receipt.json"
+_REMOTE_ARTIFACT_GREEN_ENTRIES = [
+    "command-center-3-local-push-gate-run-receipt.json",
+    "command-center-3-push-gate-report.md",
+    "command-center-3-push-gate.log",
+]
 _LOCAL_GATE_SCOPE = "ignored_local_push_gate_run_receipt_no_push_no_github_api"
 _LOCAL_GATE_REMOTE_NOTE = (
     "local push gate pass is not remote CI green; inspect matching remote Actions run "
@@ -211,6 +221,21 @@ def _read_json(path: Path) -> dict[str, Any]:
     except (OSError, UnicodeError, json.JSONDecodeError):
         return {}
     return dict(value) if isinstance(value, Mapping) else {}
+
+
+def _read_bytes(path: Path) -> bytes:
+    try:
+        return path.read_bytes()
+    except OSError:
+        return b""
+
+
+def _json_from_bytes(value: bytes) -> dict[str, Any]:
+    try:
+        parsed = json.loads(value.decode("utf-8"))
+    except (UnicodeError, json.JSONDecodeError):
+        return {}
+    return dict(parsed) if isinstance(parsed, Mapping) else {}
 
 
 def _receipt_type_blockers(
@@ -432,7 +457,112 @@ def _validate_local_gate(receipt: Mapping[str, Any], head_full: str) -> dict[str
     return _evidence_result("local_push_gate", ready=not blockers, material=material, blockers=blockers)
 
 
-def _validate_remote_ci(receipt: Mapping[str, Any], head_full: str) -> dict[str, Any]:
+def _validate_remote_artifact_import(
+    receipt: Mapping[str, Any],
+    *,
+    local_gate_bytes: bytes,
+    head_full: str,
+    run_id: int,
+    artifact_name: str,
+    artifact_digest: str,
+) -> dict[str, Any]:
+    field_types = {
+        "schema_version": str,
+        "status": str,
+        "scope": str,
+        "imported_at_utc": str,
+        "receipt_writer": str,
+        "head_full": str,
+        "run_id": int,
+        "artifact_id": int,
+        "artifact_name": str,
+        "artifact_size_bytes": int,
+        "artifact_metadata_digest": str,
+        "artifact_digest": str,
+        "artifact_archive_sha256": str,
+        "artifact_archive_size_bytes": int,
+        "artifact_digest_matches_metadata": bool,
+        "artifact_size_matches_metadata": bool,
+        "entry_manifest_digest": str,
+        "embedded_local_gate_receipt_sha256": str,
+        "embedded_local_gate_receipt_size_bytes": int,
+        "imported_local_gate_receipt_sha256": str,
+        "imported_local_gate_receipt_size_bytes": int,
+        "local_receipt_relative_path": str,
+        "artifact_receipt_bytes_identical": bool,
+        "safe_archive_verified": bool,
+        "local_gate_schema_verified": bool,
+        "writes_local_receipt": bool,
+        "network_calls_triggered": bool,
+        **_safe_type_fields(),
+    }
+    blockers = _receipt_type_blockers(
+        "remote_artifact_import",
+        receipt,
+        field_types,
+        string_list_fields=("entry_names",),
+    )
+    local_sha = hashlib.sha256(local_gate_bytes).hexdigest()
+    digest_fields = (
+        "artifact_metadata_digest",
+        "entry_manifest_digest",
+        "embedded_local_gate_receipt_sha256",
+        "imported_local_gate_receipt_sha256",
+    )
+    if not (
+        receipt.get("schema_version") == _REMOTE_ARTIFACT_IMPORT_SCHEMA
+        and receipt.get("status") == "remote_push_gate_artifact_import_verified"
+        and receipt.get("scope") == "offline_downloaded_push_gate_artifact_byte_import"
+        and receipt.get("receipt_writer") == _REMOTE_ARTIFACT_IMPORT_WRITER
+        and _valid_utc_second(receipt.get("imported_at_utc"))
+        and receipt.get("head_full") == head_full
+        and receipt.get("run_id") == run_id
+        and type(receipt.get("artifact_id")) is int
+        and receipt.get("artifact_id") > 0
+        and receipt.get("artifact_name") == artifact_name
+        and receipt.get("artifact_digest") == artifact_digest
+        and receipt.get("artifact_archive_sha256") == artifact_digest
+        and type(receipt.get("artifact_size_bytes")) is int
+        and receipt.get("artifact_size_bytes") > 0
+        and receipt.get("artifact_size_bytes")
+        == receipt.get("artifact_archive_size_bytes")
+        and receipt.get("entry_names") == _REMOTE_ARTIFACT_GREEN_ENTRIES
+        and receipt.get("embedded_local_gate_receipt_sha256") == local_sha
+        and receipt.get("imported_local_gate_receipt_sha256") == local_sha
+        and receipt.get("embedded_local_gate_receipt_size_bytes")
+        == len(local_gate_bytes)
+        and receipt.get("imported_local_gate_receipt_size_bytes")
+        == len(local_gate_bytes)
+        and receipt.get("local_receipt_relative_path")
+        == ".stock_ming_3/release_gate/local_push_gate_run_receipt.json"
+        and receipt.get("artifact_digest_matches_metadata") is True
+        and receipt.get("artifact_size_matches_metadata") is True
+        and receipt.get("artifact_receipt_bytes_identical") is True
+        and receipt.get("safe_archive_verified") is True
+        and receipt.get("local_gate_schema_verified") is True
+        and receipt.get("writes_local_receipt") is True
+        and receipt.get("network_calls_triggered") is False
+        and all(_valid_lower_sha256(receipt.get(field)) for field in digest_fields)
+        and _safe_boundary(receipt)
+    ):
+        blockers.append("remote_artifact_import_semantic_binding_invalid")
+    material = _receipt_material(receipt)
+    result = _evidence_result(
+        "remote_artifact_import",
+        ready=not blockers,
+        material=material,
+        blockers=blockers,
+    )
+    result["receipt_digest"] = _digest(material) if not blockers else ""
+    return result
+
+
+def _validate_remote_ci(
+    receipt: Mapping[str, Any],
+    head_full: str,
+    artifact_import_receipt: Mapping[str, Any] | None = None,
+    local_gate_bytes: bytes = b"",
+) -> dict[str, Any]:
     field_types = {
         "schema_version": str,
         "status": str,
@@ -455,6 +585,14 @@ def _validate_remote_ci(receipt: Mapping[str, Any], head_full: str) -> dict[str,
         "artifact_digest": str,
         "artifact_digest_verified": bool,
         "artifact_digest_review_status": str,
+        "artifact_id": int,
+        "artifact_size_bytes": int,
+        "artifact_archive_sha256": str,
+        "artifact_import_receipt_digest": str,
+        "embedded_local_gate_receipt_sha256": str,
+        "imported_local_gate_receipt_sha256": str,
+        "artifact_receipt_bytes_identical": bool,
+        "artifact_import_verified": bool,
         "failed_step_or_green_status": str,
         "explicit_user_actions_review_authorized": bool,
         "remote_actions_status_known": bool,
@@ -492,6 +630,14 @@ def _validate_remote_ci(receipt: Mapping[str, Any], head_full: str) -> dict[str,
     run_url = str(receipt.get("run_url") or "")
     expected_run_url = f"{_REMOTE_CI_RUN_URL_PREFIX}{run_id}" if run_id else ""
     expected_artifact_name = f"{_REMOTE_CI_ARTIFACT_PREFIX}{run_id}" if run_id else ""
+    artifact_import = _validate_remote_artifact_import(
+        dict(artifact_import_receipt or {}),
+        local_gate_bytes=local_gate_bytes,
+        head_full=head_full,
+        run_id=int(run_id) if run_id else 0,
+        artifact_name=artifact_name,
+        artifact_digest=artifact_digest,
+    )
     material = _receipt_material(receipt)
     if receipt.get("schema_version") != audit_service.REMOTE_CI_REVIEW_RECEIPT_SCHEMA_VERSION:
         blockers.append("remote_ci_schema_invalid")
@@ -524,6 +670,18 @@ def _validate_remote_ci(receipt: Mapping[str, Any], head_full: str) -> dict[str,
         and artifact_name == expected_artifact_name
         and _valid_sha256(artifact_digest, prefix=True)
         and artifact_digest == artifact_digest.lower()
+        and artifact_import.get("ready") is True
+        and receipt.get("artifact_id")
+        == (artifact_import_receipt or {}).get("artifact_id")
+        and receipt.get("artifact_size_bytes")
+        == (artifact_import_receipt or {}).get("artifact_size_bytes")
+        and receipt.get("artifact_archive_sha256") == artifact_digest
+        and receipt.get("artifact_import_receipt_digest")
+        == artifact_import.get("receipt_digest")
+        and receipt.get("embedded_local_gate_receipt_sha256")
+        == (artifact_import_receipt or {}).get("embedded_local_gate_receipt_sha256")
+        and receipt.get("imported_local_gate_receipt_sha256")
+        == (artifact_import_receipt or {}).get("imported_local_gate_receipt_sha256")
     ):
         blockers.append("remote_ci_artifact_identity_invalid")
     if not (
@@ -543,6 +701,8 @@ def _validate_remote_ci(receipt: Mapping[str, Any], head_full: str) -> dict[str,
         "remote_ci_job_page_green_observed",
         "remote_ci_run_observed_for_current_head",
         "remote_ci_review_receipt_is_not_release_review",
+        "artifact_receipt_bytes_identical",
+        "artifact_import_verified",
     )
     required_false = (
         "remote_ci_artifact_digest_pending",
@@ -564,6 +724,7 @@ def _validate_remote_ci(receipt: Mapping[str, Any], head_full: str) -> dict[str,
         blockers.append("remote_ci_safety_boundary_invalid")
     result = _evidence_result("remote_ci", ready=not blockers, material=material, blockers=blockers)
     result.update({"run_id": run_id, "artifact_digest": artifact_digest})
+    result["artifact_import_ready"] = artifact_import.get("ready") is True
     return result
 
 
@@ -718,10 +879,13 @@ def validate_release_prerequisites(
     root = Path(evidence_root).expanduser().resolve()
     head_full, head_blockers = _resolve_head(expected_head_full)
     release_root = root / "release_gate"
+    local_gate_bytes = _read_bytes(
+        release_root / "local_push_gate_run_receipt.json"
+    )
     local_gate = _validate_evidence_fail_closed(
         "local_push_gate",
         _validate_local_gate,
-        _read_json(release_root / "local_push_gate_run_receipt.json"),
+        _json_from_bytes(local_gate_bytes),
         head_full,
     )
     remote_ci = _validate_evidence_fail_closed(
@@ -729,6 +893,8 @@ def validate_release_prerequisites(
         _validate_remote_ci,
         _read_json(release_root / "remote_ci_review_receipt.json"),
         head_full,
+        _read_json(release_root / _REMOTE_ARTIFACT_IMPORT_NAME),
+        local_gate_bytes,
     )
     allowlist = _validate_evidence_fail_closed(
         "allowlist",

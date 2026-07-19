@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import shutil
@@ -90,6 +91,56 @@ class ReleasePromotionJournalTests(unittest.TestCase):
             },
         )
 
+        local_receipt_bytes = (
+            self.release_root / "local_push_gate_run_receipt.json"
+        ).read_bytes()
+        local_receipt_sha = hashlib.sha256(local_receipt_bytes).hexdigest()
+        artifact_import = {
+            "schema_version": (
+                "command_center_3_remote_push_gate_artifact_import_receipt.v1"
+            ),
+            "status": "remote_push_gate_artifact_import_verified",
+            "scope": "offline_downloaded_push_gate_artifact_byte_import",
+            "imported_at_utc": "2026-07-15T00:00:30Z",
+            "receipt_writer": "scripts/import_remote_push_gate_artifact.py",
+            "head_full": self.head,
+            "run_id": int(self.run_id),
+            "artifact_id": 71,
+            "artifact_name": (
+                f"command-center-3-push-gate-evidence-{self.run_id}"
+            ),
+            "artifact_size_bytes": 100,
+            "artifact_metadata_digest": "1" * 64,
+            "artifact_digest": self.artifact_digest,
+            "artifact_archive_sha256": self.artifact_digest,
+            "artifact_archive_size_bytes": 100,
+            "artifact_digest_matches_metadata": True,
+            "artifact_size_matches_metadata": True,
+            "entry_manifest_digest": "2" * 64,
+            "entry_names": [
+                "command-center-3-local-push-gate-run-receipt.json",
+                "command-center-3-push-gate-report.md",
+                "command-center-3-push-gate.log",
+            ],
+            "embedded_local_gate_receipt_sha256": local_receipt_sha,
+            "embedded_local_gate_receipt_size_bytes": len(local_receipt_bytes),
+            "imported_local_gate_receipt_sha256": local_receipt_sha,
+            "imported_local_gate_receipt_size_bytes": len(local_receipt_bytes),
+            "local_receipt_relative_path": (
+                ".stock_ming_3/release_gate/local_push_gate_run_receipt.json"
+            ),
+            "artifact_receipt_bytes_identical": True,
+            "safe_archive_verified": True,
+            "local_gate_schema_verified": True,
+            "writes_local_receipt": True,
+            "network_calls_triggered": False,
+            **_safe_boundary(),
+        }
+        _write_json(
+            self.release_root / "remote_push_gate_artifact_import_receipt.json",
+            artifact_import,
+        )
+
         _write_json(
             self.release_root / "remote_ci_review_receipt.json",
             {
@@ -113,6 +164,16 @@ class ReleasePromotionJournalTests(unittest.TestCase):
                 "artifact_digest": self.artifact_digest,
                 "artifact_digest_verified": True,
                 "artifact_digest_review_status": "sha256_digest_recorded",
+                "artifact_id": artifact_import["artifact_id"],
+                "artifact_size_bytes": artifact_import["artifact_size_bytes"],
+                "artifact_archive_sha256": self.artifact_digest,
+                "artifact_import_receipt_digest": (
+                    release_promotion_service._digest(artifact_import)
+                ),
+                "embedded_local_gate_receipt_sha256": local_receipt_sha,
+                "imported_local_gate_receipt_sha256": local_receipt_sha,
+                "artifact_receipt_bytes_identical": True,
+                "artifact_import_verified": True,
                 "failed_step_or_green_status": "green",
                 "safe_failure_log_excerpt_or_green_run_url": (
                     f"https://github.com/lishark-of/stock-MING/actions/runs/{self.run_id}"
@@ -198,6 +259,20 @@ class ReleasePromotionJournalTests(unittest.TestCase):
 
     def _advance_remote_evidence(self) -> None:
         next_run_id = str(int(self.run_id) + 1)
+        import_path = (
+            self.release_root / "remote_push_gate_artifact_import_receipt.json"
+        )
+        artifact_import = json.loads(import_path.read_text(encoding="utf-8"))
+        artifact_import.update(
+            {
+                "run_id": int(next_run_id),
+                "artifact_id": int(artifact_import["artifact_id"]) + 1,
+                "artifact_name": (
+                    f"command-center-3-push-gate-evidence-{next_run_id}"
+                ),
+            }
+        )
+        _write_json(import_path, artifact_import)
         remote_path = self.release_root / "remote_ci_review_receipt.json"
         remote = json.loads(remote_path.read_text(encoding="utf-8"))
         remote.update(
@@ -214,6 +289,10 @@ class ReleasePromotionJournalTests(unittest.TestCase):
                 "artifact_name": (
                     f"command-center-3-push-gate-evidence-{next_run_id}"
                 ),
+                "artifact_id": artifact_import["artifact_id"],
+                "artifact_import_receipt_digest": (
+                    release_promotion_service._digest(artifact_import)
+                ),
             }
         )
         _write_json(remote_path, remote)
@@ -221,6 +300,39 @@ class ReleasePromotionJournalTests(unittest.TestCase):
         review = json.loads(review_path.read_text(encoding="utf-8"))
         review["remote_run_id"] = next_run_id
         _write_json(review_path, review)
+
+    def test_prerequisites_validate_one_local_gate_byte_snapshot(self) -> None:
+        local_path = self.release_root / "local_push_gate_run_receipt.json"
+        original_bytes = local_path.read_bytes()
+        original_read_bytes = release_promotion_service._read_bytes
+        local_read_count = 0
+
+        def read_with_replacement(path: Path) -> bytes:
+            nonlocal local_read_count
+            value = original_read_bytes(path)
+            if path.resolve(strict=False) == local_path.resolve(strict=False):
+                local_read_count += 1
+                local_path.write_bytes(b"{}")
+            return value
+
+        with patch.object(
+            release_promotion_service,
+            "_read_bytes",
+            side_effect=read_with_replacement,
+        ):
+            snapshot = release_promotion_service.validate_release_prerequisites(
+                self.evidence_root,
+                expected_head_full=self.head,
+            )
+
+        self.assertEqual(local_read_count, 1)
+        self.assertTrue(snapshot["ready"], snapshot)
+        next_read = release_promotion_service.validate_release_prerequisites(
+            self.evidence_root,
+            expected_head_full=self.head,
+        )
+        self.assertFalse(next_read["ready"])
+        self.assertNotEqual(local_path.read_bytes(), original_bytes)
 
     def test_read_only_validation_does_not_create_journal_or_trust_true_json_flags(self) -> None:
         self._seed_formal_evidence(tamper_release_completion=True)

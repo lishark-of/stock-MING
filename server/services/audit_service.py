@@ -51,7 +51,7 @@ PUSH_READINESS_RECEIPT_SCHEMA_VERSION = "command_center_3_push_readiness_receipt
 LOCAL_PUSH_GATE_RUN_RECEIPT_SCHEMA_VERSION = "command_center_3_local_push_gate_run_receipt.v1"
 LOCAL_PUSH_GATE_REPORT_SCHEMA_VERSION = "command_center_3_local_push_gate_report_summary.v1"
 REMOTE_CI_REVIEW_SEED_SCHEMA_VERSION = "command_center_3_remote_ci_review_seed.v1"
-REMOTE_CI_REVIEW_RECEIPT_SCHEMA_VERSION = "command_center_3_remote_ci_review_receipt.v1"
+REMOTE_CI_REVIEW_RECEIPT_SCHEMA_VERSION = "command_center_3_remote_ci_review_receipt.v2"
 RELEASE_GATE_REVIEW_RECEIPT_SCHEMA_VERSION = "command_center_3_release_gate_review_receipt.v1"
 SECRET_ARTIFACT_ALLOWLIST_REVIEW_RECEIPT_SCHEMA_VERSION = (
     "command_center_3_secret_artifact_allowlist_review_receipt.v1"

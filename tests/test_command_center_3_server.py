@@ -58777,6 +58777,68 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         script_path = Path(__file__).resolve().parents[1] / "scripts" / "record_remote_ci_review_receipt.py"
         artifact_name = f"command-center-3-push-gate-evidence-{run_id}"
         artifact_digest = "sha256:" + ("a" * 64)
+        imported_local_receipt = receipt_path.parent / "imported-local-gate.json"
+        artifact_import_receipt = receipt_path.parent / "artifact-import.json"
+        imported_local_receipt.parent.mkdir(parents=True, exist_ok=True)
+        imported_local_receipt.write_bytes(b'{"artifact_fixture":true}\n')
+        local_receipt_sha = hashlib.sha256(
+            imported_local_receipt.read_bytes()
+        ).hexdigest()
+        artifact_import_receipt.write_text(
+            json.dumps(
+                {
+                    "schema_version": (
+                        "command_center_3_remote_push_gate_artifact_import_receipt.v1"
+                    ),
+                    "status": "remote_push_gate_artifact_import_verified",
+                    "scope": "offline_downloaded_push_gate_artifact_byte_import",
+                    "imported_at_utc": "2026-06-27T20:19:00Z",
+                    "receipt_writer": "scripts/import_remote_push_gate_artifact.py",
+                    "head_full": current_head["head_full"],
+                    "run_id": run_id,
+                    "artifact_id": 71,
+                    "artifact_name": artifact_name,
+                    "artifact_size_bytes": 100,
+                    "artifact_metadata_digest": "1" * 64,
+                    "artifact_digest": artifact_digest,
+                    "artifact_archive_sha256": artifact_digest,
+                    "artifact_archive_size_bytes": 100,
+                    "artifact_digest_matches_metadata": True,
+                    "artifact_size_matches_metadata": True,
+                    "entry_manifest_digest": "2" * 64,
+                    "entry_names": [
+                        "command-center-3-local-push-gate-run-receipt.json",
+                        "command-center-3-push-gate-report.md",
+                        "command-center-3-push-gate.log",
+                    ],
+                    "embedded_local_gate_receipt_sha256": local_receipt_sha,
+                    "embedded_local_gate_receipt_size_bytes": (
+                        len(imported_local_receipt.read_bytes())
+                    ),
+                    "imported_local_gate_receipt_sha256": local_receipt_sha,
+                    "imported_local_gate_receipt_size_bytes": (
+                        len(imported_local_receipt.read_bytes())
+                    ),
+                    "local_receipt_relative_path": (
+                        ".stock_ming_3/release_gate/local_push_gate_run_receipt.json"
+                    ),
+                    "artifact_receipt_bytes_identical": True,
+                    "safe_archive_verified": True,
+                    "local_gate_schema_verified": True,
+                    "writes_local_receipt": True,
+                    "network_calls_triggered": False,
+                    "external_calls_triggered": False,
+                    "tushare_called": False,
+                    "deepseek_called": False,
+                    "github_called": False,
+                    "github_api_called": False,
+                    "does_not_execute_trades": True,
+                    "does_not_modify_strategy_action": True,
+                    "contains_secret": False,
+                }
+            ),
+            encoding="utf-8",
+        )
 
         result = subprocess.run(
             [
@@ -58798,6 +58860,12 @@ class CommandCenter3FastAPITests(unittest.TestCase):
                 artifact_name,
                 "--artifact-digest",
                 artifact_digest,
+                "--artifact-download-status",
+                "downloaded_to_local_temp_for_manual_review",
+                "--artifact-import-receipt",
+                str(artifact_import_receipt),
+                "--imported-local-gate-receipt",
+                str(imported_local_receipt),
                 "--reviewed-at-utc",
                 "2026-06-27T20:19:58Z",
                 "--review-authorized",

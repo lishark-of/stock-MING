@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import subprocess
 import tempfile
@@ -16,6 +17,64 @@ from server.services import v1_closeout_service
 HEAD_FULL = "e" * 40
 RUN_ID = 9001
 DIGEST = "sha256:" + "a" * 64
+LOCAL_RECEIPT_BYTES = b'{"artifact_fixture":true}\n'
+
+
+def _artifact_import_receipt(*, head_full: str = HEAD_FULL) -> dict[str, object]:
+    local_sha = hashlib.sha256(LOCAL_RECEIPT_BYTES).hexdigest()
+    return {
+        "schema_version": "command_center_3_remote_push_gate_artifact_import_receipt.v1",
+        "status": "remote_push_gate_artifact_import_verified",
+        "scope": "offline_downloaded_push_gate_artifact_byte_import",
+        "imported_at_utc": "2026-07-13T00:00:00Z",
+        "receipt_writer": "scripts/import_remote_push_gate_artifact.py",
+        "head_full": head_full,
+        "run_id": RUN_ID,
+        "artifact_id": 71,
+        "artifact_name": f"command-center-3-push-gate-evidence-{RUN_ID}",
+        "artifact_size_bytes": 100,
+        "artifact_metadata_digest": "1" * 64,
+        "artifact_digest": DIGEST,
+        "artifact_archive_sha256": DIGEST,
+        "artifact_archive_size_bytes": 100,
+        "artifact_digest_matches_metadata": True,
+        "artifact_size_matches_metadata": True,
+        "entry_manifest_digest": "2" * 64,
+        "entry_names": [
+            "command-center-3-local-push-gate-run-receipt.json",
+            "command-center-3-push-gate-report.md",
+            "command-center-3-push-gate.log",
+        ],
+        "embedded_local_gate_receipt_sha256": local_sha,
+        "embedded_local_gate_receipt_size_bytes": len(LOCAL_RECEIPT_BYTES),
+        "imported_local_gate_receipt_sha256": local_sha,
+        "imported_local_gate_receipt_size_bytes": len(LOCAL_RECEIPT_BYTES),
+        "local_receipt_relative_path": ".stock_ming_3/release_gate/local_push_gate_run_receipt.json",
+        "artifact_receipt_bytes_identical": True,
+        "safe_archive_verified": True,
+        "local_gate_schema_verified": True,
+        "writes_local_receipt": True,
+        "network_calls_triggered": False,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "github_api_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "contains_secret": False,
+    }
+
+
+def _write_import_binding(
+    release_gate: Path,
+    *,
+    head_full: str = HEAD_FULL,
+) -> None:
+    (release_gate / "local_push_gate_run_receipt.json").write_bytes(LOCAL_RECEIPT_BYTES)
+    (release_gate / "remote_push_gate_artifact_import_receipt.json").write_text(
+        json.dumps(_artifact_import_receipt(head_full=head_full)), encoding="utf-8"
+    )
 
 
 def _remote_args(
@@ -23,14 +82,22 @@ def _remote_args(
     actions_status: str = "completed",
     actions_conclusion: str = "success",
     no_matching_run_found: bool = False,
+    head_full: str = HEAD_FULL,
 ) -> argparse.Namespace:
     run_id = 0 if no_matching_run_found else RUN_ID
     completed = actions_status == "completed" and not no_matching_run_found
     failed = actions_conclusion == "failure"
+    fixture_dir = Path(tempfile.mkdtemp())
+    local_receipt = fixture_dir / "local.json"
+    import_receipt = fixture_dir / "import.json"
+    local_receipt.write_bytes(LOCAL_RECEIPT_BYTES)
+    import_receipt.write_text(
+        json.dumps(_artifact_import_receipt(head_full=head_full)), encoding="utf-8"
+    )
     return argparse.Namespace(
         branch="main",
-        head=HEAD_FULL[:8],
-        head_full=HEAD_FULL,
+        head=head_full[:8],
+        head_full=head_full,
         run_id=run_id,
         run_url=(
             ""
@@ -53,6 +120,8 @@ def _remote_args(
         artifact_download_status=(
             "downloaded_to_local_temp_for_manual_review" if completed else ""
         ),
+        artifact_import_receipt=str(import_receipt) if completed and not failed else "",
+        imported_local_gate_receipt=str(local_receipt) if completed and not failed else "",
         safe_failure_log_excerpt="safe reviewed failure" if failed else "",
         no_matching_run_found=no_matching_run_found,
         lookup_source="manual_actions_page_or_commit_status_review",
@@ -138,6 +207,8 @@ class RemoteCiReceiptObservationTests(unittest.TestCase):
                 (release_gate / "remote_ci_review_receipt.json").write_text(
                     json.dumps(receipt), encoding="utf-8"
                 )
+                if receipt.get("artifact_import_verified") is True:
+                    _write_import_binding(release_gate)
 
                 evaluation = v1_closeout_service.build_v1_closeout_evaluation(
                     evidence_root=evidence_root,
@@ -166,6 +237,7 @@ class RemoteCiReceiptObservationTests(unittest.TestCase):
                 (release_gate / "remote_ci_review_receipt.json").write_text(
                     json.dumps(receipt), encoding="utf-8"
                 )
+                _write_import_binding(release_gate)
 
                 evaluation = v1_closeout_service.build_v1_closeout_evaluation(
                     evidence_root=evidence_root,
@@ -181,6 +253,8 @@ class RemoteCiReceiptObservationTests(unittest.TestCase):
         validation = v1_closeout_service.release_promotion_service._validate_remote_ci(
             receipt,
             HEAD_FULL,
+            _artifact_import_receipt(),
+            LOCAL_RECEIPT_BYTES,
         )
         self.assertTrue(validation["ready"])
         self.assertEqual(validation["blockers"], [])
@@ -218,12 +292,11 @@ class RemoteCiReceiptObservationTests(unittest.TestCase):
             evidence_root = Path(directory) / "evidence"
             release_gate = evidence_root / "release_gate"
             release_gate.mkdir(parents=True)
-            receipt = _build_remote_receipt()
-            receipt["head"] = expected_head_full[:8]
-            receipt["head_full"] = expected_head_full
+            receipt = _build_remote_receipt(head_full=expected_head_full)
             (release_gate / "remote_ci_review_receipt.json").write_text(
                 json.dumps(receipt), encoding="utf-8"
             )
+            _write_import_binding(release_gate, head_full=expected_head_full)
             with patch.object(v1_closeout_service, "PROJECT_ROOT", worktree):
                 evaluation = v1_closeout_service.build_v1_closeout_evaluation(
                     evidence_root=evidence_root

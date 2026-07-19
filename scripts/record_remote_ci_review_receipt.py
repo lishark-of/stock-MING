@@ -9,15 +9,22 @@ matches the current HEAD.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 from datetime import datetime, timezone
 from pathlib import Path
+import sys
 from typing import Any
 
-
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
+from scripts import import_remote_push_gate_artifact  # noqa: E402
+
+
 DEFAULT_RECEIPT_PATH = PROJECT_ROOT / ".stock_ming_3" / "release_gate" / "remote_ci_review_receipt.json"
-SCHEMA_VERSION = "command_center_3_remote_ci_review_receipt.v1"
+SCHEMA_VERSION = "command_center_3_remote_ci_review_receipt.v2"
 EXPECTED_WORKFLOW_NAME = "Command Center 3 Push Gate"
 EXPECTED_REPO_RUN_PREFIX = "https://github.com/lishark-of/stock-MING/actions/runs/"
 EXPECTED_ARTIFACT_PREFIX = "command-center-3-push-gate-evidence-"
@@ -89,7 +96,12 @@ def _validate_args(args: argparse.Namespace) -> None:
     elif args.artifact_name:
         raise SystemExit("--artifact-name is only allowed after a completed Actions run")
     if args.artifact_digest:
-        if not args.artifact_digest.startswith("sha256:") or len(args.artifact_digest) < len("sha256:") + 32:
+        if (
+            not args.artifact_digest.startswith("sha256:")
+            or len(args.artifact_digest) != len("sha256:") + 64
+            or args.artifact_digest != args.artifact_digest.lower()
+            or any(char not in "0123456789abcdef" for char in args.artifact_digest[7:])
+        ):
             raise SystemExit("artifact digest must be a sha256 digest")
     elif status_is_completed and not args.artifact_digest_unavailable_public_job_page:
         raise SystemExit(
@@ -101,6 +113,44 @@ def _validate_args(args: argparse.Namespace) -> None:
         raise SystemExit("--artifact-download-status is not an allowed receipt status")
     if not args.head_full or len(args.head_full) < 12:
         raise SystemExit("--head-full must be the reviewed commit SHA")
+    if (
+        status_is_completed
+        and args.actions_conclusion == "success"
+        and bool(args.artifact_digest)
+    ):
+        if args.artifact_download_status != "downloaded_to_local_temp_for_manual_review":
+            raise SystemExit("successful runs require a verified local artifact download")
+        import_path = Path(str(getattr(args, "artifact_import_receipt", "") or "")).expanduser()
+        local_path = Path(
+            str(getattr(args, "imported_local_gate_receipt", "") or "")
+        ).expanduser()
+        try:
+            import_receipt = json.loads(import_path.read_text(encoding="utf-8"))
+            local_bytes = local_path.read_bytes()
+        except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+            raise SystemExit("verified artifact import receipt and imported local gate receipt are required") from exc
+        ready, blockers = import_remote_push_gate_artifact.validate_import_receipt(
+            import_receipt,
+            head_full=args.head_full,
+            run_id=args.run_id,
+            artifact_name=args.artifact_name,
+            artifact_digest=args.artifact_digest,
+            imported_local_receipt_bytes=local_bytes,
+        )
+        if not ready:
+            raise SystemExit(f"artifact import receipt is invalid: {blockers}")
+        args._artifact_import_receipt = dict(import_receipt)
+        args._artifact_import_receipt_digest = hashlib.sha256(
+            json.dumps(
+                dict(import_receipt),
+                ensure_ascii=False,
+                sort_keys=True,
+                separators=(",", ":"),
+            ).encode("utf-8")
+        ).hexdigest()
+    else:
+        args._artifact_import_receipt = {}
+        args._artifact_import_receipt_digest = ""
 
 
 def build_receipt(args: argparse.Namespace) -> dict[str, Any]:
@@ -108,6 +158,8 @@ def build_receipt(args: argparse.Namespace) -> dict[str, Any]:
     head = args.head_full[:8]
     reviewed_at = args.reviewed_at_utc or _now_iso()
     no_matching_run_found = bool(args.no_matching_run_found)
+    artifact_import = dict(getattr(args, "_artifact_import_receipt", {}) or {})
+    artifact_import_digest = str(getattr(args, "_artifact_import_receipt_digest", "") or "")
     if no_matching_run_found:
         status = "remote_ci_review_no_matching_run_found"
         release_claim_decision = "blocked_remote_ci_no_matching_run"
@@ -120,9 +172,11 @@ def build_receipt(args: argparse.Namespace) -> dict[str, Any]:
         actions_failed = False
         artifact_digest_verified = False
     else:
-        artifact_digest_verified = bool(args.artifact_digest)
         actions_incomplete = args.actions_status in INCOMPLETE_ACTIONS_STATUSES
         actions_failed = args.actions_conclusion in FAILED_ACTIONS_CONCLUSIONS
+        artifact_digest_verified = bool(
+            args.artifact_digest and (actions_failed or artifact_import)
+        )
         artifact_download_status = args.artifact_download_status or (
             "not_attempted_by_receipt_writer" if actions_failed else ""
         )
@@ -188,6 +242,20 @@ def build_receipt(args: argparse.Namespace) -> dict[str, Any]:
         "artifact_digest": args.artifact_digest,
         "artifact_digest_verified": artifact_digest_verified,
         "artifact_digest_review_status": artifact_digest_review_status,
+        "artifact_id": int(artifact_import.get("artifact_id") or 0),
+        "artifact_size_bytes": int(artifact_import.get("artifact_size_bytes") or 0),
+        "artifact_archive_sha256": str(artifact_import.get("artifact_archive_sha256") or ""),
+        "artifact_import_receipt_digest": artifact_import_digest,
+        "embedded_local_gate_receipt_sha256": str(
+            artifact_import.get("embedded_local_gate_receipt_sha256") or ""
+        ),
+        "imported_local_gate_receipt_sha256": str(
+            artifact_import.get("imported_local_gate_receipt_sha256") or ""
+        ),
+        "artifact_receipt_bytes_identical": bool(
+            artifact_import.get("artifact_receipt_bytes_identical") is True
+        ),
+        "artifact_import_verified": bool(artifact_import),
         "failed_step_or_green_status": failed_step_or_green_status,
         "explicit_user_actions_review_authorized": True,
         "remote_actions_status_known": bool(not no_matching_run_found and not actions_incomplete),
@@ -247,6 +315,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--artifact-digest", default="")
     parser.add_argument("--artifact-digest-unavailable-public-job-page", action="store_true")
     parser.add_argument("--artifact-download-status", default="")
+    parser.add_argument("--artifact-import-receipt", default="")
+    parser.add_argument("--imported-local-gate-receipt", default="")
     parser.add_argument("--safe-failure-log-excerpt", default="")
     parser.add_argument("--no-matching-run-found", action="store_true")
     parser.add_argument("--lookup-source", default="manual_actions_page_or_commit_status_review")
