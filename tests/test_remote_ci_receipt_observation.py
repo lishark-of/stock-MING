@@ -146,6 +146,14 @@ def _fact(evaluation: dict[str, object], key: str) -> bool:
     )
 
 
+def _remote_summary(evaluation: dict[str, object]) -> dict[str, object]:
+    summary = evaluation["remote_ci_review_summary"]
+    assert isinstance(summary, dict)
+    fields = summary["safe_fields"]
+    assert isinstance(fields, dict)
+    return {**summary, "safe_fields": fields}
+
+
 class RemoteCiReceiptObservationTests(unittest.TestCase):
     def test_matching_run_is_observed_without_weakening_green_gate(self) -> None:
         cases = (
@@ -216,6 +224,75 @@ class RemoteCiReceiptObservationTests(unittest.TestCase):
                 )
 
                 self.assertIs(_fact(evaluation, "remote_ci_current_head"), expected)
+                summary = _remote_summary(evaluation)
+                fields = summary["safe_fields"]
+                self.assertIs(fields["formal_validation_ready"], expected)
+                self.assertIs(
+                    fields["remote_ci_run_observed_for_current_head"], expected
+                )
+                self.assertIs(fields["latest_remote_run_verified_green"], expected)
+                self.assertIs(fields["artifact_digest_verified"], expected)
+                if name == "current_green":
+                    self.assertEqual(
+                        summary["status"],
+                        "remote_ci_review_verified_green_current_head",
+                    )
+                    self.assertEqual(fields["head_binding_status"], "current_head_exact")
+                elif name == "stale_green":
+                    self.assertEqual(
+                        summary["status"],
+                        "remote_ci_review_receipt_stale_for_current_head",
+                    )
+                    self.assertTrue(fields["receipt_stale_for_current_head"])
+                elif name == "head_unavailable":
+                    self.assertEqual(
+                        summary["status"],
+                        "remote_ci_review_expected_head_missing_or_invalid_fail_closed",
+                    )
+                self.assertFalse(evaluation["github_called"])
+                self.assertFalse(evaluation["external_calls_triggered"])
+
+    def test_v1_remote_ci_summary_marks_missing_head_and_legacy_schema_fail_closed(self) -> None:
+        cases = (
+            (
+                "missing_head",
+                {"head": "", "head_full": ""},
+                "remote_ci_review_receipt_head_missing_or_invalid_fail_closed",
+                "receipt_head_missing_or_invalid",
+            ),
+            (
+                "legacy_schema",
+                {"schema_version": "command_center_3_remote_ci_review_receipt.v1"},
+                "remote_ci_review_receipt_schema_invalid_fail_closed",
+                "current_head_exact",
+            ),
+        )
+        for name, changes, expected_status, expected_binding in cases:
+            with self.subTest(name=name), tempfile.TemporaryDirectory() as directory:
+                evidence_root = Path(directory)
+                release_gate = evidence_root / "release_gate"
+                release_gate.mkdir(parents=True)
+                receipt = _build_remote_receipt()
+                receipt.update(changes)
+                (release_gate / "remote_ci_review_receipt.json").write_text(
+                    json.dumps(receipt), encoding="utf-8"
+                )
+                _write_import_binding(release_gate)
+
+                evaluation = v1_closeout_service.build_v1_closeout_evaluation(
+                    evidence_root=evidence_root,
+                    expected_head_full=HEAD_FULL,
+                )
+                summary = _remote_summary(evaluation)
+                fields = summary["safe_fields"]
+
+                self.assertEqual(summary["status"], expected_status)
+                self.assertEqual(fields["head_binding_status"], expected_binding)
+                self.assertFalse(fields["formal_validation_ready"])
+                self.assertFalse(fields["remote_ci_run_observed_for_current_head"])
+                self.assertFalse(fields["latest_remote_run_verified_green"])
+                self.assertFalse(fields["artifact_digest_verified"])
+                self.assertFalse(_fact(evaluation, "remote_ci_current_head"))
                 self.assertFalse(evaluation["github_called"])
                 self.assertFalse(evaluation["external_calls_triggered"])
 

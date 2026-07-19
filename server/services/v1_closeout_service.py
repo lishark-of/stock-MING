@@ -306,6 +306,107 @@ def _safe_summary(value: Any, fields: tuple[str, ...], *, observed: bool) -> dic
     }
 
 
+def _formal_remote_ci_summary(
+    receipt: Any,
+    formal_validation: Mapping[str, Any],
+    *,
+    expected_head_full: str,
+) -> dict[str, Any]:
+    """Project remote CI status only through the formal current-HEAD validator.
+
+    A historical receipt can truthfully say that *its* run was current when it
+    was recorded.  Those raw booleans must not be replayed as current truth for
+    a later checkout.  Keep the raw identity visible for diagnosis, but derive
+    every green/current flag from the same formal validation used by the
+    production fact.
+    """
+
+    source = receipt if isinstance(receipt, Mapping) else {}
+    observed = isinstance(receipt, Mapping)
+    expected = _normalize_head_full(expected_head_full)
+    receipt_head = _normalize_head_full(source.get("head_full"))
+    formal_blockers = [
+        token
+        for token in (
+            str(item or "").strip().lower()
+            for item in formal_validation.get("blockers", [])
+        )
+        if _SAFE_BLOCKER_TOKEN.fullmatch(token)
+    ]
+    formal_ready = bool(
+        expected
+        and receipt_head == expected
+        and formal_validation.get("ready") is True
+    )
+    schema_invalid = any(
+        token
+        in {
+            "remote_ci_schema_invalid",
+            "remote_ci_receipt_field_types_invalid",
+            "remote_ci_receipt_fields_not_exact_formal_schema",
+        }
+        for token in formal_blockers
+    )
+    if not observed:
+        status = "remote_ci_review_receipt_missing_fail_closed"
+        head_binding_status = "receipt_missing"
+    elif not expected:
+        status = "remote_ci_review_expected_head_missing_or_invalid_fail_closed"
+        head_binding_status = "expected_head_missing_or_invalid"
+    elif not receipt_head:
+        status = "remote_ci_review_receipt_head_missing_or_invalid_fail_closed"
+        head_binding_status = "receipt_head_missing_or_invalid"
+    elif receipt_head != expected:
+        status = "remote_ci_review_receipt_stale_for_current_head"
+        head_binding_status = "stale_head"
+    elif schema_invalid:
+        status = "remote_ci_review_receipt_schema_invalid_fail_closed"
+        head_binding_status = "current_head_exact"
+    elif formal_ready:
+        status = "remote_ci_review_verified_green_current_head"
+        head_binding_status = "current_head_exact"
+    else:
+        status = "remote_ci_review_receipt_not_formally_verified_fail_closed"
+        head_binding_status = "current_head_exact"
+    safe_fields = {
+        "receipt_schema_version": str(source.get("schema_version") or "missing"),
+        "receipt_status": str(source.get("status") or "missing"),
+        "receipt_head_full": receipt_head,
+        "expected_head_full": expected,
+        "head_binding_status": head_binding_status,
+        "receipt_stale_for_current_head": bool(
+            expected and receipt_head and receipt_head != expected
+        ),
+        "formal_validation_ready": formal_ready,
+        "formal_validation_status": (
+            "verified_current_head" if formal_ready else "failed_closed"
+        ),
+        "formal_blocker_count": len(formal_blockers),
+        "formal_blockers": formal_blockers,
+        "remote_ci_run_observed_for_current_head": formal_ready,
+        "latest_remote_run_verified_green": formal_ready,
+        "artifact_digest_verified": formal_ready,
+        "release_gate_complete": False,
+        "release_review_complete": False,
+        "production_release_complete": False,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "contains_secret": False,
+    }
+    return {
+        "observed": observed,
+        "schema_version": "command_center_3_remote_ci_current_head_summary.v1",
+        "status": status,
+        "safe_fields": safe_fields,
+        "safe_evidence_digest": _canonical_digest(safe_fields),
+        "raw_payload_exposed": False,
+    }
+
+
 _SAFE_BLOCKER_TOKEN = re.compile(r"^[a-z0-9][a-z0-9_.:-]{0,159}$")
 
 
@@ -1397,10 +1498,10 @@ def _build_version_rows(
             _SAFE_FILE_FIELDS,
             observed=isinstance(release_receipt, Mapping),
         ),
-        "remote_receipt_summary": _safe_summary(
+        "remote_receipt_summary": _formal_remote_ci_summary(
             remote_receipt,
-            _SAFE_FILE_FIELDS,
-            observed=isinstance(remote_receipt, Mapping),
+            release_prerequisite_rows.get("remote_ci", {}),
+            expected_head_full=expected_head_full,
         ),
         "release_promotion_summary": {
             key: release_promotion.get(key)
