@@ -2781,7 +2781,9 @@ def storage_backtest_results_local_execution_packet(
     status = "storage_backtest_results_local_execution_blocked"
     error_message_safe = ""
     input_row_count = 0
+    pre_dedupe_normalized_input_row_count = 0
     normalized_input_row_count = 0
+    duplicate_input_row_count = 0
     dataset_row_count = 0
     preserved_row_count = 0
     result_rows: list[dict[str, Any]] = []
@@ -2810,7 +2812,26 @@ def storage_backtest_results_local_execution_packet(
                 "amount",
             ],
         )
-        source_rows = list(query.get("rows") or []) if query.get("status") == "ready" else []
+        applied_symbol_filter = any(
+            isinstance(row, Mapping)
+            and row.get("filter") == "ts_code"
+            and row.get("column") == "ts_code"
+            and row.get("value") == symbol
+            for row in list(query.get("applied_filters") or [])
+        )
+        skipped_symbol_filter = any(
+            isinstance(row, Mapping) and row.get("filter") == "ts_code"
+            for row in list(query.get("skipped_filters") or [])
+        )
+        projection_complete = not list(query.get("missing_projected_columns") or [])
+        source_rows = (
+            list(query.get("rows") or [])
+            if query.get("status") == "ready"
+            and applied_symbol_filter
+            and not skipped_symbol_filter
+            and projection_complete
+            else []
+        )
         input_row_count = len(source_rows)
         post_query_daily_binding = _storage_dataset_physical_binding("daily")
         input_binding_stable = bool(
@@ -2818,7 +2839,11 @@ def storage_backtest_results_local_execution_packet(
             and post_query_daily_binding.get("artifact_digest")
             == recipe.get("input_artifact_digest")
         )
-        if not input_binding_stable:
+        if not applied_symbol_filter or skipped_symbol_filter or not projection_complete:
+            error_message_safe = "local_daily_symbol_scope_or_projection_not_enforced"
+        elif any(str(row.get("ts_code") or "") != symbol for row in source_rows):
+            error_message_safe = "local_daily_symbol_scope_readback_mismatch"
+        elif not input_binding_stable:
             error_message_safe = "local_daily_artifact_changed_during_backtest_read"
         elif input_row_count < int(recipe["minimum_input_rows"]):
             error_message_safe = "insufficient_local_daily_rows_for_backtest"
@@ -2830,12 +2855,66 @@ def storage_backtest_results_local_execution_packet(
                 price_frame = pd.DataFrame(source_rows).rename(
                     columns={"trade_date": "date", "vol": "volume"}
                 )
-                normalized_frame = backtester.normalize_price_frame(price_frame)
-                normalized_input_row_count = int(len(normalized_frame))
                 price_columns = ["open", "high", "low", "close"]
                 activity_columns = ["volume", "amount"]
+                numeric_columns = [*price_columns, *activity_columns]
+                price_frame["date"] = pd.to_datetime(price_frame["date"], errors="coerce")
+                for column in numeric_columns:
+                    price_frame[column] = pd.to_numeric(price_frame[column], errors="coerce")
+                raw_rows_ready = bool(
+                    int(len(price_frame)) == input_row_count
+                    and price_frame["date"].notna().all()
+                    and all(
+                        price_frame[column].notna().all()
+                        and price_frame[column].map(
+                            lambda value: math.isfinite(float(value)) and float(value) > 0
+                        ).all()
+                        for column in numeric_columns
+                    )
+                    and (
+                        price_frame["high"]
+                        >= price_frame[["open", "close", "low"]].max(axis=1)
+                    ).all()
+                    and (
+                        price_frame["low"]
+                        <= price_frame[["open", "close", "high"]].min(axis=1)
+                    ).all()
+                )
+                if not raw_rows_ready:
+                    raise ValueError("raw_local_daily_rows_invalid_or_unparseable")
+                duplicate_mask = price_frame.duplicated(
+                    subset=["ts_code", "date"],
+                    keep=False,
+                )
+                if duplicate_mask.any():
+                    duplicate_rows = price_frame.loc[
+                        duplicate_mask,
+                        ["ts_code", "date", *price_columns, *activity_columns],
+                    ]
+                    conflicting_dates = [
+                        f"{key[0]}:{key[1]}"
+                        for key, group in duplicate_rows.groupby(
+                            ["ts_code", "date"],
+                            sort=False,
+                        )
+                        if any(
+                            int(group[column].nunique(dropna=False)) != 1
+                            for column in [*price_columns, *activity_columns]
+                        )
+                    ]
+                    if conflicting_dates:
+                        raise ValueError("conflicting_duplicate_local_daily_rows")
+                    price_frame = price_frame.drop_duplicates(
+                        subset=["ts_code", "date"],
+                        keep="last",
+                    ).reset_index(drop=True)
+                    duplicate_input_row_count = input_row_count - int(len(price_frame))
+                normalized_frame = backtester.normalize_price_frame(price_frame)
+                pre_dedupe_normalized_input_row_count = input_row_count
+                normalized_input_row_count = int(len(normalized_frame))
                 price_values_ready = bool(
                     normalized_input_row_count >= int(recipe["minimum_input_rows"])
+                    and normalized_input_row_count == int(len(price_frame))
                     and all(column in normalized_frame.columns for column in price_columns)
                     and all(column in normalized_frame.columns for column in activity_columns)
                     and normalized_frame["date"].is_unique
@@ -3016,7 +3095,9 @@ def storage_backtest_results_local_execution_packet(
         "backtest_modes": list(recipe.get("modes") or []),
         "input_daily_artifact_digest": recipe.get("input_artifact_digest"),
         "input_row_count": input_row_count,
+        "pre_dedupe_normalized_input_row_count": pre_dedupe_normalized_input_row_count,
         "normalized_input_row_count": normalized_input_row_count,
+        "duplicate_input_row_count": duplicate_input_row_count,
         "result_row_count": len(result_rows) if succeeded else 0,
         "preserved_row_count": preserved_row_count if succeeded else 0,
         "dataset_row_count": dataset_row_count if succeeded else 0,

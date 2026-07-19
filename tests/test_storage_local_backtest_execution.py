@@ -240,6 +240,154 @@ class StorageLocalBacktestExecutionTests(unittest.TestCase):
             ).exists()
         )
 
+    def test_identical_duplicate_dates_are_deduped_but_conflicts_fail_closed(self):
+        self._write_daily(row_count=140)
+        daily_path = parquet_store.dataset_path(
+            root=storage_service.PARQUET_ROOT,
+            name="daily",
+        )
+        source = pd.read_parquet(daily_path)
+        repeated = pd.concat([source, source.iloc[:20]], ignore_index=True)
+        parquet_store.write_dataset(
+            repeated,
+            root=storage_service.PARQUET_ROOT,
+            name="daily",
+        )
+        recipe = storage_service.storage_backtest_results_local_execution_recipe("000001.SZ")
+        succeeded = storage_service.run_storage_backtest_results_local_execution_task(
+            {
+                "source": "focused_identical_duplicate_rows",
+                "approved_by_user": True,
+                "confirm_local_backtest": True,
+                "scope_hash": recipe["scope_hash"],
+                "ts_code": "000001.SZ",
+            }
+        )
+        self.assertEqual(succeeded["status"], "success", succeeded)
+        packet = SQLiteMetaStore(storage_service.SQLITE_META_PATH).read_packet(
+            storage_service.BACKTEST_RESULTS_LOCAL_EXECUTION_PACKET_KEY
+        )
+        self.assertEqual(packet["pre_dedupe_normalized_input_row_count"], 160)
+        self.assertEqual(packet["normalized_input_row_count"], 140)
+        self.assertEqual(packet["duplicate_input_row_count"], 20)
+
+        conflict = repeated.copy()
+        conflict.loc[len(source), "close"] = float(conflict.loc[len(source), "close"]) + 0.01
+        parquet_store.write_dataset(
+            conflict,
+            root=storage_service.PARQUET_ROOT,
+            name="daily",
+        )
+        conflict_recipe = storage_service.storage_backtest_results_local_execution_recipe(
+            "000001.SZ"
+        )
+        failed = storage_service.run_storage_backtest_results_local_execution_task(
+            {
+                "source": "focused_conflicting_duplicate_rows",
+                "approved_by_user": True,
+                "confirm_local_backtest": True,
+                "scope_hash": conflict_recipe["scope_hash"],
+                "ts_code": "000001.SZ",
+            }
+        )
+        self.assertEqual(failed["status"], "failed")
+        failure_packet = SQLiteMetaStore(storage_service.SQLITE_META_PATH).read_packet(
+            storage_service.BACKTEST_RESULTS_LOCAL_EXECUTION_PACKET_KEY
+        )
+        self.assertFalse(failure_packet["local_backtest_executed"])
+        self.assertEqual(failure_packet["error_message_safe"], "conflicting_duplicate_local_daily_rows")
+
+        nan_conflict = repeated.copy()
+        nan_conflict.loc[len(source), "close"] = float("nan")
+        parquet_store.write_dataset(
+            nan_conflict,
+            root=storage_service.PARQUET_ROOT,
+            name="daily",
+        )
+        nan_recipe = storage_service.storage_backtest_results_local_execution_recipe("000001.SZ")
+        nan_failed = storage_service.run_storage_backtest_results_local_execution_task(
+            {
+                "source": "focused_nan_duplicate_attack",
+                "approved_by_user": True,
+                "confirm_local_backtest": True,
+                "scope_hash": nan_recipe["scope_hash"],
+                "ts_code": "000001.SZ",
+            }
+        )
+        self.assertEqual(nan_failed["status"], "failed")
+        nan_packet = SQLiteMetaStore(storage_service.SQLITE_META_PATH).read_packet(
+            storage_service.BACKTEST_RESULTS_LOCAL_EXECUTION_PACKET_KEY
+        )
+        self.assertFalse(nan_packet["local_backtest_executed"])
+        self.assertEqual(
+            nan_packet["error_message_safe"],
+            "raw_local_daily_rows_invalid_or_unparseable",
+        )
+
+    def test_symbol_scope_must_be_physically_enforced_and_mixed_rows_are_filtered(self):
+        self._write_daily(row_count=140)
+        daily_path = parquet_store.dataset_path(
+            root=storage_service.PARQUET_ROOT,
+            name="daily",
+        )
+        source = pd.read_parquet(daily_path)
+        missing_symbol = source.drop(columns=["ts_code"])
+        parquet_store.write_dataset(
+            missing_symbol,
+            root=storage_service.PARQUET_ROOT,
+            name="daily",
+        )
+        missing_recipe = storage_service.storage_backtest_results_local_execution_recipe(
+            "000001.SZ"
+        )
+        missing = storage_service.run_storage_backtest_results_local_execution_task(
+            {
+                "source": "focused_missing_symbol_scope",
+                "approved_by_user": True,
+                "confirm_local_backtest": True,
+                "scope_hash": missing_recipe["scope_hash"],
+                "ts_code": "000001.SZ",
+            }
+        )
+        self.assertEqual(missing["status"], "failed")
+        missing_packet = SQLiteMetaStore(storage_service.SQLITE_META_PATH).read_packet(
+            storage_service.BACKTEST_RESULTS_LOCAL_EXECUTION_PACKET_KEY
+        )
+        self.assertEqual(
+            missing_packet["error_message_safe"],
+            "local_daily_symbol_scope_or_projection_not_enforced",
+        )
+
+        mixed = pd.concat(
+            [
+                source,
+                source.assign(ts_code="000002.SZ"),
+            ],
+            ignore_index=True,
+        )
+        parquet_store.write_dataset(
+            mixed,
+            root=storage_service.PARQUET_ROOT,
+            name="daily",
+        )
+        mixed_recipe = storage_service.storage_backtest_results_local_execution_recipe("000001.SZ")
+        selected = storage_service.run_storage_backtest_results_local_execution_task(
+            {
+                "source": "focused_mixed_symbol_scope",
+                "approved_by_user": True,
+                "confirm_local_backtest": True,
+                "scope_hash": mixed_recipe["scope_hash"],
+                "ts_code": "000001.SZ",
+            }
+        )
+        self.assertEqual(selected["status"], "success", selected)
+        selected_packet = SQLiteMetaStore(storage_service.SQLITE_META_PATH).read_packet(
+            storage_service.BACKTEST_RESULTS_LOCAL_EXECUTION_PACKET_KEY
+        )
+        self.assertEqual(selected_packet["input_row_count"], 140)
+        self.assertEqual(selected_packet["normalized_input_row_count"], 140)
+        self.assertEqual(selected_packet["ts_code"], "000001.SZ")
+
     def test_non_numeric_activity_rows_and_packet_failure_cannot_publish_orphan_results(self):
         rows = []
         for index in range(180):
