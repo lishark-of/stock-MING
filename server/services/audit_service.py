@@ -117,6 +117,9 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 SQLITE_META_PATH = PROJECT_ROOT / ".stock_ming_3" / "meta.sqlite"
 LOCAL_PUSH_GATE_RUN_RECEIPT_PATH = PROJECT_ROOT / ".stock_ming_3" / "release_gate" / "local_push_gate_run_receipt.json"
 REMOTE_CI_REVIEW_RECEIPT_PATH = PROJECT_ROOT / ".stock_ming_3" / "release_gate" / "remote_ci_review_receipt.json"
+REMOTE_PUSH_GATE_ARTIFACT_IMPORT_RECEIPT_PATH = (
+    PROJECT_ROOT / ".stock_ming_3" / "release_gate" / "remote_push_gate_artifact_import_receipt.json"
+)
 RELEASE_GATE_REVIEW_RECEIPT_PATH = PROJECT_ROOT / ".stock_ming_3" / "release_gate" / "release_gate_review_receipt.json"
 SECRET_ARTIFACT_ALLOWLIST_REVIEW_RECEIPT_PATH = (
     PROJECT_ROOT / ".stock_ming_3" / "release_gate" / "secret_artifact_allowlist_review_receipt.json"
@@ -1243,6 +1246,58 @@ def _read_remote_ci_review_receipt() -> dict[str, Any]:
         and len(digest_hex) == 64
         and all(char in "0123456789abcdef" for char in digest_hex)
     )
+    try:
+        artifact_import_raw = json.loads(
+            REMOTE_PUSH_GATE_ARTIFACT_IMPORT_RECEIPT_PATH.read_text(encoding="utf-8")
+        )
+        local_gate_bytes = LOCAL_PUSH_GATE_RUN_RECEIPT_PATH.read_bytes()
+    except (OSError, UnicodeError, json.JSONDecodeError):
+        artifact_import_raw = {}
+        local_gate_bytes = b""
+    artifact_import = _as_dict(artifact_import_raw)
+    local_gate_sha256 = hashlib.sha256(local_gate_bytes).hexdigest() if local_gate_bytes else ""
+    artifact_id = raw_receipt.get("artifact_id")
+    artifact_size_bytes = raw_receipt.get("artifact_size_bytes")
+    try:
+        from server.services import release_promotion_service
+
+        local_gate_value = json.loads(local_gate_bytes.decode("utf-8"))
+        local_gate_validation = release_promotion_service._validate_local_gate(
+            _as_dict(local_gate_value), receipt_head_full
+        )
+        artifact_import_validation = (
+            release_promotion_service._validate_remote_artifact_import(
+                artifact_import,
+                local_gate_bytes=local_gate_bytes,
+                head_full=receipt_head_full,
+                run_id=run_id if type(run_id) is int else 0,
+                artifact_name=expected_artifact_name,
+                artifact_digest=artifact_digest,
+            )
+        )
+    except (ImportError, UnicodeError, json.JSONDecodeError, TypeError, ValueError):
+        local_gate_validation = {}
+        artifact_import_validation = {}
+    artifact_import_digest = str(artifact_import_validation.get("receipt_digest") or "")
+    artifact_import_proof_ok = bool(
+        local_gate_validation.get("ready") is True
+        and artifact_import_validation.get("ready") is True
+    )
+    artifact_import_binding_ok = bool(
+        artifact_import_proof_ok
+        and raw_receipt.get("artifact_import_verified") is True
+        and raw_receipt.get("artifact_receipt_bytes_identical") is True
+        and type(artifact_id) is int
+        and artifact_id == artifact_import.get("artifact_id")
+        and type(artifact_size_bytes) is int
+        and artifact_size_bytes == artifact_import.get("artifact_size_bytes")
+        and raw_receipt.get("artifact_archive_sha256") == artifact_digest
+        and raw_receipt.get("artifact_import_receipt_digest") == artifact_import_digest
+        and raw_receipt.get("embedded_local_gate_receipt_sha256") == local_gate_sha256
+        and raw_receipt.get("imported_local_gate_receipt_sha256") == local_gate_sha256
+        and raw_receipt.get("remote_ci_failure_artifact_download_status")
+        == "downloaded_to_local_temp_for_manual_review"
+    )
     run_url = str(raw_receipt.get("run_url") or "")
     run_url_ok = bool(formal_run_id and run_url == expected_run_url)
     formal_recorder_ok = bool(
@@ -1341,6 +1396,8 @@ def _read_remote_ci_review_receipt() -> dict[str, Any]:
         missing_evidence.append("push-gate evidence artifact name")
     if not no_matching_run_for_current_head and not run_in_progress_status and not artifact_digest_ok:
         missing_evidence.append("push-gate evidence artifact sha256 digest")
+    if status_ok and not artifact_import_binding_ok:
+        missing_evidence.append("verified downloaded artifact and byte-identical local gate receipt")
     if not no_matching_run_for_current_head and not run_url_ok:
         missing_evidence.append("safe GitHub Actions run URL")
     if not review_authorized:
@@ -1349,7 +1406,11 @@ def _read_remote_ci_review_receipt() -> dict[str, Any]:
         missing_evidence.append("cache read no-external/no-provider/no-trade boundary flags")
 
     verified_green = bool(
-        remote_status_known and status_ok and artifact_ok and artifact_digest_ok
+        remote_status_known
+        and status_ok
+        and artifact_ok
+        and artifact_digest_ok
+        and artifact_import_binding_ok
     )
     status = (
         "remote_ci_review_verified_green"
@@ -1391,6 +1452,8 @@ def _read_remote_ci_review_receipt() -> dict[str, Any]:
                 remote_status_known and artifact_digest_pending_status and not artifact_digest_ok
             ),
             "artifact_digest_verified": artifact_digest_ok,
+            "artifact_import_verified": artifact_import_binding_ok,
+            "artifact_receipt_bytes_identical": artifact_import_binding_ok,
             "artifact_digest_review_status": (
                 "sha256_digest_recorded"
                 if artifact_digest_ok

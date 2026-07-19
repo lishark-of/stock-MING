@@ -2234,12 +2234,16 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
     def _with_release_gate_receipt_path(self):
         original_path = audit_service.LOCAL_PUSH_GATE_RUN_RECEIPT_PATH
         original_remote_path = audit_service.REMOTE_CI_REVIEW_RECEIPT_PATH
+        original_artifact_import_path = audit_service.REMOTE_PUSH_GATE_ARTIFACT_IMPORT_RECEIPT_PATH
         original_allowlist_path = audit_service.SECRET_ARTIFACT_ALLOWLIST_REVIEW_RECEIPT_PATH
         original_release_review_path = audit_service.RELEASE_GATE_REVIEW_RECEIPT_PATH
         original_next_session_path = next_session_service.LOCAL_PUSH_GATE_RUN_RECEIPT_PATH
         temp_dir = tempfile.TemporaryDirectory()
         receipt_path = Path(temp_dir.name) / "release_gate" / "local_push_gate_run_receipt.json"
         remote_receipt_path = Path(temp_dir.name) / "release_gate" / "remote_ci_review_receipt.json"
+        artifact_import_path = (
+            Path(temp_dir.name) / "release_gate" / "remote_push_gate_artifact_import_receipt.json"
+        )
         allowlist_receipt_path = (
             Path(temp_dir.name) / "release_gate" / "secret_artifact_allowlist_review_receipt.json"
         )
@@ -2248,12 +2252,19 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         )
         audit_service.LOCAL_PUSH_GATE_RUN_RECEIPT_PATH = receipt_path
         audit_service.REMOTE_CI_REVIEW_RECEIPT_PATH = remote_receipt_path
+        audit_service.REMOTE_PUSH_GATE_ARTIFACT_IMPORT_RECEIPT_PATH = artifact_import_path
         audit_service.SECRET_ARTIFACT_ALLOWLIST_REVIEW_RECEIPT_PATH = allowlist_receipt_path
         audit_service.RELEASE_GATE_REVIEW_RECEIPT_PATH = release_review_receipt_path
         next_session_service.LOCAL_PUSH_GATE_RUN_RECEIPT_PATH = receipt_path
         self.addCleanup(temp_dir.cleanup)
         self.addCleanup(setattr, audit_service, "LOCAL_PUSH_GATE_RUN_RECEIPT_PATH", original_path)
         self.addCleanup(setattr, audit_service, "REMOTE_CI_REVIEW_RECEIPT_PATH", original_remote_path)
+        self.addCleanup(
+            setattr,
+            audit_service,
+            "REMOTE_PUSH_GATE_ARTIFACT_IMPORT_RECEIPT_PATH",
+            original_artifact_import_path,
+        )
         self.addCleanup(
             setattr,
             audit_service,
@@ -28075,12 +28086,16 @@ class CommandCenter3FastAPITests(unittest.TestCase):
     def _with_release_gate_receipt_path(self):
         original_path = audit_service.LOCAL_PUSH_GATE_RUN_RECEIPT_PATH
         original_remote_path = audit_service.REMOTE_CI_REVIEW_RECEIPT_PATH
+        original_artifact_import_path = audit_service.REMOTE_PUSH_GATE_ARTIFACT_IMPORT_RECEIPT_PATH
         original_allowlist_path = audit_service.SECRET_ARTIFACT_ALLOWLIST_REVIEW_RECEIPT_PATH
         original_release_review_path = audit_service.RELEASE_GATE_REVIEW_RECEIPT_PATH
         original_next_session_path = next_session_service.LOCAL_PUSH_GATE_RUN_RECEIPT_PATH
         temp_dir = tempfile.TemporaryDirectory()
         receipt_path = Path(temp_dir.name) / "release_gate" / "local_push_gate_run_receipt.json"
         remote_receipt_path = Path(temp_dir.name) / "release_gate" / "remote_ci_review_receipt.json"
+        artifact_import_path = (
+            Path(temp_dir.name) / "release_gate" / "remote_push_gate_artifact_import_receipt.json"
+        )
         allowlist_receipt_path = (
             Path(temp_dir.name) / "release_gate" / "secret_artifact_allowlist_review_receipt.json"
         )
@@ -28089,12 +28104,19 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         )
         audit_service.LOCAL_PUSH_GATE_RUN_RECEIPT_PATH = receipt_path
         audit_service.REMOTE_CI_REVIEW_RECEIPT_PATH = remote_receipt_path
+        audit_service.REMOTE_PUSH_GATE_ARTIFACT_IMPORT_RECEIPT_PATH = artifact_import_path
         audit_service.SECRET_ARTIFACT_ALLOWLIST_REVIEW_RECEIPT_PATH = allowlist_receipt_path
         audit_service.RELEASE_GATE_REVIEW_RECEIPT_PATH = release_review_receipt_path
         next_session_service.LOCAL_PUSH_GATE_RUN_RECEIPT_PATH = receipt_path
         self.addCleanup(temp_dir.cleanup)
         self.addCleanup(setattr, audit_service, "LOCAL_PUSH_GATE_RUN_RECEIPT_PATH", original_path)
         self.addCleanup(setattr, audit_service, "REMOTE_CI_REVIEW_RECEIPT_PATH", original_remote_path)
+        self.addCleanup(
+            setattr,
+            audit_service,
+            "REMOTE_PUSH_GATE_ARTIFACT_IMPORT_RECEIPT_PATH",
+            original_artifact_import_path,
+        )
         self.addCleanup(
             setattr,
             audit_service,
@@ -58771,16 +58793,81 @@ class CommandCenter3FastAPITests(unittest.TestCase):
     def test_remote_ci_review_receipt_recorder_writes_matching_green_without_release_completion(self):
         self._with_meta_store()
         self._with_release_gate_receipt_path()
+        original_worktree_audit = audit_service._local_worktree_cleanliness_audit
+        audit_service._local_worktree_cleanliness_audit = lambda: (
+            {
+                "worktree_clean": True,
+                "blocks_local_push_gate_receipt": False,
+            },
+            [],
+        )
+        self.addCleanup(
+            setattr,
+            audit_service,
+            "_local_worktree_cleanliness_audit",
+            original_worktree_audit,
+        )
+        original_origin_ahead_summary = audit_service._current_origin_ahead_summary
+        audit_service._current_origin_ahead_summary = lambda: {
+            "read_status": "local_git_origin_ahead_count_present",
+            "ahead_count": 0,
+            "external": False,
+        }
+        self.addCleanup(
+            setattr,
+            audit_service,
+            "_current_origin_ahead_summary",
+            original_origin_ahead_summary,
+        )
         current_head = audit_service._current_git_head_summary()
         receipt_path = audit_service.REMOTE_CI_REVIEW_RECEIPT_PATH
         run_id = 123456789
         script_path = Path(__file__).resolve().parents[1] / "scripts" / "record_remote_ci_review_receipt.py"
         artifact_name = f"command-center-3-push-gate-evidence-{run_id}"
         artifact_digest = "sha256:" + ("a" * 64)
-        imported_local_receipt = receipt_path.parent / "imported-local-gate.json"
-        artifact_import_receipt = receipt_path.parent / "artifact-import.json"
+        imported_local_receipt = audit_service.LOCAL_PUSH_GATE_RUN_RECEIPT_PATH
+        artifact_import_receipt = audit_service.REMOTE_PUSH_GATE_ARTIFACT_IMPORT_RECEIPT_PATH
         imported_local_receipt.parent.mkdir(parents=True, exist_ok=True)
-        imported_local_receipt.write_bytes(b'{"artifact_fixture":true}\n')
+        imported_local_receipt.write_text(
+            json.dumps(
+                {
+                    "schema_version": "command_center_3_local_push_gate_run_receipt.v1",
+                    "status": "local_push_gate_passed_current_head",
+                    "scope": "ignored_local_push_gate_run_receipt_no_push_no_github_api",
+                    "generated_at_utc": "2026-06-27T20:18:00Z",
+                    "branch": "main",
+                    "head": current_head["head_full"][:8],
+                    "head_full": current_head["head_full"],
+                    "origin_ahead_count": "0",
+                    "report_path": ".stock_ming_3/release_gate/push_gate_report.md",
+                    "checks": sorted(audit_service.LOCAL_PUSH_GATE_REQUIRED_CHECKS),
+                    "did_not_push": True,
+                    "git_add_dot_used": False,
+                    "external_calls_triggered": False,
+                    "tushare_called": False,
+                    "deepseek_called": False,
+                    "github_called": False,
+                    "github_api_called": False,
+                    "does_not_execute_trades": True,
+                    "does_not_modify_strategy_action": True,
+                    "contains_secret": False,
+                    "local_gate_pass_is_not_ci_status": True,
+                    "remote_actions_status_known": False,
+                    "latest_remote_run_verified_green": False,
+                    "explicit_user_push_confirmation_before_push": False,
+                    "push_confirmation_state": "not_requested_no_push",
+                    "release_claim_decision": "blocked_remote_ci_unverified",
+                    "remote_ci_status_note": (
+                        "local push gate pass is not remote CI green; inspect matching remote "
+                        "Actions run before release."
+                    ),
+                },
+                ensure_ascii=False,
+                sort_keys=True,
+            )
+            + "\n",
+            encoding="utf-8",
+        )
         local_receipt_sha = hashlib.sha256(
             imported_local_receipt.read_bytes()
         ).hexdigest()
@@ -58924,10 +59011,10 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         push_receipt = packet["release_gate_push_readiness_receipt"]
         self.assertTrue(push_receipt["remote_actions_status_known"])
         self.assertTrue(push_receipt["latest_remote_run_verified_green"])
-        self.assertFalse(push_receipt["fresh_local_gate_run_observed"])
+        self.assertTrue(push_receipt["fresh_local_gate_run_observed"])
         self.assertNotIn("matching_remote_actions_run_status", push_receipt["missing_evidence_items"])
         self.assertNotIn("latest_remote_run_green_evidence", push_receipt["missing_evidence_items"])
-        self.assertIn("fresh_local_push_gate_command_output", push_receipt["missing_evidence_items"])
+        self.assertNotIn("fresh_local_push_gate_command_output", push_receipt["missing_evidence_items"])
         self.assertIn("release_review_after_remote_ci_green", push_receipt["missing_evidence_items"])
         self.assertEqual(push_receipt["release_claim_decision"], "remote_ci_green_release_review_pending")
         self.assertFalse(push_receipt["github_api_called"])
@@ -58936,7 +59023,7 @@ class CommandCenter3FastAPITests(unittest.TestCase):
 
         stage_rows = {row["stage_key"]: row for row in packet["release_gate_stage_scope_rows"]}
         self.assertTrue(stage_rows["matching_remote_actions_status"]["stage_complete"])
-        self.assertFalse(stage_rows["fresh_local_gate_command_run"]["stage_complete"])
+        self.assertTrue(stage_rows["fresh_local_gate_command_run"]["stage_complete"])
         for row in stage_rows.values():
             self.assertFalse(row["release_gate_complete"])
             self.assertFalse(row["github_api_called"])
@@ -58955,18 +59042,24 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         release_split_rows = {
             row["split_stage"]: row for row in migration["release_gate_remote_review_split_rows"]
         }
-        self.assertEqual(release_split["status"], "release_gate_remote_ci_green_local_gate_recheck_required")
-        self.assertFalse(release_split["local_complete"])
-        self.assertEqual(release_split["remote_review_status"], "remote_review_green_local_gate_recheck_required")
+        self.assertEqual(
+            release_split["status"],
+            "release_gate_direct_evidence_visible_remote_ci_reviewed_release_review_pending",
+        )
+        self.assertTrue(release_split["local_complete"])
+        self.assertEqual(
+            release_split["remote_review_status"],
+            "remote_review_green_release_review_pending",
+        )
         self.assertTrue(release_split["remote_actions_status_known"])
         self.assertTrue(release_split["latest_remote_run_verified_green"])
         self.assertTrue(release_split["remote_ci_green_for_current_head"])
-        self.assertTrue(release_split["remote_ci_green_local_gate_recheck_required"])
+        self.assertFalse(release_split["remote_ci_green_local_gate_recheck_required"])
         self.assertTrue(release_split["remote_ci_review_receipt_head_matches_current"])
-        self.assertFalse(release_split["release_review_pending"])
-        self.assertTrue(release_split["release_review_blocked_by_local_gate_recheck"])
+        self.assertTrue(release_split["release_review_pending"])
+        self.assertFalse(release_split["release_review_blocked_by_local_gate_recheck"])
         self.assertFalse(release_split["strict_closeout_ready"])
-        self.assertIn("fresh local gate run for current HEAD", release_split["missing_evidence_items"])
+        self.assertNotIn("fresh local gate run for current HEAD", release_split["missing_evidence_items"])
         self.assertNotIn(
             "matching remote Actions status for current HEAD",
             release_split["missing_evidence_items"],
@@ -58977,18 +59070,18 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         )
         self.assertEqual(
             release_handoff["status"],
-            "release_gate_remote_review_green_local_gate_recheck_required",
+            "release_gate_remote_review_green_release_review_pending",
         )
         self.assertEqual(
             release_handoff["next_local_step"],
-            "rerun_local_push_gate_after_clean_worktree_for_current_head",
+            "release_review_after_matching_remote_ci_green",
         )
         self.assertTrue(release_handoff["remote_actions_status_known"])
         self.assertTrue(release_handoff["latest_remote_run_verified_green"])
         self.assertTrue(release_handoff["remote_ci_green_for_current_head"])
         self.assertTrue(release_handoff["remote_ci_review_receipt_head_matches_current"])
-        self.assertTrue(release_handoff["requires_current_head_local_gate_recheck"])
-        self.assertTrue(release_handoff["release_review_blocked_by_local_gate_recheck"])
+        self.assertFalse(release_handoff["requires_current_head_local_gate_recheck"])
+        self.assertFalse(release_handoff["release_review_blocked_by_local_gate_recheck"])
         self.assertFalse(release_handoff["release_gate_complete"])
         self.assertFalse(release_handoff["strict_closeout_ready"])
         self.assertFalse(release_handoff["can_close_goal"])
@@ -58996,12 +59089,12 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertFalse(release_handoff["github_api_called"])
         self.assertFalse(release_handoff["external_calls_triggered"])
         self.assertTrue(release_handoff["does_not_execute_trades"])
-        self.assertTrue(
+        self.assertFalse(
             release_split_rows["matching_remote_actions_review"][
                 "remote_ci_green_local_gate_recheck_required"
             ]
         )
-        self.assertTrue(
+        self.assertFalse(
             release_split_rows["release_review_and_strict_closeout_boundary"][
                 "release_review_blocked_by_local_gate_recheck"
             ]
@@ -59009,18 +59102,24 @@ class CommandCenter3FastAPITests(unittest.TestCase):
 
         observed_stage_rows = {row["id"]: row for row in migration["ltg_stage_scope_observed_rows"]}
         ltg11 = observed_stage_rows["LTG-11"]
-        self.assertEqual(ltg11["status"], "observed_release_gate_remote_ci_green_local_gate_recheck_required")
-        self.assertEqual(ltg11["direct_evidence_stage_keys"], ["matching_remote_actions_status"])
-        self.assertFalse(ltg11["local_complete"])
+        self.assertEqual(
+            ltg11["status"],
+            "observed_release_gate_direct_evidence_remote_ci_reviewed_release_review_pending",
+        )
+        self.assertEqual(
+            ltg11["direct_evidence_stage_keys"],
+            ["fresh_local_gate_command_run", "matching_remote_actions_status"],
+        )
+        self.assertTrue(ltg11["local_complete"])
         self.assertTrue(ltg11["remote_ci_green_for_current_head"])
-        self.assertTrue(ltg11["remote_ci_green_local_gate_recheck_required"])
-        self.assertTrue(ltg11["release_review_blocked_by_local_gate_recheck"])
-        self.assertFalse(ltg11["release_review_pending"])
+        self.assertFalse(ltg11["remote_ci_green_local_gate_recheck_required"])
+        self.assertFalse(ltg11["release_review_blocked_by_local_gate_recheck"])
+        self.assertTrue(ltg11["release_review_pending"])
         self.assertFalse(ltg11["can_close_from_observed_row"])
-        assert_ltg11_release_gate_stage_scope(self, ltg11, expected_direct_count=1)
+        assert_ltg11_release_gate_stage_scope(self, ltg11, expected_direct_count=2)
 
         work_order_summary = migration["ltg_strict_closeout_work_order_summary"]
-        self.assertIn(
+        self.assertNotIn(
             "remote_ci_green_local_gate_recheck_required",
             work_order_summary["release_gate_current_blockers"],
         )

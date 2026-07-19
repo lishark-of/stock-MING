@@ -1,3 +1,4 @@
+import hashlib
 import json
 import subprocess
 import sys
@@ -173,6 +174,7 @@ class AuditGateLocalWorktreeTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp_dir:
             local_path = Path(temp_dir) / "local-push-gate-receipt.json"
             remote_path = Path(temp_dir) / "remote-ci-review-receipt.json"
+            artifact_import_path = Path(temp_dir) / "remote-push-gate-artifact-import-receipt.json"
             allowlist_path = Path(temp_dir) / "missing-secret-artifact-allowlist-review-receipt.json"
             local_path.write_text(
                 json.dumps(
@@ -180,9 +182,12 @@ class AuditGateLocalWorktreeTests(unittest.TestCase):
                         "schema_version": "command_center_3_local_push_gate_run_receipt.v1",
                         "status": "local_push_gate_passed_current_head",
                         "scope": "ignored_local_push_gate_run_receipt_no_push_no_github_api",
+                        "generated_at_utc": "2026-07-19T04:00:00Z",
                         "branch": current["branch"],
                         "head": current["head"],
                         "head_full": current["head_full"],
+                        "origin_ahead_count": "5",
+                        "report_path": ".stock_ming_3/release_gate/push_gate_report.md",
                         "checks": sorted(audit_service.LOCAL_PUSH_GATE_REQUIRED_CHECKS),
                         "did_not_push": True,
                         "git_add_dot_used": False,
@@ -200,31 +205,104 @@ class AuditGateLocalWorktreeTests(unittest.TestCase):
                         "explicit_user_push_confirmation_before_push": False,
                         "push_confirmation_state": "not_requested_no_push",
                         "release_claim_decision": "blocked_remote_ci_unverified",
+                        "remote_ci_status_note": (
+                            "local push gate pass is not remote CI green; inspect matching remote "
+                            "Actions run before release."
+                        ),
                     },
                     ensure_ascii=False,
                 ),
                 encoding="utf-8",
             )
+            run_id = 28277376120
+            artifact_digest = "sha256:" + "a" * 64
+            local_receipt_bytes = local_path.read_bytes()
+            local_receipt_sha256 = hashlib.sha256(local_receipt_bytes).hexdigest()
+            artifact_import_receipt = {
+                "schema_version": "command_center_3_remote_push_gate_artifact_import_receipt.v1",
+                "status": "remote_push_gate_artifact_import_verified",
+                "scope": "offline_downloaded_push_gate_artifact_byte_import",
+                "imported_at_utc": "2026-07-19T04:01:00Z",
+                "receipt_writer": "scripts/import_remote_push_gate_artifact.py",
+                "head_full": current["head_full"],
+                "run_id": run_id,
+                "artifact_id": 71,
+                "artifact_name": f"command-center-3-push-gate-evidence-{run_id}",
+                "artifact_size_bytes": 100,
+                "artifact_metadata_digest": "b" * 64,
+                "artifact_archive_size_bytes": 100,
+                "artifact_digest": artifact_digest,
+                "artifact_archive_sha256": artifact_digest,
+                "entry_names": [
+                    "command-center-3-local-push-gate-run-receipt.json",
+                    "command-center-3-push-gate-report.md",
+                    "command-center-3-push-gate.log",
+                ],
+                "entry_manifest_digest": "c" * 64,
+                "embedded_local_gate_receipt_sha256": local_receipt_sha256,
+                "imported_local_gate_receipt_sha256": local_receipt_sha256,
+                "embedded_local_gate_receipt_size_bytes": len(local_receipt_bytes),
+                "imported_local_gate_receipt_size_bytes": len(local_receipt_bytes),
+                "local_receipt_relative_path": (
+                    ".stock_ming_3/release_gate/local_push_gate_run_receipt.json"
+                ),
+                "artifact_digest_matches_metadata": True,
+                "artifact_size_matches_metadata": True,
+                "artifact_receipt_bytes_identical": True,
+                "safe_archive_verified": True,
+                "local_gate_schema_verified": True,
+                "writes_local_receipt": True,
+                "network_calls_triggered": False,
+                "external_calls_triggered": False,
+                "tushare_called": False,
+                "deepseek_called": False,
+                "github_called": False,
+                "github_api_called": False,
+                "does_not_execute_trades": True,
+                "does_not_modify_strategy_action": True,
+                "contains_secret": False,
+            }
+            artifact_import_path.write_text(
+                json.dumps(artifact_import_receipt, ensure_ascii=False),
+                encoding="utf-8",
+            )
+            artifact_import_digest = hashlib.sha256(
+                json.dumps(
+                    artifact_import_receipt,
+                    ensure_ascii=False,
+                    sort_keys=True,
+                    separators=(",", ":"),
+                ).encode("utf-8")
+            ).hexdigest()
             remote_path.write_text(
                 json.dumps(
                     {
-                        "schema_version": "command_center_3_remote_ci_review_receipt.v1",
+                        "schema_version": "command_center_3_remote_ci_review_receipt.v2",
                         "status": "remote_ci_review_verified_green",
                         "scope": "ignored_manual_remote_ci_review_receipt_no_cache_github_api",
                         "receipt_writer": "scripts/record_remote_ci_review_receipt.py",
                         "branch": current["branch"],
                         "head": current["head_full"][:8],
                         "head_full": current["head_full"],
-                        "run_id": 28277376120,
-                        "run_url": "https://github.com/lishark-of/stock-MING/actions/runs/28277376120",
+                        "run_id": run_id,
+                        "run_url": f"https://github.com/lishark-of/stock-MING/actions/runs/{run_id}",
                         "workflow_name": "Command Center 3 Push Gate",
                         "event": "push",
                         "actions_status": "completed",
                         "actions_conclusion": "success",
                         "job_name": "push-gate",
                         "job_conclusion": "success",
-                        "artifact_name": "command-center-3-push-gate-evidence-28277376120",
-                        "artifact_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                        "artifact_name": f"command-center-3-push-gate-evidence-{run_id}",
+                        "artifact_digest": artifact_digest,
+                        "artifact_id": artifact_import_receipt["artifact_id"],
+                        "artifact_size_bytes": artifact_import_receipt["artifact_size_bytes"],
+                        "artifact_archive_sha256": artifact_digest,
+                        "artifact_import_receipt_digest": artifact_import_digest,
+                        "embedded_local_gate_receipt_sha256": local_receipt_sha256,
+                        "imported_local_gate_receipt_sha256": local_receipt_sha256,
+                        "artifact_receipt_bytes_identical": True,
+                        "artifact_import_verified": True,
+                        "remote_ci_failure_artifact_download_status": "downloaded_to_local_temp_for_manual_review",
                         "explicit_user_actions_review_authorized": True,
                         "remote_actions_status_known": True,
                         "latest_remote_run_verified_green": True,
@@ -253,6 +331,10 @@ class AuditGateLocalWorktreeTests(unittest.TestCase):
                 audit_service,
                 "SECRET_ARTIFACT_ALLOWLIST_REVIEW_RECEIPT_PATH",
                 allowlist_path,
+            ), patch.object(
+                audit_service,
+                "REMOTE_PUSH_GATE_ARTIFACT_IMPORT_RECEIPT_PATH",
+                artifact_import_path,
             ), patch.object(audit_service, "_local_worktree_cleanliness_audit", return_value=(clean_worktree, [])):
                 remote = audit_service._read_remote_ci_review_receipt()
                 self.assertEqual(remote["status"], "remote_ci_review_verified_green")
@@ -306,6 +388,75 @@ class AuditGateLocalWorktreeTests(unittest.TestCase):
                 self.assertTrue(local_release_gate["latest_remote_run_verified_green"])
                 self.assertFalse(local_release_gate["release_review_complete"])
                 self.assertFalse(local_release_gate["production_freshness_gate_complete"])
+
+                remote_payload = json.loads(remote_path.read_text(encoding="utf-8"))
+                unknown_field_import = {**artifact_import_receipt, "unexpected": "self-seal"}
+                artifact_import_path.write_text(
+                    json.dumps(unknown_field_import, ensure_ascii=False),
+                    encoding="utf-8",
+                )
+                remote_payload["artifact_import_receipt_digest"] = hashlib.sha256(
+                    json.dumps(
+                        unknown_field_import,
+                        ensure_ascii=False,
+                        sort_keys=True,
+                        separators=(",", ":"),
+                    ).encode("utf-8")
+                ).hexdigest()
+                remote_path.write_text(
+                    json.dumps(remote_payload, ensure_ascii=False),
+                    encoding="utf-8",
+                )
+                unknown_field = audit_service._read_remote_ci_review_receipt()
+                self.assertFalse(unknown_field["latest_remote_run_verified_green"])
+
+                forged_local_bytes = b"{}\n"
+                forged_local_sha256 = hashlib.sha256(forged_local_bytes).hexdigest()
+                forged_import = {
+                    **artifact_import_receipt,
+                    "embedded_local_gate_receipt_sha256": forged_local_sha256,
+                    "imported_local_gate_receipt_sha256": forged_local_sha256,
+                    "embedded_local_gate_receipt_size_bytes": len(forged_local_bytes),
+                    "imported_local_gate_receipt_size_bytes": len(forged_local_bytes),
+                }
+                local_path.write_bytes(forged_local_bytes)
+                artifact_import_path.write_text(
+                    json.dumps(forged_import, ensure_ascii=False),
+                    encoding="utf-8",
+                )
+                remote_payload.update(
+                    {
+                        "artifact_import_receipt_digest": hashlib.sha256(
+                            json.dumps(
+                                forged_import,
+                                ensure_ascii=False,
+                                sort_keys=True,
+                                separators=(",", ":"),
+                            ).encode("utf-8")
+                        ).hexdigest(),
+                        "embedded_local_gate_receipt_sha256": forged_local_sha256,
+                        "imported_local_gate_receipt_sha256": forged_local_sha256,
+                    }
+                )
+                remote_path.write_text(
+                    json.dumps(remote_payload, ensure_ascii=False),
+                    encoding="utf-8",
+                )
+                coordinated_self_seal = audit_service._read_remote_ci_review_receipt()
+                self.assertFalse(coordinated_self_seal["latest_remote_run_verified_green"])
+
+                artifact_import_path.unlink()
+                missing_import = audit_service._read_remote_ci_review_receipt()
+                self.assertEqual(
+                    missing_import["status"],
+                    "remote_ci_review_receipt_present_but_not_verified",
+                )
+                self.assertFalse(missing_import["latest_remote_run_verified_green"])
+                self.assertFalse(missing_import["artifact_import_verified"])
+                self.assertIn(
+                    "verified downloaded artifact and byte-identical local gate receipt",
+                    missing_import["missing_evidence"],
+                )
 
     def test_secret_artifact_allowlist_review_receipt_clears_only_periodic_review(self):
         current = audit_service._current_git_head_summary()
