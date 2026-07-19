@@ -6,6 +6,8 @@ import json
 import os
 from pathlib import Path
 import re
+import shutil
+import stat
 from typing import Any
 import uuid
 
@@ -142,6 +144,132 @@ def write_dataset(df: Any, root: str | Path = ".stock_ming_3/parquet", name: str
     out = dataset_path(root=root_path, name=name)
     df.to_parquet(out, index=False)
     return {"status": "written", "path": str(out), "row_count": int(len(df)), "external_calls_triggered": False}
+
+
+def write_dataset_atomic(
+    df: Any,
+    root: str | Path = ".stock_ming_3/parquet",
+    name: str = "factor_values",
+    *,
+    required_columns: list[str] | tuple[str, ...] | None = None,
+) -> dict[str, Any]:
+    """Validate a temporary Parquet artifact before atomically replacing current."""
+
+    status = dependency_status()
+    if not status["available"]:
+        return {"status": "dependency_missing", **status}
+    try:
+        dataset_name = _safe_component(name, field="dataset_name")
+    except ValueError as exc:
+        return {
+            "status": "invalid_dataset_name",
+            "error_message_safe": str(exc),
+            "external_calls_triggered": False,
+        }
+    root_path = Path(root)
+    root_path.mkdir(parents=True, exist_ok=True)
+    out = dataset_path(root=root_path, name=dataset_name)
+    temp_path = root_path / f".{dataset_name}.{uuid.uuid4().hex}.tmp.parquet"
+    backup_path = root_path / f".{dataset_name}.{uuid.uuid4().hex}.rollback.parquet"
+    requested_columns = [str(column) for column in (required_columns or [])]
+    replaced = False
+    prior_exists = False
+    prior_digest = ""
+    preserve_backup = False
+    try:
+        df.to_parquet(temp_path, index=False)
+        import pyarrow.parquet as pq
+
+        parquet_file = pq.ParquetFile(temp_path)
+        observed_columns = [str(column) for column in parquet_file.schema_arrow.names]
+        row_count = int(parquet_file.metadata.num_rows) if parquet_file.metadata is not None else 0
+        missing_columns = [column for column in requested_columns if column not in observed_columns]
+        if row_count <= 0 or missing_columns:
+            return {
+                "status": "atomic_write_validation_failed",
+                "path": str(out),
+                "row_count": row_count,
+                "columns": observed_columns,
+                "missing_required_columns": missing_columns,
+                "atomic_promoted": False,
+                "external_calls_triggered": False,
+            }
+        with temp_path.open("rb") as handle:
+            os.fsync(handle.fileno())
+        artifact_sha256 = _sha256_file(temp_path)
+        if out.exists() or out.is_symlink():
+            metadata = out.lstat()
+            if stat.S_ISLNK(metadata.st_mode) or not stat.S_ISREG(metadata.st_mode) or metadata.st_nlink != 1:
+                return {
+                    "status": "atomic_write_existing_artifact_invalid",
+                    "path": str(out),
+                    "atomic_promoted": False,
+                    "external_calls_triggered": False,
+                }
+            prior_exists = True
+            prior_digest = _sha256_file(out)
+            shutil.copy2(out, backup_path, follow_symlinks=False)
+            with backup_path.open("rb") as handle:
+                os.fsync(handle.fileno())
+            if _sha256_file(backup_path) != prior_digest:
+                raise RuntimeError("atomic_write_rollback_backup_digest_mismatch")
+        os.replace(temp_path, out)
+        replaced = True
+        directory_fd = os.open(root_path, os.O_RDONLY)
+        try:
+            os.fsync(directory_fd)
+        finally:
+            os.close(directory_fd)
+        return {
+            "status": "written_atomic",
+            "path": str(out),
+            "row_count": row_count,
+            "columns": observed_columns,
+            "missing_required_columns": [],
+            "artifact_sha256": artifact_sha256,
+            "size_bytes": int(out.stat().st_size),
+            "atomic_promoted": True,
+            "external_calls_triggered": False,
+        }
+    except Exception as exc:
+        rollback_performed = False
+        rollback_verified = not replaced
+        if replaced:
+            try:
+                if prior_exists and backup_path.exists():
+                    os.replace(backup_path, out)
+                    rollback_performed = True
+                    rollback_verified = _sha256_file(out) == prior_digest
+                else:
+                    out.unlink(missing_ok=True)
+                    rollback_performed = True
+                    rollback_verified = not out.exists()
+                directory_fd = os.open(root_path, os.O_RDONLY)
+                try:
+                    os.fsync(directory_fd)
+                finally:
+                    os.close(directory_fd)
+            except Exception:
+                rollback_verified = False
+        preserve_backup = bool(not rollback_verified and backup_path.exists())
+        return {
+            "status": "atomic_write_failed_safe"
+            if rollback_verified
+            else "atomic_write_failed_rollback_unverified",
+            "path": str(out),
+            "error_message_safe": type(exc).__name__,
+            "atomic_promoted": False,
+            "rollback_performed": rollback_performed,
+            "rollback_verified": rollback_verified,
+            "rollback_backup_preserved": preserve_backup,
+            "rollback_backup_path": backup_path.name if preserve_backup else "",
+            "atomic_state_indeterminate": not rollback_verified,
+            "external_calls_triggered": False,
+        }
+    finally:
+        temp_path.unlink(missing_ok=True)
+        if not preserve_backup:
+            backup_path.unlink(missing_ok=True)
 
 
 def write_partitioned_dataset(

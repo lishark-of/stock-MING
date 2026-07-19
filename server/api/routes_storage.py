@@ -74,6 +74,12 @@ def run_storage_backtest_results_schema_seed(payload: dict[str, Any] | None = No
     return task_envelope(task)
 
 
+@router.post("/backtest-results/run-local")
+def run_storage_backtest_results_local_execution(payload: dict[str, Any] | None = None) -> dict:
+    task = storage_service.run_storage_backtest_results_local_execution_task(payload)
+    return task_envelope(task)
+
+
 @router.post("/schema-validation/acceptance")
 def run_storage_schema_validation_acceptance(payload: dict[str, Any] | None = None) -> dict:
     task = storage_service.run_storage_schema_validation_acceptance_task(payload)

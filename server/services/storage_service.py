@@ -26,6 +26,9 @@ SCHEMA_VALIDATION_DRY_RUN_PACKET_KEY = "command_center_3_storage_schema_validati
 SCHEMA_VALIDATION_ACCEPTANCE_PACKET_KEY = "command_center_3_storage_schema_validation_acceptance_packet"
 SCHEMA_MIGRATION_EXECUTION_PACKET_KEY = "command_center_3_storage_schema_migration_execution_packet"
 BACKTEST_RESULTS_SCHEMA_SEED_PACKET_KEY = "command_center_3_storage_backtest_results_schema_seed_packet"
+BACKTEST_RESULTS_LOCAL_EXECUTION_PACKET_KEY = (
+    "command_center_3_storage_backtest_results_local_execution_packet"
+)
 PARTITION_MIGRATION_DRY_RUN_PACKET_KEY = "command_center_3_storage_partition_migration_dry_run_packet"
 PARTITION_MIGRATION_EXECUTION_PACKET_KEY = "command_center_3_storage_partition_migration_execution_packet"
 COMPACTION_EXECUTION_PACKET_KEY = "command_center_3_storage_compaction_execution_packet"
@@ -2529,38 +2532,58 @@ def storage_backtest_results_schema_seed_packet(
     write_result: dict[str, Any] = {}
     write_error = ""
     schema_seed_write_executed = False
-    if not confirm_schema_seed:
-        status = "backtest_results_schema_seed_blocked_confirmation_required"
-    elif not dependency.get("available"):
-        status = "backtest_results_schema_seed_dependency_missing"
-    else:
-        try:
-            import pandas as pd
-
-            seed_frame = pd.DataFrame({column: pd.Series(dtype="string") for column in required_columns})
-            write_result = parquet_store.write_dataset(seed_frame, root=PARQUET_ROOT, name=dataset)
-            schema_seed_write_executed = write_result.get("status") == "written"
-        except Exception as exc:
-            write_error = _safe_error_message(exc)
-            schema_seed_write_executed = False
-        if schema_seed_write_executed:
-            status = "backtest_results_schema_seed_written_validation_pending"
+    PARQUET_ROOT.mkdir(parents=True, exist_ok=True)
+    transaction_lock_path = PARQUET_ROOT / ".backtest_results.transaction.lock"
+    with transaction_lock_path.open("a+b") as transaction_lock:
+        fcntl.flock(transaction_lock.fileno(), fcntl.LOCK_EX)
+        if not confirm_schema_seed:
+            status = "backtest_results_schema_seed_blocked_confirmation_required"
+        elif not dependency.get("available"):
+            status = "backtest_results_schema_seed_dependency_missing"
+        elif dataset_path.exists():
+            existing_metadata = parquet_store.dataset_schema_metadata(root=PARQUET_ROOT, name=dataset)
+            existing_columns = [str(column) for column in existing_metadata.get("columns") or []]
+            existing_missing = [column for column in required_columns if column not in existing_columns]
+            if existing_metadata.get("status") == "ready" and not existing_missing:
+                status = "backtest_results_schema_seed_existing_schema_preserved"
+            else:
+                status = "backtest_results_schema_seed_existing_dataset_invalid_fail_closed"
         else:
-            status = str(write_result.get("status") or "backtest_results_schema_seed_write_failed")
-    post_seed_schema_metadata = parquet_store.dataset_schema_metadata(root=PARQUET_ROOT, name=dataset)
-    physical_columns = [str(column) for column in post_seed_schema_metadata.get("columns") or []]
-    missing_required_columns = [column for column in required_columns if column not in physical_columns]
-    post_seed_schema_validated = (
-        post_seed_schema_metadata.get("status") == "ready"
-        and not missing_required_columns
-        and post_seed_schema_metadata.get("schema_read_done") is True
-    )
-    if schema_seed_write_executed and post_seed_schema_validated:
-        status = "backtest_results_schema_seed_ready_for_schema_acceptance"
-    elif schema_seed_write_executed:
-        status = "backtest_results_schema_seed_written_validation_blocked"
+            try:
+                import pandas as pd
+
+                seed_frame = pd.DataFrame({column: pd.Series(dtype="string") for column in required_columns})
+                write_result = parquet_store.write_dataset(
+                    seed_frame,
+                    root=PARQUET_ROOT,
+                    name=dataset,
+                )
+                schema_seed_write_executed = write_result.get("status") == "written"
+            except Exception as exc:
+                write_error = _safe_error_message(exc)
+                schema_seed_write_executed = False
+            if schema_seed_write_executed:
+                status = "backtest_results_schema_seed_written_validation_pending"
+            else:
+                status = str(write_result.get("status") or "backtest_results_schema_seed_write_failed")
+        post_seed_schema_metadata = parquet_store.dataset_schema_metadata(root=PARQUET_ROOT, name=dataset)
+        physical_columns = [str(column) for column in post_seed_schema_metadata.get("columns") or []]
+        missing_required_columns = [column for column in required_columns if column not in physical_columns]
+        post_seed_schema_validated = (
+            post_seed_schema_metadata.get("status") == "ready"
+            and not missing_required_columns
+            and post_seed_schema_metadata.get("schema_read_done") is True
+        )
+        if schema_seed_write_executed and post_seed_schema_validated:
+            status = "backtest_results_schema_seed_ready_for_schema_acceptance"
+        elif schema_seed_write_executed:
+            status = "backtest_results_schema_seed_written_validation_blocked"
     row_count_written = int(write_result.get("row_count") or 0) if schema_seed_write_executed else 0
-    schema_seed_ready = status == "backtest_results_schema_seed_ready_for_schema_acceptance"
+    existing_schema_preserved = status == "backtest_results_schema_seed_existing_schema_preserved"
+    schema_seed_ready = bool(
+        status == "backtest_results_schema_seed_ready_for_schema_acceptance"
+        or existing_schema_preserved
+    )
     return {
         "schema_version": "command_center_3_storage_backtest_results_schema_seed.v1",
         "packet_key": BACKTEST_RESULTS_SCHEMA_SEED_PACKET_KEY,
@@ -2575,6 +2598,7 @@ def storage_backtest_results_schema_seed_packet(
         "schema_seed_ready_for_schema_acceptance": schema_seed_ready,
         "local_schema_seed_ready": schema_seed_ready,
         "schema_seed_write_executed": schema_seed_write_executed,
+        "existing_schema_preserved": existing_schema_preserved,
         "schema_seed_written_on_post": schema_seed_write_executed,
         "schema_seed_written_on_get": False,
         "schema_seed_writes_parquet": schema_seed_write_executed,
@@ -2631,7 +2655,7 @@ def storage_backtest_results_schema_seed_packet(
             path=_path_label(dataset_path),
         ),
         "warnings": [
-            "POST /api/storage/backtest-results/schema-seed 只在确认后写入 ignored 本地 Parquet 空 schema；不会写入任何回测结果行。",
+            "POST /api/storage/backtest-results/schema-seed 只在 dataset 缺失时写入 ignored 本地 Parquet 空 schema；已有有效 dataset 会原样保留。",
             "backtest_results schema seed 不调用 Tushare、DeepSeek、GitHub，不执行真实交易，不修改 strategy action，也不代表生产 storage 完成。",
         ],
         **({"dependency": dependency} if not dependency.get("available") else {}),
@@ -2693,6 +2717,498 @@ def run_storage_backtest_results_schema_seed_task(payload: Any = None) -> dict[s
         warning="storage_backtest_results_schema_seed_completed_local_only"
         if ready
         else "storage_backtest_results_schema_seed_blocked_no_provider_no_trade",
+    ) or task
+
+
+def storage_backtest_results_local_execution_recipe(
+    ts_code: str = "000001.SZ",
+) -> dict[str, Any]:
+    symbol = str(ts_code or "").strip().upper()
+    symbol_ready = bool(
+        len(symbol) == 9
+        and symbol[:6].isdigit()
+        and symbol[6] == "."
+        and symbol[7:] in {"SH", "SZ", "BJ"}
+    )
+    daily_binding = _storage_dataset_physical_binding("daily")
+    modes = ["default", "free", "dynamic", "tech_growth"]
+    material = {
+        "schema_version": "command_center_3_storage_backtest_results_local_execution_recipe.v1",
+        "head_full": production_evidence_journal.current_head_full(),
+        "target_dataset": "backtest_results",
+        "input_dataset": "daily",
+        "input_artifact_digest": str(daily_binding.get("artifact_digest") or ""),
+        "ts_code": symbol,
+        "modes": modes,
+        "minimum_input_rows": 120,
+        "initial_cash": 100000,
+        "external_sources_allowed": False,
+        "does_not_execute_trades": True,
+    }
+    scope_hash = _json_sha256(material)
+    ready = bool(symbol_ready and daily_binding.get("ready") is True)
+    return {
+        **material,
+        "status": "storage_backtest_results_local_execution_recipe_ready"
+        if ready
+        else "storage_backtest_results_local_execution_recipe_blocked",
+        "local_execution_ready": ready,
+        "scope_hash": scope_hash,
+        "scope_hash_short": scope_hash[:12],
+        "daily_physical_binding": daily_binding,
+        "writes_parquet": False,
+        "reads_row_payloads": False,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_modify_strategy_action": True,
+        "contains_secret": False,
+    }
+
+
+def storage_backtest_results_local_execution_packet(
+    *,
+    task_id: str,
+    payload_safe: Mapping[str, Any],
+) -> dict[str, Any]:
+    symbol = str(payload_safe.get("ts_code") or "000001.SZ").strip().upper()
+    recipe = storage_backtest_results_local_execution_recipe(symbol)
+    approved = payload_safe.get("approved_by_user") is True
+    confirmed = payload_safe.get("confirm_local_backtest") is True
+    requested_scope = str(payload_safe.get("scope_hash") or "")
+    scope_matches = bool(requested_scope and requested_scope == recipe.get("scope_hash"))
+    status = "storage_backtest_results_local_execution_blocked"
+    error_message_safe = ""
+    input_row_count = 0
+    normalized_input_row_count = 0
+    dataset_row_count = 0
+    preserved_row_count = 0
+    result_rows: list[dict[str, Any]] = []
+    write_result: dict[str, Any] = {}
+    readback: dict[str, Any] = {}
+    if not approved or not confirmed:
+        error_message_safe = "explicit_local_backtest_confirmation_required"
+    elif recipe.get("local_execution_ready") is not True:
+        error_message_safe = "local_backtest_recipe_not_ready"
+    elif not scope_matches:
+        error_message_safe = "local_backtest_scope_hash_mismatch"
+    else:
+        daily_path = parquet_store.dataset_path(root=PARQUET_ROOT, name="daily")
+        query = duckdb_store.query_parquet_dataset(
+            daily_path,
+            ts_code=symbol,
+            limit=10000,
+            projection_columns=[
+                "ts_code",
+                "trade_date",
+                "open",
+                "high",
+                "low",
+                "close",
+                "vol",
+                "amount",
+            ],
+        )
+        source_rows = list(query.get("rows") or []) if query.get("status") == "ready" else []
+        input_row_count = len(source_rows)
+        post_query_daily_binding = _storage_dataset_physical_binding("daily")
+        input_binding_stable = bool(
+            post_query_daily_binding.get("ready") is True
+            and post_query_daily_binding.get("artifact_digest")
+            == recipe.get("input_artifact_digest")
+        )
+        if not input_binding_stable:
+            error_message_safe = "local_daily_artifact_changed_during_backtest_read"
+        elif input_row_count < int(recipe["minimum_input_rows"]):
+            error_message_safe = "insufficient_local_daily_rows_for_backtest"
+        else:
+            try:
+                import pandas as pd
+                import backtester
+
+                price_frame = pd.DataFrame(source_rows).rename(
+                    columns={"trade_date": "date", "vol": "volume"}
+                )
+                normalized_frame = backtester.normalize_price_frame(price_frame)
+                normalized_input_row_count = int(len(normalized_frame))
+                price_columns = ["open", "high", "low", "close"]
+                activity_columns = ["volume", "amount"]
+                price_values_ready = bool(
+                    normalized_input_row_count >= int(recipe["minimum_input_rows"])
+                    and all(column in normalized_frame.columns for column in price_columns)
+                    and all(column in normalized_frame.columns for column in activity_columns)
+                    and normalized_frame["date"].is_unique
+                    and all(
+                        normalized_frame[column].notna().all()
+                        and normalized_frame[column].map(
+                            lambda value: math.isfinite(float(value)) and float(value) > 0
+                        ).all()
+                        for column in price_columns
+                    )
+                    and all(
+                        normalized_frame[column].notna().all()
+                        and normalized_frame[column].map(
+                            lambda value: math.isfinite(float(value)) and float(value) > 0
+                        ).all()
+                        for column in activity_columns
+                    )
+                    and (
+                        normalized_frame["high"]
+                        >= normalized_frame[["open", "close", "low"]].max(axis=1)
+                    ).all()
+                    and (
+                        normalized_frame["low"]
+                        <= normalized_frame[["open", "close", "high"]].min(axis=1)
+                    ).all()
+                )
+                if not price_values_ready:
+                    raise ValueError("normalized_local_daily_rows_invalid_or_insufficient")
+                run_date = datetime.now(timezone.utc).strftime("%Y%m%d")
+                for mode in recipe["modes"]:
+                    report = backtester.run_backtest(
+                        normalized_frame,
+                        initial_cash=int(recipe["initial_cash"]),
+                        mode=mode,
+                    )
+                    if int(report.get("data_points") or 0) < int(recipe["minimum_input_rows"]):
+                        raise ValueError("local_backtest_mode_data_points_below_minimum")
+                    metric_payload = {
+                        "schema_version": "storage_backtest_result_metrics.v1",
+                        "head_full": recipe["head_full"],
+                        "scope_hash": recipe["scope_hash"],
+                        "input_daily_artifact_digest": recipe["input_artifact_digest"],
+                        "input_row_count": input_row_count,
+                        "mode": mode,
+                        "data_points": int(report.get("data_points") or 0),
+                        "metrics": report.get("metrics") if isinstance(report.get("metrics"), Mapping) else {},
+                        "signal_counts": report.get("signal_counts") if isinstance(report.get("signal_counts"), Mapping) else {},
+                        "summary": str(report.get("summary") or "")[:500],
+                        "external_calls_triggered": False,
+                        "does_not_execute_trades": True,
+                    }
+                    metrics_json = json.dumps(
+                        metric_payload,
+                        ensure_ascii=False,
+                        sort_keys=True,
+                        separators=(",", ":"),
+                        default=lambda value: value.item() if hasattr(value, "item") else str(value),
+                    )
+                    result_rows.append(
+                        {
+                            "strategy_key": f"backtester:{mode}",
+                            "universe": symbol,
+                            "run_date": run_date,
+                            "status": "completed_local_research",
+                            "metrics": metrics_json,
+                        }
+                    )
+                new_result_frame = pd.DataFrame(
+                    result_rows,
+                    columns=DATASET_SCHEMA_CONTRACTS["backtest_results"]["required_columns"],
+                )
+                required_columns = DATASET_SCHEMA_CONTRACTS["backtest_results"]["required_columns"]
+                dataset_path = parquet_store.dataset_path(
+                    root=PARQUET_ROOT,
+                    name="backtest_results",
+                )
+                PARQUET_ROOT.mkdir(parents=True, exist_ok=True)
+                lock_path = PARQUET_ROOT / ".backtest_results.lock"
+                with lock_path.open("a+b") as lock_handle:
+                    fcntl.flock(lock_handle.fileno(), fcntl.LOCK_EX)
+                    if dataset_path.exists():
+                        existing_frame = pd.read_parquet(dataset_path)
+                        missing_existing = [
+                            column for column in required_columns if column not in existing_frame.columns
+                        ]
+                        if missing_existing:
+                            raise ValueError("existing_backtest_results_schema_invalid")
+                        replace_keys = {
+                            (str(row["strategy_key"]), str(row["universe"]), str(row["run_date"]))
+                            for row in result_rows
+                        }
+                        keep_mask = [
+                            (
+                                str(row["strategy_key"]),
+                                str(row["universe"]),
+                                str(row["run_date"]),
+                            )
+                            not in replace_keys
+                            for _, row in existing_frame.iterrows()
+                        ]
+                        preserved_frame = existing_frame.loc[keep_mask, required_columns]
+                    else:
+                        preserved_frame = pd.DataFrame(columns=required_columns)
+                    preserved_row_count = int(len(preserved_frame))
+                    result_frame = pd.concat(
+                        [preserved_frame, new_result_frame],
+                        ignore_index=True,
+                    )[required_columns]
+                    dataset_row_count = int(len(result_frame))
+                    write_result = parquet_store.write_dataset_atomic(
+                        result_frame,
+                        root=PARQUET_ROOT,
+                        name="backtest_results",
+                        required_columns=required_columns,
+                    )
+                    if write_result.get("atomic_promoted") is True:
+                        readback = duckdb_store.query_parquet_dataset(
+                            dataset_path,
+                            limit=10000,
+                            projection_columns=required_columns,
+                        )
+                observed_keys = {
+                    (str(row.get("strategy_key")), str(row.get("universe")), str(row.get("run_date")))
+                    for row in list(readback.get("rows") or [])
+                    if isinstance(row, Mapping)
+                }
+                expected_keys = {
+                    (str(row["strategy_key"]), str(row["universe"]), str(row["run_date"]))
+                    for row in result_rows
+                }
+                readback_ready = bool(
+                    write_result.get("atomic_promoted") is True
+                    and readback.get("status") == "ready"
+                    and int(readback.get("row_count") or 0) == dataset_row_count
+                    and expected_keys.issubset(observed_keys)
+                    and len(result_rows) == len(recipe["modes"])
+                )
+                status = (
+                    "storage_backtest_results_local_execution_success"
+                    if readback_ready
+                    else "storage_backtest_results_local_execution_write_or_readback_failed"
+                )
+                if not readback_ready:
+                    error_message_safe = status
+            except Exception as exc:
+                error_message_safe = _safe_error_message(exc)
+                status = "storage_backtest_results_local_execution_failed_safe"
+    artifact_binding = _storage_dataset_physical_binding("backtest_results")
+    output_binding_matches_write = bool(
+        artifact_binding.get("ready") is True
+        and artifact_binding.get("file_digest") == write_result.get("artifact_sha256")
+    )
+    final_head_matches = bool(
+        recipe.get("head_full")
+        and production_evidence_journal.current_head_full() == recipe.get("head_full")
+    )
+    if status == "storage_backtest_results_local_execution_success" and not output_binding_matches_write:
+        status = "storage_backtest_results_local_execution_output_binding_changed"
+        error_message_safe = status
+    if status == "storage_backtest_results_local_execution_success" and not final_head_matches:
+        status = "storage_backtest_results_local_execution_head_changed"
+        error_message_safe = status
+    succeeded = status == "storage_backtest_results_local_execution_success"
+    completed_at = datetime.now(timezone.utc).isoformat()
+    return {
+        "schema_version": "command_center_3_storage_backtest_results_local_execution.v1",
+        "packet_key": BACKTEST_RESULTS_LOCAL_EXECUTION_PACKET_KEY,
+        "task_id": task_id,
+        "head_full": recipe.get("head_full"),
+        "status": status,
+        "mode": "explicit_local_research_backtest",
+        "scope_hash": recipe.get("scope_hash") if scope_matches else "",
+        "scope_hash_short": str(recipe.get("scope_hash") or "")[:12],
+        "requested_scope_hash_matches_latest": scope_matches,
+        "approved_by_user": approved,
+        "confirm_local_backtest": confirmed,
+        "ts_code": symbol,
+        "backtest_modes": list(recipe.get("modes") or []),
+        "input_daily_artifact_digest": recipe.get("input_artifact_digest"),
+        "input_row_count": input_row_count,
+        "normalized_input_row_count": normalized_input_row_count,
+        "result_row_count": len(result_rows) if succeeded else 0,
+        "preserved_row_count": preserved_row_count if succeeded else 0,
+        "dataset_row_count": dataset_row_count if succeeded else 0,
+        "local_backtest_executed": succeeded,
+        "simulation_only": True,
+        "write_result": write_result,
+        "readback_status": readback.get("status"),
+        "readback_row_count": int(readback.get("row_count") or 0),
+        "artifact_binding": artifact_binding,
+        "output_binding_matches_write": output_binding_matches_write,
+        "final_head_matches_recipe": final_head_matches,
+        "completed_at": completed_at,
+        "writes_parquet": write_result.get("atomic_promoted") is True,
+        "atomic_parquet_promotion": write_result.get("atomic_promoted") is True,
+        "reads_row_payloads": input_row_count > 0,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "contains_secret": False,
+        "production_storage_complete": False,
+        "error_message_safe": error_message_safe,
+        "call_ledger": _storage_cache_call_ledger(
+            "local_storage_backtest_results_execution",
+            endpoint="POST /api/storage/backtest-results/run-local",
+            status=status,
+            dataset="backtest_results",
+            row_count=len(result_rows) if succeeded else 0,
+            path=_path_label(parquet_store.dataset_path(root=PARQUET_ROOT, name="backtest_results")),
+        ),
+        "warnings": [
+            "本任务只使用本地 daily Parquet 执行研究回测并原子写入 ignored backtest_results；不调用外部源。",
+            "回测结果不代表未来收益，不是买卖指令；任务不修改 strategy action、不执行真实交易。",
+        ],
+    }
+
+
+def run_storage_backtest_results_local_execution_task(payload: Any = None) -> dict[str, Any]:
+    payload_map = payload if isinstance(payload, Mapping) else {}
+    task_payload = {
+        "source": payload_map.get("source") or "storage_page_button",
+        "approved_by_user": payload_map.get("approved_by_user") is True,
+        "confirm_local_backtest": payload_map.get("confirm_local_backtest") is True,
+        "scope_hash": str(payload_map.get("scope_hash") or ""),
+        "ts_code": str(payload_map.get("ts_code") or "000001.SZ").strip().upper(),
+        "external_sources_allowed": False,
+        "trade_execution_allowed": False,
+    }
+    task = task_service.create_task_record(
+        "run_storage_backtest_results_local_execution",
+        output_packet_key=BACKTEST_RESULTS_LOCAL_EXECUTION_PACKET_KEY,
+        payload=task_payload,
+        current_step="storage_backtest_results_local_execution_queued",
+        warnings=[
+            "本地回测任务只读取 local daily Parquet，并将研究指标原子写入 ignored backtest_results。",
+            "本任务不调用 provider/model/GitHub，不执行真实交易，不修改 strategy action。",
+        ],
+    )
+    if task.get("dedupe_reused_existing"):
+        return task
+    task_service.update_task_status(
+        task["task_id"],
+        status="running",
+        progress=0.25,
+        current_step="running_bounded_local_backtest_from_daily_parquet",
+    )
+    payload_safe = task.get("payload_safe") if isinstance(task.get("payload_safe"), dict) else {}
+    PARQUET_ROOT.mkdir(parents=True, exist_ok=True)
+    dataset_path = parquet_store.dataset_path(root=PARQUET_ROOT, name="backtest_results")
+    transaction_lock_path = PARQUET_ROOT / ".backtest_results.transaction.lock"
+    rollback_path = PARQUET_ROOT / f".backtest_results.{task['task_id']}.transaction-rollback.parquet"
+    prior_exists = False
+    prior_digest = ""
+    packet: dict[str, Any] = {}
+    preserve_rollback = False
+    rollback_unverified = False
+
+    def restore_prior_artifact() -> bool:
+        nonlocal preserve_rollback, rollback_unverified
+        try:
+            if prior_exists:
+                if not rollback_path.exists():
+                    return False
+                os.replace(rollback_path, dataset_path)
+                restored = _storage_dataset_physical_binding("backtest_results")
+                restored_ready = bool(
+                    restored.get("ready") is True
+                    and restored.get("file_digest") == prior_digest
+                )
+            else:
+                dataset_path.unlink(missing_ok=True)
+                restored_ready = not dataset_path.exists()
+            directory_fd = os.open(PARQUET_ROOT, os.O_RDONLY)
+            try:
+                os.fsync(directory_fd)
+            finally:
+                os.close(directory_fd)
+            preserve_rollback = bool(not restored_ready and rollback_path.exists())
+            rollback_unverified = not restored_ready
+            return restored_ready
+        except Exception:
+            preserve_rollback = rollback_path.exists()
+            rollback_unverified = True
+            return False
+
+    try:
+        with transaction_lock_path.open("a+b") as transaction_lock:
+            fcntl.flock(transaction_lock.fileno(), fcntl.LOCK_EX)
+            prior_exists = dataset_path.exists()
+            if prior_exists:
+                prior_binding = _storage_dataset_physical_binding("backtest_results")
+                if prior_binding.get("ready") is not True:
+                    raise RuntimeError("existing_backtest_results_artifact_invalid")
+                prior_digest = str(prior_binding.get("file_digest") or "")
+                shutil.copy2(dataset_path, rollback_path, follow_symlinks=False)
+                with rollback_path.open("rb") as handle:
+                    os.fsync(handle.fileno())
+                with rollback_path.open("rb") as handle:
+                    rollback_digest = hashlib.file_digest(handle, "sha256").hexdigest()
+                if rollback_digest != prior_digest:
+                    preserve_rollback = True
+                    raise RuntimeError("local_backtest_transaction_backup_digest_mismatch")
+            packet = storage_backtest_results_local_execution_packet(
+                task_id=task["task_id"],
+                payload_safe=payload_safe,
+            )
+            if packet.get("local_backtest_executed") is not True:
+                current_binding = _storage_dataset_physical_binding("backtest_results")
+                current_digest = str(current_binding.get("file_digest") or "")
+                artifact_changed = bool(
+                    (prior_exists and current_digest != prior_digest)
+                    or (not prior_exists and dataset_path.exists())
+                )
+                if artifact_changed and not restore_prior_artifact():
+                    raise RuntimeError("failed_local_backtest_artifact_rollback_unverified")
+            try:
+                SQLiteMetaStore(SQLITE_META_PATH).write_packet(
+                    BACKTEST_RESULTS_LOCAL_EXECUTION_PACKET_KEY,
+                    packet,
+                )
+            except Exception as exc:
+                if not restore_prior_artifact():
+                    raise RuntimeError(
+                        "local_backtest_packet_persist_failed_artifact_rollback_unverified"
+                    ) from exc
+                raise RuntimeError(
+                    "local_backtest_packet_persist_failed_artifact_restored"
+                ) from exc
+    except Exception as exc:
+        return task_service.update_task_status(
+            task["task_id"],
+            status="failed",
+            progress=1.0,
+            current_step=(
+                "storage_backtest_results_local_execution_transaction_rollback_unverified"
+                if rollback_unverified
+                else "storage_backtest_results_local_execution_transaction_failed_safe"
+            ),
+            error_message_safe=type(exc).__name__,
+            call_ledger=packet.get("call_ledger") or _storage_cache_call_ledger(
+                "local_storage_backtest_results_execution",
+                endpoint="POST /api/storage/backtest-results/run-local",
+                status="storage_backtest_results_local_execution_transaction_failed_safe",
+                dataset="backtest_results",
+                row_count=0,
+            ),
+            warning=(
+                (
+                    f"local_backtest_transaction_rollback_unverified_backup_preserved:{rollback_path.name}"
+                    if preserve_rollback
+                    else "local_backtest_transaction_rollback_unverified_no_backup_available"
+                )
+                if rollback_unverified
+                else "local_backtest_transaction_failed_artifact_restored_or_unchanged_no_external_call_no_trade"
+            ),
+        ) or task
+    finally:
+        if not preserve_rollback:
+            rollback_path.unlink(missing_ok=True)
+    succeeded = packet.get("local_backtest_executed") is True
+    return task_service.update_task_status(
+        task["task_id"],
+        status="success" if succeeded else "failed",
+        progress=1.0,
+        current_step=str(packet.get("status") or "storage_backtest_results_local_execution_blocked"),
+        error_message_safe=None if succeeded else str(packet.get("error_message_safe") or packet.get("status")),
+        call_ledger=packet["call_ledger"],
+        warning="storage_backtest_results_local_execution_success"
+        if succeeded
+        else "storage_backtest_results_local_execution_failed_safe",
     ) or task
 
 
